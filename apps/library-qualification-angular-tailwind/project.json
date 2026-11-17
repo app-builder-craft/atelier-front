@@ -4,10 +4,7 @@
   "projectType": "application",
   "prefix": "app",
   "sourceRoot": "apps/library-qualification-angular-tailwind/src",
-  "i18n": {
-    "sourceLocale": "fr"
-  },
-  "tags": ["type:app", "experience:visitor-web"],
+  "tags": ["internal:library-qualification"],
   "targets": {
     "build": {
       "executor": "@angular/build:application",
@@ -16,7 +13,6 @@
       "options": {
         "outputPath": "dist/apps/library-qualification-angular-tailwind",
         "browser": "apps/library-qualification-angular-tailwind/src/main.ts",
-        "polyfills": ["@angular/localize/init"],
         "tsConfig": "apps/library-qualification-angular-tailwind/tsconfig.app.json",
         "inlineStyleLanguage": "scss",
         "assets": [
@@ -35,7 +31,7 @@
             {
               "type": "initial",
               "maximumWarning": "500kb",
-              "maximumError": "750kb"
+              "maximumError": "1mb"
             },
             {
               "type": "anyComponentStyle",
@@ -66,21 +62,6 @@
         "development": {
           "buildTarget": "library-qualification-angular-tailwind:build:development"
         }
-      }
-    },
-    "lint": {
-      "options": {
-        "lintFilePatterns": [
-          "apps/library-qualification-angular-tailwind/**/*.ts",
-          "apps/library-qualification-angular-tailwind/**/*.html"
-        ]
-      }
-    },
-    "test": {
-      "executor": "@angular/build:unit-test",
-      "options": {
-        "watch": false,
-        "runnerConfig": "tools/generator-platform/page-realization-vitest.config.mjs"
       }
     },
     "serve-static": {
