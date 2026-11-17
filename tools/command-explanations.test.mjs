@@ -13,7 +13,7 @@ import {
 } from './command-explanations.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const RUNBOOK = 'docs/etape-b/runbook-commandes-creation.md';
+const RUNBOOK = 'docs/proprietaire/produit.md';
 const TOP_LEVEL_KEYS = [
     'schema_version',
     'command',
@@ -154,11 +154,13 @@ test('--explain refuse toute combinaison ambiguë', () => {
     }
 });
 
-test('le runbook reste court et couvre chaque commande et chaque reprise', () => {
+// Le runbook des commandes fait partie du guide produit du propriétaire, qui
+// couvre aussi le parcours et le dépannage : le plafond borne ce guide entier.
+test('le guide produit reste borné et couvre chaque commande et chaque reprise', () => {
     const content = readFileSync(join(ROOT, RUNBOOK), 'utf8');
     const lines = content.split('\n').length - 1;
-    assert.ok(lines <= 200, `runbook trop long : ${lines} lignes`);
-    assert.ok(lines >= 80, `runbook trop superficiel : ${lines} lignes`);
+    assert.ok(lines <= 400, `guide produit trop long : ${lines} lignes`);
+    assert.ok(lines >= 80, `guide produit trop superficiel : ${lines} lignes`);
     for (const command of EXPLAINED_COMMANDS) {
         assert.match(content, new RegExp(`## .*${command}`));
         assert.match(content, new RegExp(`bun run ${command} --explain`));

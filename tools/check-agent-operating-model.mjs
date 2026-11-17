@@ -15,7 +15,7 @@ export const AGENT_MODEL_FILES = Object.freeze({
     authority: 'PROJECT_AUTHORITY.md',
     readme: 'README.md',
     model: 'docs/agents/operating-model.md',
-    userGuide: 'docs/agents/guide-utilisateur.md',
+    userGuide: 'docs/proprietaire/agents.md',
     agentsIndex: 'docs/agents/README.md',
     contract: 'conventions/agents/operating-model.json',
     contractSchema: 'conventions/agents/operating-model.schema.json',
@@ -125,7 +125,7 @@ function validateStructuredContract(documents, violations) {
         contract.authority?.product !== 'PROJECT_AUTHORITY.md' ||
         contract.authority?.operating_model !==
             'docs/agents/operating-model.md' ||
-        contract.authority?.owner_guide !== 'docs/agents/guide-utilisateur.md'
+        contract.authority?.owner_guide !== 'docs/proprietaire/agents.md'
     ) {
         violations.push(
             "le contrat structuré doit conserver les quatre sources d'autorité"
@@ -384,7 +384,7 @@ export function collectAgentModelViolations(documents) {
     );
     requireText(
         'agentsIndex',
-        'guide-utilisateur.md',
+        'proprietaire/agents.md',
         "l'index agents doit exposer le guide du propriétaire"
     );
     requireText(

@@ -19,7 +19,7 @@ describe('impact CI des preuves bibliothèque', () => {
         assert.deepEqual(
             classifyLibraryCiImpact([
                 'apps/demo-angular/src/app/app.ts',
-                'docs/guides/contribuer.md',
+                'docs/proprietaire/atelier.md',
                 'libs/demo/ui/src/lib/demo.component.ts',
             ]),
             NONE

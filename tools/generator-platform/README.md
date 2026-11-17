@@ -7,8 +7,8 @@ l'atelier, calcule un plan relu (`--dry-run`), puis publie seulement ce plan
 l'atelier pour un produit.
 
 La chaîne est décrite pour les humains dans
-[`docs/etape-b/runbook-commandes-creation.md`](../../docs/etape-b/runbook-commandes-creation.md)
-et en détail dans
+[`docs/proprietaire/produit.md`](../../docs/proprietaire/produit.md) et en
+détail dans
 [`docs/etape-b/external-application-creation.md`](../../docs/etape-b/external-application-creation.md).
 
 ## Contrat backend canonique

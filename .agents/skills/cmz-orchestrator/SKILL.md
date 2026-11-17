@@ -21,7 +21,7 @@ Lis intégralement :
 2. `PROJECT_AUTHORITY.md` ;
 3. `docs/agents/operating-model.md` ;
 4. `conventions/agents/operating-model.json` ;
-5. `docs/agents/guide-utilisateur.md`.
+5. `docs/proprietaire/agents.md`.
 
 Tu peux vérifier en lecture seule l'état Git, les branches, PR, reviews et CI
 quand cette donnée change la recommandation. Toute donnée vivante doit être

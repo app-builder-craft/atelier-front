@@ -5,7 +5,7 @@
     "automatic_instructions": "AGENTS.md",
     "product": "PROJECT_AUTHORITY.md",
     "operating_model": "docs/agents/operating-model.md",
-    "owner_guide": "docs/agents/guide-utilisateur.md"
+    "owner_guide": "docs/proprietaire/agents.md"
   },
   "rules": {
     "one_active_role": true,

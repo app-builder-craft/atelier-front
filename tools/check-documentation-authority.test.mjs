@@ -94,7 +94,15 @@ test('le guide de construction garde le protocole extérieur de create-app', () 
         },
         /protocole extérieur de create-app/
     );
-    rejects({ ...documents, docsIndex: '' }, /docs\/README\.md est absent/);
+    for (const [key, file] of [
+        ['ownerWorkshop', 'atelier'],
+        ['ownerProduct', 'produit'],
+        ['ownerAgents', 'agents'],
+    ])
+        rejects(
+            { ...documents, [key]: '' },
+            new RegExp(`docs/proprietaire/${file}\\.md est absent`)
+        );
 });
 
 test('un lien relatif mort est signalé ; ancres, URL et code sont ignorés', (t) => {

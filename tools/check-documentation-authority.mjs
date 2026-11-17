@@ -19,7 +19,9 @@ export const AUTHORITY_FILES = Object.freeze({
     readme: 'README.md',
     agents: 'AGENTS.md',
     appBuilder: 'LLM_APP_BUILDER.md',
-    docsIndex: 'docs/README.md',
+    ownerWorkshop: 'docs/proprietaire/atelier.md',
+    ownerProduct: 'docs/proprietaire/produit.md',
+    ownerAgents: 'docs/proprietaire/agents.md',
 });
 
 // Éléments que la charte doit porter, avec leur raison.

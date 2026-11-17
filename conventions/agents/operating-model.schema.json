@@ -33,7 +33,7 @@
           "const": "docs/agents/operating-model.md"
         },
         "owner_guide": {
-          "const": "docs/agents/guide-utilisateur.md"
+          "const": "docs/proprietaire/agents.md"
         }
       }
     },

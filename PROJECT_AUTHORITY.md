@@ -58,7 +58,7 @@ Chaque commande lit les entrées du produit, publie sous plan relu
 Le protocole détaillé est dans
 [`docs/etape-b/external-application-creation.md`](./docs/etape-b/external-application-creation.md).
 Le runbook des commandes est
-[`docs/etape-b/runbook-commandes-creation.md`](./docs/etape-b/runbook-commandes-creation.md).
+[`docs/proprietaire/produit.md`](./docs/proprietaire/produit.md).
 
 Le job CI requis **External application shells** prouve cette chaîne sur deux
 produits fictifs (`observatory`, `equipment-hire`) et sur des produits A et B
@@ -103,7 +103,7 @@ définis dans [`docs/agents/operating-model.md`](./docs/agents/operating-model.m
 et bornés par
 [`conventions/agents/operating-model.json`](./conventions/agents/operating-model.json).
 Le propriétaire dispose du
-[guide simple d'orchestration](./docs/agents/guide-utilisateur.md).
+[guide simple d'orchestration](./docs/proprietaire/agents.md).
 
 ## 7. Git, revue et fusion
 

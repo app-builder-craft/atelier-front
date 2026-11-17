@@ -179,7 +179,7 @@ Avant le premier entretien, lis au minimum :
 - `PROJECT_AUTHORITY.md` ;
 - `README.md` ;
 - `package.json` ;
-- [`docs/etape-b/runbook-commandes-creation.md`](./docs/etape-b/runbook-commandes-creation.md) ;
+- [`docs/proprietaire/produit.md`](./docs/proprietaire/produit.md) ;
 - [`docs/etape-b/external-application-creation.md`](./docs/etape-b/external-application-creation.md) ;
 - les schémas sous `tools/generator-platform/schemas/` ;
 - la racine du produit, si elle existe déjà : `descriptions/`, `apps/` et son

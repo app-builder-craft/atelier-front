@@ -139,7 +139,7 @@ worktree Git jetable. Le schematic, le sandbox, le navigateur et le harnais
 de qualification. Les commandes `create-app`, `add-library` et
 `prepare:application-workspace` exposent leur contrat opérationnel stable avec
 `--explain`. Le runbook court associé est
-[`runbook-commandes-creation.md`](../docs/etape-b/runbook-commandes-creation.md).
+[`produit.md`](../docs/proprietaire/produit.md).
 
 La promotion d'une piste candidate produit une attestation `1.3.0`. Son champ
 `inputs_sha256.runner_sources` expose la liste fermée des sources communes et

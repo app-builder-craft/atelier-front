@@ -8,7 +8,7 @@ connaissance préalable du dépôt.
 
 - [`operating-model.md`](./operating-model.md) : autorité, rôles, transitions,
   preuves et handoffs ; document normatif pour les agents.
-- [`guide-utilisateur.md`](./guide-utilisateur.md) : commandes et contrôles en
+- [`../proprietaire/agents.md`](../proprietaire/agents.md) : commandes et contrôles en
   français simple pour le propriétaire du produit.
 
 Les règles universelles sont dans [`AGENTS.md`](../../AGENTS.md). Le cap produit

@@ -1,4 +1,4 @@
-const RUNBOOK = 'docs/etape-b/runbook-commandes-creation.md';
+const RUNBOOK = 'docs/proprietaire/produit.md';
 
 const explanations = {
     'create-app': {
