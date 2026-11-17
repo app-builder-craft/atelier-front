@@ -55,14 +55,14 @@ async function fixture() {
         backendContractSchema
     );
     await writeFile(
-        join(root, 'designs/clean-street.application-design.json'),
+        join(root, 'designs/sample-app.application-design.json'),
         `${JSON.stringify(data.design, null, 2)}\n`
     );
     const shellOptions = {
         workspaceRoot: root,
-        designPath: 'designs/clean-street.application-design.json',
+        designPath: 'designs/sample-app.application-design.json',
         experienceId: 'citizen-web',
-        appName: 'clean-street',
+        appName: 'sample-app',
         profile: 'angular-pwa',
         applicationDesignSchema,
         backendContractSchema,
@@ -81,20 +81,20 @@ async function fixture() {
 }
 
 test('la CLI retire-app ferme dry-run/apply et reprise/abort', () => {
-    assert.deepEqual(parseArgs(['--app', 'clean-street', '--dry-run']), {
+    assert.deepEqual(parseArgs(['--app', 'sample-app', '--dry-run']), {
         dryRun: true,
         resume: false,
         abort: false,
-        appName: 'clean-street',
+        appName: 'sample-app',
     });
-    assert.deepEqual(parseArgs(['--app', 'clean-street', '--resume']), {
+    assert.deepEqual(parseArgs(['--app', 'sample-app', '--resume']), {
         dryRun: false,
         resume: true,
         abort: false,
-        appName: 'clean-street',
+        appName: 'sample-app',
     });
     assert.throws(
-        () => parseArgs(['--app', 'clean-street', '--resume', '--abort']),
+        () => parseArgs(['--app', 'sample-app', '--resume', '--abort']),
         /utilisé seul/
     );
 });
@@ -102,14 +102,14 @@ test('la CLI retire-app ferme dry-run/apply et reprise/abort', () => {
 test('retire une app possédée, publie le tombstone et prouve les gates', async () => {
     const data = await fixture();
     const plan = await planApplicationRetirement(
-        { workspaceRoot: data.root, appName: 'clean-street' },
+        { workspaceRoot: data.root, appName: 'sample-app' },
         data.dependencies
     );
     const calls = [];
     const result = await publishApplicationRetirement(
         {
             workspaceRoot: data.root,
-            appName: 'clean-street',
+            appName: 'sample-app',
             planId: plan.plan_id,
         },
         {
@@ -120,13 +120,13 @@ test('retire une app possédée, publie le tombstone et prouve les gates', async
     );
     assert.equal(result.plan.tree_sha256, plan.tree_sha256);
     assert.deepEqual(calls, ['install+frozen', 'nx-post-gate']);
-    assert.equal(await exists(join(data.root, 'apps/clean-street')), false);
+    assert.equal(await exists(join(data.root, 'apps/sample-app')), false);
     assert.equal(
         JSON.parse(
             await readFile(
                 join(
                     data.root,
-                    'docs/architecture/retired-apps/clean-street.json'
+                    'docs/architecture/retired-apps/sample-app.json'
                 ),
                 'utf8'
             )
@@ -142,7 +142,7 @@ test('retire une app possédée, publie le tombstone et prouve les gates', async
 test('tout échec de gate restaure l’app et retire son tombstone', async () => {
     const data = await fixture();
     const plan = await planApplicationRetirement(
-        { workspaceRoot: data.root, appName: 'clean-street' },
+        { workspaceRoot: data.root, appName: 'sample-app' },
         data.dependencies
     );
     await assert.rejects(
@@ -150,7 +150,7 @@ test('tout échec de gate restaure l’app et retire son tombstone', async () =>
             publishApplicationRetirement(
                 {
                     workspaceRoot: data.root,
-                    appName: 'clean-street',
+                    appName: 'sample-app',
                     planId: plan.plan_id,
                 },
                 {
@@ -163,12 +163,12 @@ test('tout échec de gate restaure l’app et retire son tombstone', async () =>
         /frozen lock failure/
     );
     assert.equal(
-        await exists(join(data.root, 'apps/clean-street/project.json')),
+        await exists(join(data.root, 'apps/sample-app/project.json')),
         true
     );
     assert.equal(
         await exists(
-            join(data.root, 'docs/architecture/retired-apps/clean-street.json')
+            join(data.root, 'docs/architecture/retired-apps/sample-app.json')
         ),
         false
     );
@@ -179,13 +179,13 @@ test('refuse consommateurs Nx et références textuelles avant écriture', async
     await assert.rejects(
         () =>
             planApplicationRetirement(
-                { workspaceRoot: data.root, appName: 'clean-street' },
+                { workspaceRoot: data.root, appName: 'sample-app' },
                 {
                     ...data.dependencies,
                     findConsumers: () => [
                         {
                             consumer: 'portal',
-                            target: 'clean-street',
+                            target: 'sample-app',
                             type: 'static',
                         },
                     ],
@@ -196,7 +196,7 @@ test('refuse consommateurs Nx et références textuelles avant écriture', async
     await assert.rejects(
         () =>
             planApplicationRetirement(
-                { workspaceRoot: data.root, appName: 'clean-street' },
+                { workspaceRoot: data.root, appName: 'sample-app' },
                 {
                     ...data.dependencies,
                     findReferences: () => ['transloco.config.ts'],
@@ -209,23 +209,23 @@ test('refuse consommateurs Nx et références textuelles avant écriture', async
 test('reprend une transaction interrompue après déplacement exact', async () => {
     const data = await fixture();
     const plan = await planApplicationRetirement(
-        { workspaceRoot: data.root, appName: 'clean-street' },
+        { workspaceRoot: data.root, appName: 'sample-app' },
         data.dependencies
     );
     const transaction = join(
         data.root,
-        '.cmz/retire-app-transactions/clean-street'
+        '.cmz/retire-app-transactions/sample-app'
     );
     const backup = join(transaction, 'app');
     const tombstonePath = join(
         data.root,
-        'docs/architecture/retired-apps/clean-street.json'
+        'docs/architecture/retired-apps/sample-app.json'
     );
     const tombstone = `${JSON.stringify(
         {
             schema_version: '1.0.0',
             kind: 'retired-application',
-            app_name: 'clean-street',
+            app_name: 'sample-app',
             design_ref: plan.design_ref,
             retired_tree_sha256: plan.tree_sha256,
             git_head: plan.git_head,
@@ -234,7 +234,7 @@ test('reprend une transaction interrompue après déplacement exact', async () =
         2
     )}\n`;
     await mkdir(transaction, { recursive: true });
-    await rename(join(data.root, 'apps/clean-street'), backup);
+    await rename(join(data.root, 'apps/sample-app'), backup);
     await mkdir(join(data.root, 'docs/architecture/retired-apps'), {
         recursive: true,
     });
@@ -249,10 +249,10 @@ test('reprend une transaction interrompue après déplacement exact', async () =
                 schema_version: '1.0.0',
                 phase: 'moved',
                 plan_id: plan.plan_id,
-                app_name: 'clean-street',
-                output: 'apps/clean-street',
+                app_name: 'sample-app',
+                output: 'apps/sample-app',
                 tree_sha256: plan.tree_sha256,
-                tombstone: 'docs/architecture/retired-apps/clean-street.json',
+                tombstone: 'docs/architecture/retired-apps/sample-app.json',
                 tombstone_parent_existed: false,
                 tombstone_sha256: tombstoneHash,
             },
@@ -263,11 +263,11 @@ test('reprend une transaction interrompue après déplacement exact', async () =
     await recoverApplicationRetirement(
         {
             workspaceRoot: data.root,
-            appName: 'clean-street',
+            appName: 'sample-app',
             abort: false,
         },
         data.dependencies
     );
     assert.equal(await exists(transaction), false);
-    assert.equal(await exists(join(data.root, 'apps/clean-street')), false);
+    assert.equal(await exists(join(data.root, 'apps/sample-app')), false);
 });

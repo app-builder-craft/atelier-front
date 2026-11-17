@@ -27,8 +27,8 @@ function validContract(
         schema_version: '1.0.0',
         kind: 'backend-contract',
         contract: {
-            id: 'clean-street-api',
-            title: 'Clean Street backend',
+            id: 'sample-app-api',
+            title: 'Sample App backend',
             version: '1.0.0',
             status: 'planned',
             description:

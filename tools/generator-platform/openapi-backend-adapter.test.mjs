@@ -16,22 +16,22 @@ function validDocument() {
     return {
         openapi: '3.1.1',
         info: {
-            title: 'Clean Street API',
+            title: 'Sample App API',
             version: '1.0.0',
             description: 'Target API contract.',
         },
         servers: [
             {
-                url: 'https://api.clean-street.example/v1',
+                url: 'https://api.sample-app.example/v1',
                 'x-cmz-environment': 'production',
             },
         ],
         'x-cmz-contract': {
             authority: 'declared',
-            contract_id: 'clean-street-api',
+            contract_id: 'sample-app-api',
             lifecycle: 'planned',
             service_id: 'public-api',
-            source_id: 'clean-street-openapi',
+            source_id: 'sample-app-openapi',
         },
         security: [{ BearerAuth: [] }],
         components: {
@@ -120,7 +120,7 @@ function validDocument() {
 function compile(document = validDocument()) {
     return compileOpenApiBackendContract({
         document,
-        snapshotUri: 'contracts/clean-street.openapi.yaml',
+        snapshotUri: 'contracts/sample-app.openapi.yaml',
         snapshotSha256: 'a'.repeat(64),
         backendContractSchema,
     });
@@ -132,7 +132,7 @@ test('projette OpenAPI vers le contrat canonique sans fuite de format source', (
     assert.equal(contract.sources[0].kind, 'openapi');
     assert.equal(
         contract.services[0].base_urls[0].url,
-        'https://api.clean-street.example/v1/'
+        'https://api.sample-app.example/v1/'
     );
     assert.deepEqual(
         contract.security_schemes.map((scheme) => scheme.id),

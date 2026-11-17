@@ -372,7 +372,7 @@ function fixtureDesign(declared, backend, briefDocument, domain) {
     const design = JSON.parse(
         JSON.stringify(
             applicationDesign(digest(briefDocument), backend.sha256)
-        ).replaceAll('clean-street', domain)
+        ).replaceAll('sample-app', domain)
     );
     const id = (name) => 'page_' + digest(domain + ':' + name).slice(0, 16);
     const experience = design.experiences[0];

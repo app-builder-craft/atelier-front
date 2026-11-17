@@ -21,13 +21,13 @@ function definition() {
         schema_version: '1.0.0',
         kind: 'backend-contract-definition',
         contract: {
-            id: 'clean-street-api',
-            title: 'Clean Street API',
+            id: 'sample-app-api',
+            title: 'Sample App API',
             version: '1.0.0',
             status: 'planned',
-            description: 'API cible à construire pour Clean Street.',
+            description: 'API cible à construire pour Sample App.',
         },
-        source: { id: 'clean-street-planned', authority: 'declared' },
+        source: { id: 'sample-app-planned', authority: 'declared' },
         services: [
             {
                 id: 'content',
@@ -35,7 +35,7 @@ function definition() {
                 base_urls: [
                     {
                         environment: 'production',
-                        url: 'https://api.clean-street.example/content/v1/',
+                        url: 'https://api.sample-app.example/content/v1/',
                     },
                 ],
             },
@@ -101,7 +101,7 @@ function definition() {
 function compile(value = definition()) {
     return compileStructuredBackendDefinition({
         definition: value,
-        snapshotUri: 'contracts/clean-street.definition.json',
+        snapshotUri: 'contracts/sample-app.definition.json',
         snapshotSha256: 'a'.repeat(64),
         backendContractSchema: schema,
     });
@@ -114,13 +114,13 @@ test('projette une définition planned en contrat canonique entièrement traçab
     assert.equal(contract.operations[0].status, 'planned');
     assert.deepEqual(contract.models[0].fields[0].evidence, [
         {
-            source_id: 'clean-street-planned',
+            source_id: 'sample-app-planned',
             locator: '/models/0/fields/0',
         },
     ]);
     assert.deepEqual(contract.operations[0].responses[0].body.evidence, [
         {
-            source_id: 'clean-street-planned',
+            source_id: 'sample-app-planned',
             locator: '/operations/0/responses/0/body',
         },
     ]);

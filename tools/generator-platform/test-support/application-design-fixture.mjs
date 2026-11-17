@@ -13,7 +13,7 @@ export function sha256(content) {
 
 function evidence() {
     return [
-        { source_id: 'clean-street-brief', locator: 'validated-project-sheet' },
+        { source_id: 'sample-app-brief', locator: 'validated-project-sheet' },
     ];
 }
 
@@ -22,13 +22,13 @@ export function backendDefinition() {
         schema_version: '1.0.0',
         kind: 'backend-contract-definition',
         contract: {
-            id: 'clean-street-api',
-            title: 'Clean Street API',
+            id: 'sample-app-api',
+            title: 'Sample App API',
             version: '1.0.0',
             status: 'planned',
             description: 'Planned target API.',
         },
-        source: { id: 'clean-street-api-plan', authority: 'declared' },
+        source: { id: 'sample-app-api-plan', authority: 'declared' },
         services: [
             {
                 id: 'public-api',
@@ -36,7 +36,7 @@ export function backendDefinition() {
                 base_urls: [
                     {
                         environment: 'development',
-                        url: 'https://api.clean-street.example/v1/',
+                        url: 'https://api.sample-app.example/v1/',
                     },
                 ],
             },
@@ -123,8 +123,8 @@ export function applicationDesign(briefHash, contractHash, pathPrefix = '') {
         schema_version: '1.0.0',
         kind: 'application-design',
         design: {
-            id: 'clean-street',
-            title: 'Clean Street',
+            id: 'sample-app',
+            title: 'Sample App',
             version: '1.0.0',
             status: 'approved',
             problem: 'Residents need to report illegal waste deposits.',
@@ -134,7 +134,7 @@ export function applicationDesign(briefHash, contractHash, pathPrefix = '') {
         },
         sources: [
             {
-                id: 'clean-street-brief',
+                id: 'sample-app-brief',
                 kind: 'project-brief',
                 snapshot_uri: prefixed('design/project-brief.md'),
                 sha256: briefHash,
@@ -142,7 +142,7 @@ export function applicationDesign(briefHash, contractHash, pathPrefix = '') {
         ],
         backend_contracts: [
             {
-                id: 'clean-street-api',
+                id: 'sample-app-api',
                 role: 'target',
                 snapshot_uri: prefixed('contracts/backend.contract.json'),
                 sha256: contractHash,
@@ -183,7 +183,7 @@ export function applicationDesign(briefHash, contractHash, pathPrefix = '') {
                         id: 'ready',
                         kind: 'ready',
                         description: 'Landing content is visible.',
-                        announcement: 'Clean Street is ready.',
+                        announcement: 'Sample App is ready.',
                     },
                 ],
                 controls: [],
@@ -289,7 +289,7 @@ export function applicationDesign(briefHash, contractHash, pathPrefix = '') {
                             },
                         ],
                         operation_ref: {
-                            contract_id: 'clean-street-api',
+                            contract_id: 'sample-app-api',
                             operation_id: 'create-report',
                         },
                         success_state_id: 'submitted',
@@ -341,7 +341,7 @@ export async function writeApplicationDesignFixture(
     const prefixed = (path) => (pathPrefix ? `${pathPrefix}/${path}` : path);
     await mkdir(join(fixtureRoot, 'contracts'), { recursive: true });
     await mkdir(join(fixtureRoot, 'design'), { recursive: true });
-    const brief = Buffer.from('# Clean Street\n\nValidated project brief.\n');
+    const brief = Buffer.from('# Sample App\n\nValidated project brief.\n');
     await writeFile(join(fixtureRoot, 'design/project-brief.md'), brief);
     const definition = Buffer.from(
         `${JSON.stringify(backendDefinition(), null, 2)}\n`

@@ -125,13 +125,13 @@ d'EXT-01 sous apps, sans créer d'application. Sans target-root, les identifiant
 de plan et contenus canoniques du mode atelier sont conservés.
 
 Les tests de compilation utilisent deux jeux déclarés fictifs : notes (source
-Postman de référence et cible structurée publique, une page) et Clean Street
+Postman de référence et cible structurée publique, une page) et Sample App
 (cible structurée bearer, navigation et deux pages). Ils vérifient les CLI,
 racines, dépendances, collisions et refus sémantiques. Ils n'établissent aucune
 connexion réelle ni qualification native d'une cible.
 
 La preuve de consommation du shell garde quatre résultats distincts : notes et
-Clean Street, chacun sur Angular et React. Leurs designs d'origine déclarent
+Sample App, chacun sur Angular et React. Leurs designs d'origine déclarent
 shell-only : React les refuse. Les cellules communes de shell utilisent une
 variante technique explicitement déclarée avec offline_policy none, et publient
 ce changement dans leur reçu. Aucun support PWA React ni adaptation silencieuse
