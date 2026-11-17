@@ -7,4 +7,4 @@ Cette fixture technique démontre la chaîne de conception sans code manuel.
 - L'API cible est un contrat explicitement planifié pour cette preuve.
 - La réalisation doit exposer les états prêt, succès, erreur et hors ligne.
 
-Cette fixture n'est ni un produit métier ni une spécification de Clean Street.
+Cette fixture n'est pas un produit métier.
