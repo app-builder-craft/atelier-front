@@ -1542,7 +1542,10 @@ fermés dans la table `api` de la composition :
   - l’annulation à la destruction ;
   - l’adresse de service absente, qui donne une erreur 0 sans requête ;
   - les Données gelées ;
-  - l’échec sans lignes.
+  - l’échec sans lignes ;
+  - pour une lecture protégée par la session, la session déconnectée :
+    `load` est accepté, mais aucune requête ne part, l’état reste `idle` et
+    les lignes restent vides et gelées.
   - Une page de lectures seules n’a pas de spec de commandes. Ses contrôles
     généraux (table `api` exacte, gestion asynchrone des erreurs de rxjs) sont
     dans la spec des lectures.

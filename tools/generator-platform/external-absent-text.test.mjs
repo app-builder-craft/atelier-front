@@ -15,41 +15,12 @@ import { planExternalPageRealizationWorkOrder } from './core/external-page-reali
 import { SESSION_FIXTURE_DOMAINS } from './test-support/external-session-fixture.mjs';
 import {
     compositionFile,
+    nullableLabel,
     queryPage,
 } from './test-support/external-query-page.mjs';
 
 const native = () => ({ run: () => undefined });
 const TEXT = 'Non renseigné';
-
-// Contrat : `label` nullable. Conception : une liaison de la lecture, avec ou
-// sans texte d'absence.
-const nullableLabel =
-    (domain, absentText) =>
-    ({ contract, design }) => {
-        const item = contract.models.find(
-            (model) => model.id === `${domain}-item`
-        );
-        item.fields.find((field) => field.name === 'label').nullable = true;
-        const page = design.pages.find((entry) => entry.loads.length > 0);
-        page.data_bindings.push({
-            id: 'catalogue-rows',
-            operation_ref: structuredClone(page.loads[0].operation_ref),
-            response_status: 200,
-            model_id: `${domain}-items`,
-            field_names: [],
-            visible_in_state_ids: [page.loads[0].success_state_id],
-            ...(absentText === undefined ? {} : { absent_text: absentText }),
-        });
-        page.regions[0].elements.push({
-            id: 'catalogue-list',
-            kind: 'list',
-            accessible_name: 'Catalogue',
-            content: 'Catalogue rows',
-            control_ids: [],
-            action_ids: [],
-            data_binding_ids: ['catalogue-rows'],
-        });
-    };
 
 async function workOrderOf(options) {
     const composition = await planExternalPageComposition(options);
