@@ -305,8 +305,16 @@ jobs:
       - name: Contrat rapide — impact de la preuve d'isolation
         id: library-impact
         env:
-          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
-        run: node tools/library-ci-impact.mjs --base "$LIBRARY_DIFF_BASE" >> "$GITHUB_OUTPUT"
+          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        # Sur un push : le parent, ou l'arbre vide pour un commit sans parent.
+        # Le parent est lu dans l'objet commit (un clone peu profond le voit) ;
+        # un parent présent mais introuvable fait échouer l'étape.
+        run: |
+          base="$LIBRARY_DIFF_BASE"
+          if [ -z "$base" ]; then
+            if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
+          fi
+          node tools/library-ci-impact.mjs --base "$base" >> "$GITHUB_OUTPUT"
 
       - uses: oven-sh/setup-bun@v2
         if: steps.library-impact.outputs.isolation == 'true'
@@ -358,8 +366,16 @@ jobs:
       - name: Contrat rapide — impact de la preuve d'intégration
         id: library-impact
         env:
-          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
-        run: node tools/library-ci-impact.mjs --base "$LIBRARY_DIFF_BASE" >> "$GITHUB_OUTPUT"
+          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        # Sur un push : le parent, ou l'arbre vide pour un commit sans parent.
+        # Le parent est lu dans l'objet commit (un clone peu profond le voit) ;
+        # un parent présent mais introuvable fait échouer l'étape.
+        run: |
+          base="$LIBRARY_DIFF_BASE"
+          if [ -z "$base" ]; then
+            if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
+          fi
+          node tools/library-ci-impact.mjs --base "$base" >> "$GITHUB_OUTPUT"
 
       - uses: oven-sh/setup-bun@v2
         if: steps.library-impact.outputs.integration == 'true'
@@ -495,7 +511,11 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
           else
-            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
+            # Le parent, ou l'arbre vide pour un commit sans parent. Le parent
+            # est lu dans l'objet commit (un clone peu profond le voit) ; un
+            # parent présent mais introuvable fait échouer l'étape.
+            if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
+            echo "NX_BASE=$base" >> $GITHUB_ENV
           fi
 
       # ESLint — boundaries Nx + règles Angular (ADR-0010 portail niveau Lint)
@@ -598,14 +618,24 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
           else
-            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
+            # Le parent, ou l'arbre vide pour un commit sans parent. Le parent
+            # est lu dans l'objet commit (un clone peu profond le voit) ; un
+            # parent présent mais introuvable fait échouer l'étape.
+            if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
+            echo "NX_BASE=$base" >> $GITHUB_ENV
           fi
 
       - name: Detect React workspace browser-proof impact
         id: react-workspace-proof
         run: |
-          if bunx nx show projects --affected --base=${{ env.NX_BASE }} | grep -qx workspace-react-proof \
-            || ! git diff --quiet ${{ env.NX_BASE }}...HEAD -- \
+          # `base...HEAD` exige un commit : un arbre (commit sans parent) est
+          # comparé tel quel, comme le fait `nx affected`.
+          from="$NX_BASE"
+          if [ "$(git cat-file -t "$from")" != tree ]; then
+            from="$(git merge-base "$from" HEAD)"
+          fi
+          if bunx nx show projects --affected --base="$NX_BASE" | grep -qx workspace-react-proof \
+            || ! git diff --quiet "$from" HEAD -- \
               tools/e2e-static-server.mjs; then
             echo "run=true" >> $GITHUB_OUTPUT
           else
