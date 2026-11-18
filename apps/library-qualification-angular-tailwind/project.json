@@ -22,6 +22,7 @@
           }
         ],
         "styles": [
+          "apps/library-qualification-angular-tailwind/src/tailwind.css",
           "apps/library-qualification-angular-tailwind/src/styles.scss"
         ]
       },
