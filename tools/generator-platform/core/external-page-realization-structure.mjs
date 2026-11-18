@@ -7,7 +7,11 @@
 // gouvernés par la politique de la coque, mesurée dans le navigateur.
 import * as angular from '@angular/compiler';
 import ts from 'typescript';
+import { SIGNATURE, signatureName } from './atelier-signature.mjs';
 import { parserList } from './page-grammar/parser-contract.mjs';
+
+// Élément synthétique qui porte une liaison d'hôte le temps de son analyse.
+const HOST = signatureName('host');
 
 // Noms que la page peut importer depuis sa composition (I-2) : la page la
 // monte et l'obtient ; elle n'atteint jamais un nœud de commande.
@@ -263,7 +267,7 @@ function componentViolations(file, composition, violations, templateCheck) {
             }
             const attribute = key.replace(/^\((?:window|document):/, '(');
             templateCheck(
-                `<cmz-host ${attribute}=${quote}${value}${quote}></cmz-host>`,
+                `<${HOST} ${attribute}=${quote}${value}${quote}></${HOST}>`,
                 'page.component.ts host'
             );
         }
@@ -402,7 +406,7 @@ export function templateViolations({ name, text, declaredIds }) {
             violations.push(
                 `event handler attribute forbidden in ${name}: ${node.name}`
             );
-        if (key === 'data-cmz-id') ids.push(node.value);
+        if (key === SIGNATURE.idAttribute) ids.push(node.value);
         if (key === 'routerlink' && !ROUTER_LINK.test(node.value))
             violations.push(
                 `routerLink must be an application path in ${name}: ${JSON.stringify(node.value)}`
@@ -434,7 +438,7 @@ export function templateViolations({ name, text, declaredIds }) {
             return;
         if (
             key.startsWith('on') ||
-            key === 'data-cmz-id' ||
+            key === SIGNATURE.idAttribute ||
             RESOURCE_ATTRIBUTES.includes(key) ||
             HTML_PROPERTIES.has(key)
         )
@@ -533,7 +537,7 @@ export function templateViolations({ name, text, declaredIds }) {
     for (const id of ids)
         if (declaredIds && !declaredIds.has(id))
             violations.push(
-                `data-cmz-id not declared by the page contract in ${name}: ${JSON.stringify(id)}`
+                `${SIGNATURE.idAttribute} not declared by the page contract in ${name}: ${JSON.stringify(id)}`
             );
     return { violations, ids, calls };
 }

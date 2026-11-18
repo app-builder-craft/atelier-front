@@ -21,8 +21,8 @@ import {
 } from '../test-support/external-application-fixture.mjs';
 import { runDocumentCli } from '../test-support/external-document-fixture.mjs';
 import {
-    CMZ_MODULE_SPECIFIER,
     createAppArguments,
+    INTERNAL_MODULE_SPECIFIER,
     sessionShellOptions,
     writeExternalSessionDesign,
 } from '../test-support/external-session-fixture.mjs';
@@ -91,7 +91,7 @@ export async function publishNativeSessionShell(session, root, domain) {
             .filter(([path]) => path.endsWith('.ts'))
             .map(([, content]) => content)
             .join('\n'),
-        CMZ_MODULE_SPECIFIER
+        INTERNAL_MODULE_SPECIFIER
     );
     session.lines.push(
         `X0/${domain} app=${plan.app_name} plan_id=${plan.plan_id} tree_sha256=${plan.tree_sha256}`

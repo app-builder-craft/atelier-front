@@ -40,6 +40,9 @@ test('la voie courante traverse l’adaptateur pur sans brique de qualification'
         graph.map((path) => basename(path)),
         [
             'add-library.mjs',
+            // Lot MARQUE : source unique de la signature, module pur sans
+            // dépendance, importée par l'adaptateur.
+            'atelier-signature.mjs',
             'library-application.mjs',
             'qualified-adapters.mjs',
             'scaffold-tailwind-core.mjs',

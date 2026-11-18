@@ -32,6 +32,8 @@ const SOURCE_FILES = [
     'tools/generator-platform/core/generation-manifest.mjs',
     'tools/generator-platform/core/generation-transaction.mjs',
     'tools/generator-platform/core/canonicalize-generated.mjs',
+    'tools/generator-platform/core/atelier-signature.mjs',
+    'tools/generator-platform/core/product-identity.mjs',
     'tools/generator-platform/renderers/application-workspace-renderer.mjs',
     'tools/generator-platform/renderers/angular-pwa-shell-renderer.mjs',
     'tools/generator-platform/renderers/angular-application-session-renderer.mjs',

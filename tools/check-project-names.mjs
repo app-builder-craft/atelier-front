@@ -4,12 +4,13 @@
  *
  * Vérifie que tous les project.json du monorepo respectent la convention
  * de nommage définie dans ADR-0003 : le champ "name" doit suivre le pattern
- * @cmz/<module>-<couche> ou @cmz/<singleton> (core, shared-*).
+ * <portée>/<module>-<couche> ou <portée>/<singleton> (core, shared-*), où
+ * <portée> est la portée npm interne de l'atelier (`INTERNAL.scope`).
  *
  * Exceptions légitimes documentées :
- *   - @cmz/source   (racine du workspace)
- *   - @cmz/core     (singleton sans sous-couches, ADR-0003 §5b)
- *   - @cmz/shared-* (kernel transverse, ADR-0003 §5a)
+ *   - <portée>/source   (racine du workspace)
+ *   - <portée>/core     (singleton sans sous-couches, ADR-0003 §5b)
+ *   - <portée>/shared-* (kernel transverse, ADR-0003 §5a)
  *
  * Utilisé en pre-push et en CI (Phase 06).
  */
@@ -17,14 +18,24 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import {
+    escapeRegExp,
+    INTERNAL,
+} from './generator-platform/core/atelier-signature.mjs';
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const LIBS = join(ROOT, 'libs');
 
-// Pattern canonique : @cmz/<module>-<couche>
-const CANONICAL = /^@cmz\/[a-z][a-z0-9-]+-[a-z]+$/;
+// Pattern canonique : <portée>/<module>-<couche>
+const CANONICAL = new RegExp(
+    `^${escapeRegExp(INTERNAL.scope)}\\/[a-z][a-z0-9-]+-[a-z]+$`
+);
 // Exceptions légitimes
-const ALLOWED_EXCEPTIONS = new Set(['@cmz/core', '@cmz/source']);
-const SHARED_PREFIX = '@cmz/shared-';
+const ALLOWED_EXCEPTIONS = new Set([
+    `${INTERNAL.scope}/core`,
+    `${INTERNAL.scope}/source`,
+]);
+const SHARED_PREFIX = `${INTERNAL.scope}/shared-`;
 
 const SKIP_DIRS = new Set([
     'node_modules',
@@ -77,7 +88,7 @@ for (const file of files) {
 
     if (!valid) {
         console.error(
-            `❌  ${rel}\n    "name": "${name}"\n    Attendu : @cmz/<module>-<couche> (ex: @cmz/catalogue-domain)`
+            `❌  ${rel}\n    "name": "${name}"\n    Attendu : ${INTERNAL.scope}/<module>-<couche> (ex: ${INTERNAL.scope}/catalogue-domain)`
         );
         errors++;
     }

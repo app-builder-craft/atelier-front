@@ -1,3 +1,8 @@
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from './generator-platform/core/atelier-signature.mjs';
+
 const RUNBOOK = 'docs/proprietaire/produit.md';
 
 const explanations = {
@@ -87,8 +92,8 @@ const explanations = {
                 'la branche courante avant la publication finale',
             ],
             temporary: [
-                '<os-temp>/cmz-library-apply-*/workspace/**',
-                '<os-temp>/cmz-library-home-*/**',
+                `<os-temp>/${signatureName('library-apply-')}*/workspace/**`,
+                `<os-temp>/${signatureName('library-home-')}*/**`,
             ],
         },
         phases: [
@@ -165,7 +170,7 @@ explanations['prepare:application-workspace'] = {
     ],
     ownership: {
         creates: [
-            '<target-root>/{package.json,nx.json,tsconfig.base.json,configurations,.cmz/support/**}',
+            `<target-root>/{package.json,nx.json,tsconfig.base.json,configurations,${SIGNATURE_FILES.support}/**}`,
         ],
         modifies: [],
         protects: [

@@ -112,6 +112,11 @@ jobs:
       - name: check:cmz-journals-ignored (journaux d'outil hors index)
         run: bun run check:cmz-journals-ignored
 
+      # Lot MARQUE : signature de l'atelier et formes du préfixe du produit
+      # n'existent qu'à un endroit ; une valeur réécrite en dur est refusée.
+      - name: check:identity-sources (sources uniques de signature et d'identité)
+        run: bun run check:identity-sources
+
       # SIMPL-5 — les trois commandes de construction exposent une explication
       # JSON stable et un runbook court, sans précondition ni écriture.
       - name: check:command-explanations (CLI explicables)

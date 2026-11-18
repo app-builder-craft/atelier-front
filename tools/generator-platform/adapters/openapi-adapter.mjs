@@ -1,4 +1,9 @@
+import { SIGNATURE } from '../core/atelier-signature.mjs';
 import { validateBackendContract } from '../core/backend-contract.mjs';
+
+// Extensions OpenAPI de la signature de l'atelier (conventions d'entrée).
+const ENVIRONMENT_EXTENSION = `${SIGNATURE.openapiExtension}environment`;
+const CONTRACT_EXTENSION = `${SIGNATURE.openapiExtension}contract`;
 
 const HTTP_METHODS = [
     'get',
@@ -589,8 +594,8 @@ function normalizedServers(servers) {
             : `${url.pathname}/`;
         result.push({
             environment: canonicalId(
-                server['x-cmz-environment'],
-                `${path}/x-cmz-environment`
+                server[ENVIRONMENT_EXTENSION],
+                `${path}/${ENVIRONMENT_EXTENSION}`
             ),
             url: url.toString(),
         });
@@ -608,30 +613,30 @@ export function compileOpenApiBackendContract({
         fail('#/openapi', 'only OpenAPI 3.0, 3.1 and 3.2 are supported');
     if (document.webhooks && Object.keys(document.webhooks).length > 0)
         fail('#/webhooks', 'webhooks are not represented by this contract');
-    const metadata = document['x-cmz-contract'];
+    const metadata = document[CONTRACT_EXTENSION];
     if (!exactKeys(metadata, METADATA_KEYS))
         fail(
-            '#/x-cmz-contract',
+            `#/${CONTRACT_EXTENSION}`,
             `keys must be exactly ${METADATA_KEYS.join(', ')}`
         );
     const status = metadata.lifecycle;
     if (!Object.hasOwn(LIFECYCLE_AUTHORITY, status))
         fail(
-            '#/x-cmz-contract/lifecycle',
+            `#/${CONTRACT_EXTENSION}/lifecycle`,
             'expected reference, planned or implemented'
         );
     if (metadata.authority !== LIFECYCLE_AUTHORITY[status])
         fail(
-            '#/x-cmz-contract/authority',
+            `#/${CONTRACT_EXTENSION}/authority`,
             `${status} requires ${LIFECYCLE_AUTHORITY[status]}`
         );
     const sourceId = canonicalId(
         metadata.source_id,
-        '#/x-cmz-contract/source_id'
+        `#/${CONTRACT_EXTENSION}/source_id`
     );
     const serviceId = canonicalId(
         metadata.service_id,
-        '#/x-cmz-contract/service_id'
+        `#/${CONTRACT_EXTENSION}/service_id`
     );
     const { models, schemaIds } = projectModels(document, sourceId, status);
     const { security_schemes, securityIds } = projectSecurity(
@@ -645,7 +650,7 @@ export function compileOpenApiBackendContract({
         contract: {
             id: canonicalId(
                 metadata.contract_id,
-                '#/x-cmz-contract/contract_id'
+                `#/${CONTRACT_EXTENSION}/contract_id`
             ),
             title: requiredText(document.info?.title, '#/info/title'),
             version: requiredText(document.info?.version, '#/info/version'),

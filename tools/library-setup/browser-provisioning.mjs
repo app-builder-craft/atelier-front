@@ -20,6 +20,8 @@ import {
 import { arch, platform, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
+
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 function fail(message) {
@@ -48,7 +50,7 @@ export function browserCacheRoot(requestedRoot) {
         : realpathSync(tmpdir());
     const root = requestedRoot
         ? join(parent, basename(requestedRoot))
-        : join(parent, 'cmz-library-browser-archives-v2');
+        : join(parent, signatureName('library-browser-archives-v2'));
     if (!existsSync(root)) {
         mkdirSync(root, { mode: 0o700 });
         chmodSync(root, 0o700);

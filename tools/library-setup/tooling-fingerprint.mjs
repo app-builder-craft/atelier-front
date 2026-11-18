@@ -8,6 +8,7 @@ import { qualificationOracleKeys } from './qualification-contracts.mjs';
 const COMMON_QUALIFICATION_SOURCES = [
     'tools/check-library-setup-deps.mjs',
     'tools/check-library-setup.mjs',
+    'tools/generator-platform/core/atelier-signature.mjs',
     'tools/generator-platform/validate-ir.mjs',
     'tools/library-setup/add-library-core.mjs',
     'tools/library-setup/candidate-lease.mjs',

@@ -2,6 +2,7 @@ import { access, lstat, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+    GENERATOR,
     generationTreeSha256,
     sha256,
     stableStringify,
@@ -147,8 +148,8 @@ function validateGenerationManifest(manifest, targetId, targetRoot, label) {
         ]) ||
         manifest.schema_version !== '1.1.0' ||
         !hasExactKeys(manifest.generator, ['name', 'version']) ||
-        manifest.generator.name !== 'cmz-generator-platform' ||
-        manifest.generator.version !== '1.2.0' ||
+        manifest.generator.name !== GENERATOR.name ||
+        manifest.generator.version !== GENERATOR.version ||
         !hasExactKeys(manifest.input, ['model_id', 'sha256']) ||
         typeof manifest.input.model_id !== 'string' ||
         manifest.input.model_id.length === 0 ||

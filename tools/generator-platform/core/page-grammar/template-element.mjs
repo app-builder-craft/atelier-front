@@ -4,6 +4,7 @@
 import * as angular from '@angular/compiler';
 
 import { applicationRoutePattern } from '../application-route-pattern.mjs';
+import { SIGNATURE } from '../atelier-signature.mjs';
 import { isPrototypeName } from './registries.mjs';
 import {
     BOUND_ATTRIBUTES,
@@ -25,7 +26,7 @@ const GLOBAL_ATTRIBUTES = new Set([
     'dir',
     'hidden',
     'tabindex',
-    'data-cmz-id',
+    SIGNATURE.idAttribute,
 ]);
 const INPUT_TYPES = new Set([
     'text',
@@ -139,11 +140,11 @@ Object.assign(TemplateGrammar.prototype, {
             !/^url\(#[A-Za-z][\w-]*\)$/.test(value)
         )
             return this.bad(span, 'H3', `attribute ${name} names a resource`);
-        if (name === 'data-cmz-id' && !this.contract.ids.has(value))
+        if (name === SIGNATURE.idAttribute && !this.contract.ids.has(value))
             this.bad(
                 span,
                 'H3',
-                `data-cmz-id ${JSON.stringify(value)} is not a contract id`
+                `${SIGNATURE.idAttribute} ${JSON.stringify(value)} is not a contract id`
             );
         if (name === 'id') this.ids.add(value);
         if (name === 'dir' && !['ltr', 'rtl', 'auto'].includes(value))

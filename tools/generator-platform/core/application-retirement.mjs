@@ -19,9 +19,14 @@ import {
     runNxGraphGate,
 } from '../../module-lifecycle-nx.mjs';
 import { currentGitIdentity } from '../../workspace-transaction.mjs';
+import {
+    SIGNATURE,
+    SIGNATURE_FILES,
+    signaturePath,
+} from './atelier-signature.mjs';
 import { withGenerationLock } from './generation-transaction.mjs';
 
-const TRANSACTION_ROOT = '.cmz/retire-app-transactions';
+const TRANSACTION_ROOT = signaturePath('retire-app-transactions');
 
 function fail(message) {
     throw new Error(`application retirement: ${message}`);
@@ -92,7 +97,7 @@ async function readOwnedApp(workspaceRoot, appName) {
     let project;
     try {
         manifest = JSON.parse(
-            await readFile(resolve(root, '.cmz/app-manifest.json'), 'utf8')
+            await readFile(resolve(root, SIGNATURE_FILES.appManifest), 'utf8')
         );
         project = JSON.parse(
             await readFile(resolve(root, 'project.json'), 'utf8')
@@ -125,7 +130,10 @@ function externalReferences(workspaceRoot, appName) {
     const tokens = [Buffer.from(`apps/${appName}`), Buffer.from(`${appName}:`)];
     const references = [];
     for (const path of inventory.split('\0').filter(Boolean).sort()) {
-        if (path.startsWith(`apps/${appName}/`) || path.startsWith('.cmz/'))
+        if (
+            path.startsWith(`apps/${appName}/`) ||
+            path.startsWith(`${SIGNATURE.dir}/`)
+        )
             continue;
         const absolute = resolve(workspaceRoot, path);
         try {

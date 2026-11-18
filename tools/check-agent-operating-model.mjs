@@ -6,8 +6,20 @@ import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
 import { validateJsonSchema } from './generator-platform/validate-ir.mjs';
+import {
+    escapeRegExp,
+    internalName,
+} from './generator-platform/core/atelier-signature.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Noms des rôles (skills et agents), dérivés du nom interne de l'atelier.
+const STEWARD = internalName('steward');
+const EXECUTOR = internalName('step-executor');
+const SPECIALIST = internalName('task-specialist');
+const ORCHESTRATOR = internalName('orchestrator');
+// Dépôt d'origine nommé dans les descriptions des adaptateurs Claude.
+const ORIGIN_REPOSITORY = internalName('platform');
 
 export const AGENT_MODEL_FILES = Object.freeze({
     agents: 'AGENTS.md',
@@ -19,43 +31,39 @@ export const AGENT_MODEL_FILES = Object.freeze({
     agentsIndex: 'docs/agents/README.md',
     contract: 'conventions/agents/operating-model.json',
     contractSchema: 'conventions/agents/operating-model.schema.json',
-    steward: '.agents/skills/cmz-steward/SKILL.md',
-    stewardUi: '.agents/skills/cmz-steward/agents/openai.yaml',
-    executor: '.agents/skills/cmz-step-executor/SKILL.md',
-    executorUi: '.agents/skills/cmz-step-executor/agents/openai.yaml',
-    specialist: '.agents/skills/cmz-task-specialist/SKILL.md',
-    specialistUi: '.agents/skills/cmz-task-specialist/agents/openai.yaml',
-    orchestrator: '.agents/skills/cmz-orchestrator/SKILL.md',
-    orchestratorUi: '.agents/skills/cmz-orchestrator/agents/openai.yaml',
-    claudeSteward: '.claude/skills/cmz-steward/SKILL.md',
-    claudeExecutor: '.claude/skills/cmz-step-executor/SKILL.md',
-    claudeSpecialist: '.claude/skills/cmz-task-specialist/SKILL.md',
-    claudeOrchestrator: '.claude/skills/cmz-orchestrator/SKILL.md',
+    steward: `.agents/skills/${STEWARD}/SKILL.md`,
+    stewardUi: `.agents/skills/${STEWARD}/agents/openai.yaml`,
+    executor: `.agents/skills/${EXECUTOR}/SKILL.md`,
+    executorUi: `.agents/skills/${EXECUTOR}/agents/openai.yaml`,
+    specialist: `.agents/skills/${SPECIALIST}/SKILL.md`,
+    specialistUi: `.agents/skills/${SPECIALIST}/agents/openai.yaml`,
+    orchestrator: `.agents/skills/${ORCHESTRATOR}/SKILL.md`,
+    orchestratorUi: `.agents/skills/${ORCHESTRATOR}/agents/openai.yaml`,
+    claudeSteward: `.claude/skills/${STEWARD}/SKILL.md`,
+    claudeExecutor: `.claude/skills/${EXECUTOR}/SKILL.md`,
+    claudeSpecialist: `.claude/skills/${SPECIALIST}/SKILL.md`,
+    claudeOrchestrator: `.claude/skills/${ORCHESTRATOR}/SKILL.md`,
 });
 
-const ROLES = Object.freeze([
-    'cmz-steward',
-    'cmz-step-executor',
-    'cmz-task-specialist',
-    'cmz-orchestrator',
-]);
+const ROLES = Object.freeze([STEWARD, EXECUTOR, SPECIALIST, ORCHESTRATOR]);
+
+// Syntaxe propre à un client (`/<rôle>`) interdite dans les autorités.
+const CLIENT_ROLE_SYNTAX = new RegExp(
+    `\\/(?:${ROLES.map(escapeRegExp).join('|')})\\b`
+);
 
 const CONTRACT_ROLES = Object.freeze({
-    steward: 'cmz-steward',
-    'step-executor': 'cmz-step-executor',
-    'task-specialist': 'cmz-task-specialist',
-    orchestrator: 'cmz-orchestrator',
+    steward: STEWARD,
+    'step-executor': EXECUTOR,
+    'task-specialist': SPECIALIST,
+    orchestrator: ORCHESTRATOR,
 });
 
 const CLAUDE_ADAPTER_DESCRIPTIONS = Object.freeze({
-    'cmz-steward':
-        'Piloter cmz-platform dans la durée depuis ses autorités courantes, son état GitHub vivant et ses preuves, sans décider seul du cap produit.',
-    'cmz-step-executor':
-        'Réaliser une étape cmz-platform déjà validée dans un work order immuable, avec un périmètre fermé et des preuves réfutables.',
-    'cmz-task-specialist':
-        'Diagnostiquer, rechercher, relire ou corriger une tâche cmz-platform précise en restant en lecture seule sauf mode fix explicitement autorisé.',
-    'cmz-orchestrator':
-        "Aider le propriétaire à choisir et contrôler le bon rôle cmz-platform en français simple, sans implémenter ni élargir l'autorité par défaut.",
+    [STEWARD]: `Piloter ${ORIGIN_REPOSITORY} dans la durée depuis ses autorités courantes, son état GitHub vivant et ses preuves, sans décider seul du cap produit.`,
+    [EXECUTOR]: `Réaliser une étape ${ORIGIN_REPOSITORY} déjà validée dans un work order immuable, avec un périmètre fermé et des preuves réfutables.`,
+    [SPECIALIST]: `Diagnostiquer, rechercher, relire ou corriger une tâche ${ORIGIN_REPOSITORY} précise en restant en lecture seule sauf mode fix explicitement autorisé.`,
+    [ORCHESTRATOR]: `Aider le propriétaire à choisir et contrôler le bon rôle ${ORIGIN_REPOSITORY} en français simple, sans implémenter ni élargir l'autorité par défaut.`,
 });
 
 const SLASH_COMMANDS = Object.freeze([
@@ -401,7 +409,7 @@ export function collectAgentModelViolations(documents) {
         );
         requireText(
             'model',
-            `\`${role.replace('cmz-', '')}\``,
+            `\`${role.replace(internalName(''), '')}\``,
             `le modèle opératoire doit définir ${role}`
         );
         requireText(
@@ -469,20 +477,10 @@ export function collectAgentModelViolations(documents) {
     );
 
     const skillChecks = [
-        ['steward', 'stewardUi', 'claudeSteward', 'cmz-steward'],
-        ['executor', 'executorUi', 'claudeExecutor', 'cmz-step-executor'],
-        [
-            'specialist',
-            'specialistUi',
-            'claudeSpecialist',
-            'cmz-task-specialist',
-        ],
-        [
-            'orchestrator',
-            'orchestratorUi',
-            'claudeOrchestrator',
-            'cmz-orchestrator',
-        ],
+        ['steward', 'stewardUi', 'claudeSteward', STEWARD],
+        ['executor', 'executorUi', 'claudeExecutor', EXECUTOR],
+        ['specialist', 'specialistUi', 'claudeSpecialist', SPECIALIST],
+        ['orchestrator', 'orchestratorUi', 'claudeOrchestrator', ORCHESTRATOR],
     ];
     for (const [skillKey, uiKey, claudeKey, name] of skillChecks) {
         const frontmatter = parseSkillFrontmatter(
@@ -616,11 +614,7 @@ export function collectAgentModelViolations(documents) {
         documents.specialist,
         documents.orchestrator,
     ].join('\n');
-    if (
-        /\/(?:cmz-steward|cmz-step-executor|cmz-task-specialist|cmz-orchestrator)\b/.test(
-            canonicalSkillDocs
-        )
-    ) {
+    if (CLIENT_ROLE_SYNTAX.test(canonicalSkillDocs)) {
         violations.push(
             'les autorités canoniques utilisent les noms de rôle, pas la syntaxe propre à un client'
         );

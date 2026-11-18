@@ -19,7 +19,7 @@
  * mais serait détectée ici (la compilation échouerait réellement).
  *
  * Test de significativité intégré : une lib connue pour dépendre
- * réellement d'Angular (`@cmz/core`) est
+ * réellement d'Angular (`<portée interne>/core`) est
  * compilée dans les mêmes conditions et **doit échouer** — sans quoi
  * le test ne prouverait rien (un test destructif qui ne peut jamais
  * détecter la régression qu'il prétend détecter est un test mort).
@@ -60,6 +60,8 @@ import {
     statSync,
 } from 'node:fs';
 import { join, relative } from 'node:path';
+
+import { INTERNAL } from './generator-platform/core/atelier-signature.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const LIBS = join(ROOT, 'libs');
@@ -251,7 +253,7 @@ if (stillCompilingControls.length > 0) {
         `FAIL  test non significatif : ${stillCompilingControls
             .map((c) => c.lib)
             .join(', ')} compile(nt) encore sans Angular alors qu'` +
-            `elle en dépend réellement (@cmz/core). ` +
+            `elle en dépend réellement (${INTERNAL.scope}/core). ` +
             `Le retrait physique n'a pas fonctionné — ne pas faire confiance au ` +
             `résultat ci-dessus tant que ce point n'est pas corrigé.`
     );

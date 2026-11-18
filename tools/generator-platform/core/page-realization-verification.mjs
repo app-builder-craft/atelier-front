@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync } from 'node:fs';
 
 import { validateJsonSchema } from '../validate-ir.mjs';
+import { SIGNATURE } from './atelier-signature.mjs';
 
 function fail(message) {
     throw new Error(`page realization: ${message}`);
@@ -54,7 +55,7 @@ export function validatePageRealizationEvidence({
             );
         const selectors = new Set();
         for (const mapping of mappings) {
-            const expectedSelector = `[data-cmz-id="${mapping.id}"]`;
+            const expectedSelector = `[${SIGNATURE.idAttribute}="${mapping.id}"]`;
             if (mapping.selector !== expectedSelector)
                 violations.push(
                     `$.${category}.${mapping.id}: selector must be ${expectedSelector}`
@@ -64,7 +65,7 @@ export function validatePageRealizationEvidence({
                     `$.${category}: duplicate selector ${mapping.selector}`
                 );
             selectors.add(mapping.selector);
-            if (!markup.includes(`data-cmz-id="${mapping.id}"`))
+            if (!markup.includes(`${SIGNATURE.idAttribute}="${mapping.id}"`))
                 violations.push(
                     `$.${category}.${mapping.id}: selector absent from page markup`
                 );

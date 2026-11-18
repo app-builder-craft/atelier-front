@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { sessionRenderConfiguration } from '../core/application-design-session.mjs';
+import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
 
 export const SESSION_NATIVE_SOURCES = Object.freeze({
     'auth-context.token.ts':
@@ -537,7 +538,7 @@ ${config.routes.map((route) => `    { path: ${JSON.stringify(route.path === '/' 
 }
 
 function sessionWorker() {
-    return `const CACHE = 'cmz-session-static-v1';
+    return `const CACHE = '${productForms(LEGACY_PREFIX).kebab}session-static-v1';
 const STATIC = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 self.addEventListener('install', (event) => { event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC))); });
 self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()); });

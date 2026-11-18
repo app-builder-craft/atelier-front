@@ -11,6 +11,7 @@ import {
     selectSandboxBackend,
 } from '../../library-setup/sandbox.mjs';
 import { qualifyFrozenInstallation } from '../core/application-workspace-toolchain.mjs';
+import { escapeRegExp, toolEnv } from '../core/atelier-signature.mjs';
 import {
     assertPhysicalPath,
     externalApplicationContext,
@@ -96,8 +97,10 @@ export async function proofSession(options) {
 }
 
 // Canal de diagnostic fermé. Un enfant en échec peut écrire n'importe quoi :
-// on ne garde que des lignes `CMZ_DIAG=<genre>:<valeur>` dont la forme est
+// on ne garde que des lignes `${DIAG}=<genre>:<valeur>` dont la forme est
 // fermée par genre, sans jeton, sans affectation de variable et sans chemin.
+const DIAG = toolEnv('DIAG');
+const DIAGNOSTIC_LINE = new RegExp(`^${escapeRegExp(DIAG)}=([a-z]+):(.*)$`);
 const DIAGNOSTIC_KINDS = {
     stage: /^[a-z][a-z0-9-]{0,40}$/,
     http: /^[1-5]\d\d \/[A-Za-z0-9._~%\-/]{0,120}$/,
@@ -131,7 +134,7 @@ const rawLooksSecret = (value) =>
 export function diagnosticLines(output) {
     const lines = [];
     for (const raw of String(output).split(/\r?\n/)) {
-        const found = /^CMZ_DIAG=([a-z]+):(.*)$/.exec(raw);
+        const found = DIAGNOSTIC_LINE.exec(raw);
         if (!found || !DIAGNOSTIC_KINDS[found[1]]?.test(found[2])) continue;
         const value = found[2]
             .replace(/https?:\/\/(?:127\.0\.0\.1|localhost):\d+/g, '<origin>')
@@ -144,7 +147,7 @@ export function diagnosticLines(output) {
         if (['http', 'route'].includes(found[1]) && rawLooksSecret(found[2]))
             continue;
         lines.push(
-            `CMZ_DIAG=${found[1]}:${['http', 'route'].includes(found[1]) ? found[2] : value}`
+            `${DIAG}=${found[1]}:${['http', 'route'].includes(found[1]) ? found[2] : value}`
         );
         if (lines.length === MAX_DIAGNOSTIC_LINES) break;
     }
@@ -172,7 +175,7 @@ export function record(
     if (!expected) {
         // Inputs are fictitious and the child has a clean environment, but
         // retain only diagnostic hashes in the durable report, never env/JSON.
-        // Seules les lignes `CMZ_DIAG=` construites par le script de preuve, et
+        // Seules les lignes de diagnostic construites par le script de preuve, et
         // filtrées ici, sont publiées en plus (CI de la PR #389).
         session.lines.push(`diagnostic_sha256=${hash(output)}`);
         for (const line of diagnosticLines(

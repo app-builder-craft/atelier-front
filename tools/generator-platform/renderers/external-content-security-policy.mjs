@@ -4,7 +4,10 @@
 // encadrer ou être encadrée. La coque la porte dans `src/index.html` (balise
 // meta) et dans un gabarit d'en-tête pour le serveur ; les deux sont générés
 // ici, possédés et scellés (ADR-0103).
-//
+import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
+
+const forms = productForms(LEGACY_PREFIX);
+
 // Topologie A (décision du propriétaire) : l'application et ses services sont
 // joints depuis une seule origine, le serveur relaie `/api/<service>/`.
 // `connect-src 'self'` est donc définitif.
@@ -26,12 +29,12 @@ export const EXTERNAL_CSP_DIRECTIVES = Object.freeze([
     // 'none' refuserait <base href="/"> et casserait le routeur.
     ['base-uri', "'self'"],
     // Trusted Types : ferme innerHTML, insertAdjacentHTML et les scripts par
-    // chaîne ; Angular les prend en charge avec ces deux politiques. `cmz-sw`
-    // est la politique de main.ts pour l'URL exacte du service worker, puits
+    // chaîne ; Angular les prend en charge avec ces deux politiques.
+    // `<préfixe>-sw` est la politique de main.ts pour l'URL exacte du service worker, puits
     // TrustedScriptURL. Pas de 'allow-duplicates' : une seconde création est
     // refusée par le navigateur.
     ['require-trusted-types-for', "'script'"],
-    ['trusted-types', 'angular angular#bundler cmz-sw'],
+    ['trusted-types', `angular angular#bundler ${forms.kebab}sw`],
 ]);
 
 // Ignorées dans une balise meta : en-tête seulement.

@@ -34,6 +34,8 @@
 
 import { execFileSync } from 'node:child_process';
 
+import { INTERNAL } from './generator-platform/core/atelier-signature.mjs';
+
 const VERSION = process.env.LICENSE_CHECKER_VERSION ?? '4.3.0';
 
 /** Licences permissives — aucune obligation au-delà de la notice de copyright. */
@@ -49,7 +51,7 @@ const PERMISSIVE = new Set([
 ]);
 
 /** Ce dépôt lui-même — cohérent avec `"private": true` (package.json). */
-const OWN_PACKAGE = '@cmz/source@0.0.0';
+const OWN_PACKAGE = `${INTERNAL.scope}/source@0.0.0`;
 const OWN_LICENSE = 'UNLICENSED';
 
 /**

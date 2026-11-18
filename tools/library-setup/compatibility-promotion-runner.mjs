@@ -22,6 +22,7 @@ import {
 } from './add-library-core.mjs';
 import { validateCompatibilityMatrices } from './compatibility.mjs';
 import { buildVerificationFromExecution } from './compatibility-promotion.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 function fail(message) {
     throw new Error(`promote-library-compatibility: ${message}`);
@@ -57,7 +58,7 @@ function promotionLockPath(repository) {
     ) {
         fail('.git doit être un vrai répertoire canonique en V1');
     }
-    return join(dotGit, 'cmz-library-promotion.lock');
+    return join(dotGit, signatureName('library-promotion.lock'));
 }
 
 function lockDocument(processProbe) {

@@ -12,6 +12,7 @@ import {
     angularTailwindSources,
     scaffoldTailwind,
 } from '../scaffold-tailwind-core.mjs';
+import { SIGNATURE_FILES } from '../generator-platform/core/atelier-signature.mjs';
 
 const ADAPTER_VERSION = '1.0.0';
 const MATERIAL_THEME = `// Include theming for Angular Material with \`mat.theme()\`.
@@ -143,7 +144,7 @@ function appContext(workspace, app, platform) {
 }
 
 function updateManifest(workspace, appRoot, platform, library) {
-    const path = `${appRoot}/.cmz/libraries.json`;
+    const path = `${appRoot}/${SIGNATURE_FILES.libraries}`;
     const manifest = readJson(workspace, path);
     if (
         manifest.schema_version !== '1.0.0' ||

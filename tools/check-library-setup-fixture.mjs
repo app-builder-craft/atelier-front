@@ -14,6 +14,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from './generator-platform/core/atelier-signature.mjs';
+
 export const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 export const RECIPE_SCHEMA = 'conventions/libraries/library-setup.schema.json';
 export const MANIFEST_SCHEMA =
@@ -101,7 +106,7 @@ export async function scaffold(
     t,
     { recipes = {}, rootPackage, bunLock, apps = {} } = {}
 ) {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-library-setup-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('library-setup-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     await mkdir(join(root, 'conventions/libraries'), { recursive: true });
     await copyFile(join(REPO_ROOT, RECIPE_SCHEMA), join(root, RECIPE_SCHEMA));
@@ -146,7 +151,7 @@ export async function scaffold(
         }
         if (spec.manifest !== null) {
             await write(
-                join(base, '.cmz/libraries.json'),
+                join(base, SIGNATURE_FILES.libraries),
                 spec.manifest ?? manifest()
             );
         }

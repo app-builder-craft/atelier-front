@@ -5,6 +5,7 @@ import { readdir } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
 import { EXTERNAL_WORKSPACE_CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { SIGNATURE_FILES } from './atelier-signature.mjs';
 import {
     installedBin,
     qualifyProductInstallation,
@@ -38,7 +39,7 @@ import {
     withGenerationLock,
 } from './generation-transaction.mjs';
 
-const APP_MANIFEST = '.cmz/app-manifest.json';
+const APP_MANIFEST = SIGNATURE_FILES.appManifest;
 
 function appLocation(options) {
     if (!/^[a-z][a-z0-9-]*$/.test(options.appName ?? ''))
@@ -88,7 +89,9 @@ function assertCoveredPrefix(prefix, files, current) {
         ) &&
             !(
                 /^src\/app\/pages\/page_[a-f0-9]{16}\/$/.test(prefix) &&
-                current.has(`.cmz/pages/${prefix.split('/')[3]}.json`)
+                current.has(
+                    `${SIGNATURE_FILES.pages}/${prefix.split('/')[3]}.json`
+                )
             ))
     )
         externalFailure('publication covered prefix is invalid');
@@ -111,6 +114,40 @@ async function currentApplication(workspace, appName) {
             'utf8'
         );
     return { root, manifest, manifestBytes, files };
+}
+
+// Liaison d'une publication : tout ce que son `plan_id` engage. Exportée,
+// avec `publicationPlanId`, pour recalculer un `plan_id` hors de cette
+// fonction (paliers de non-régression du lot MARQUE) ; seule source de la
+// forme de la liaison.
+export function publicationBinding({
+    workspace,
+    installation,
+    appName,
+    appManifestBytes,
+    tool,
+    inputs,
+    coveredPrefix,
+    changes,
+}) {
+    return {
+        tools_root: workspace.toolsRoot,
+        target_root: workspace.productRoot,
+        workspace_plan_id: workspace.plan_id,
+        provenance: workspace.provenance,
+        lock_sha256: installation.lock_sha256,
+        installed: installation.metadata,
+        app_name: appName,
+        app_manifest_sha256: sha256(appManifestBytes),
+        tool,
+        inputs,
+        covered_prefix: coveredPrefix,
+        changes,
+    };
+}
+
+export function publicationPlanId(binding) {
+    return sha256(stableStringify(binding));
 }
 
 // `internal.recoveringApp` : seulement depuis la reprise sous verrou, pour
@@ -165,21 +202,17 @@ export async function planApplicationPublication(options, internal = {}) {
         changes.some((entry) => entry.before?.sha256 === entry.sha256)
     )
         externalFailure('publication without change');
-    const binding = {
-        tools_root: workspace.toolsRoot,
-        target_root: workspace.productRoot,
-        workspace_plan_id: workspace.plan_id,
-        provenance: workspace.provenance,
-        lock_sha256: installation.lock_sha256,
-        installed: installation.metadata,
-        app_name: options.appName,
-        app_manifest_sha256: sha256(app.manifestBytes),
+    const binding = publicationBinding({
+        workspace,
+        installation,
+        appName: options.appName,
+        appManifestBytes: app.manifestBytes,
         tool: options.tool,
         inputs,
-        covered_prefix: coveredPrefix,
+        coveredPrefix,
         changes,
-    };
-    const planId = sha256(stableStringify(binding));
+    });
+    const planId = publicationPlanId(binding);
     const record = { plan_id: planId, tool: options.tool, files: changes };
     const next = publishedManifest(app.manifest, record, workspaceId);
     const manifestPath = `apps/${options.appName}/${APP_MANIFEST}`;

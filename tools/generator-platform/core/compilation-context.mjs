@@ -8,14 +8,16 @@ import {
     readProductFile,
     safeRelativePath,
 } from './external-application-paths.mjs';
+import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { withGenerationLock } from './generation-transaction.mjs';
 
-const MARKER = '.cmz/application-workspace.json';
+const MARKER = SIGNATURE_FILES.workspaceManifest;
 const COMPILATION_FILES = [
     'tools/compile-backend-contract.mjs',
     'tools/compile-application-design.mjs',
     'tools/generator-platform/core/compilation-context.mjs',
+    'tools/generator-platform/core/atelier-signature.mjs',
     'tools/generator-platform/core/structured-backend-publication.mjs',
     'tools/generator-platform/core/application-design-publication.mjs',
     'tools/generator-platform/core/structured-backend-adapter.mjs',
@@ -37,7 +39,7 @@ const COMPILATION_FILES = [
 const RESERVED_ROOTS = new Set([
     'apps',
     'node_modules',
-    '.cmz',
+    SIGNATURE.dir,
     '.git',
     '.nx',
     '.angular',

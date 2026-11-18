@@ -1,3 +1,4 @@
+import { INTERNAL } from '../core/atelier-signature.mjs';
 import { pascalCase } from './shared.mjs';
 import {
     LIST_QUERY_V2_SUPPORTED_INPUT_PRIMITIVES,
@@ -88,7 +89,7 @@ export function renderAngularListQuerySource(query, binding, external = false) {
           : '';
     const invalidPayloadImport =
         hasInput && !external
-            ? "import { InvalidPayloadError } from '@cmz/shared-domain';\n"
+            ? `import { InvalidPayloadError } from '${INTERNAL.scope}/shared-domain';\n`
             : '';
     const httpImports = [
         'HttpClient',
@@ -221,7 +222,7 @@ function renderFacade(query) {
         ? '                this.lastResolvedPage.set(value);'
         : '                this.lastResolvedItems.set(value);';
     return `import { Service, computed, effect, inject, signal } from '@angular/core';
-import { ResourceFacade, type ResourceStreamContext } from '@cmz/shared-application';
+import { ResourceFacade, type ResourceStreamContext } from '${INTERNAL.scope}/shared-application';
 import { type Observable } from 'rxjs';
 
 import { ${sourceName} } from './${query.id}.source';

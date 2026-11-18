@@ -12,6 +12,8 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { toolEnv } from './core/atelier-signature.mjs';
+
 export const DIGEST_TIMEOUT_MS = 60_000;
 
 export function pinnedNginxImage(dockerfile) {
@@ -35,13 +37,12 @@ export function checkNginxDigest(dockerfile, run = defaultRun) {
     if (!pinned)
         return {
             code: 2,
-            message:
-                'CMZ_NGINX_DIGEST_UNVERIFIABLE image non épinglée par tag et empreinte',
+            message: `${toolEnv('NGINX_DIGEST_UNVERIFIABLE')} image non épinglée par tag et empreinte`,
         };
     const image = `nginx:${pinned.tag}`;
     const unverifiable = {
         code: 2,
-        message: `CMZ_NGINX_DIGEST_UNVERIFIABLE ${image} : vérification impossible`,
+        message: `${toolEnv('NGINX_DIGEST_UNVERIFIABLE')} ${image} : vérification impossible`,
     };
     let result;
     try {
@@ -58,10 +59,10 @@ export function checkNginxDigest(dockerfile, run = defaultRun) {
     ].map((found) => found[1]);
     if (digests.length !== 1) return unverifiable;
     return digests[0] === pinned.digest
-        ? { code: 0, message: `CMZ_NGINX_DIGEST_OK ${image}` }
+        ? { code: 0, message: `${toolEnv('NGINX_DIGEST_OK')} ${image}` }
         : {
               code: 1,
-              message: `CMZ_NGINX_DIGEST_STALE ${image} : empreinte périmée`,
+              message: `${toolEnv('NGINX_DIGEST_STALE')} ${image} : empreinte périmée`,
           };
 }
 

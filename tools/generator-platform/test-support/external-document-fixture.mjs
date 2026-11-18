@@ -9,6 +9,7 @@ import {
     planExternalApplicationShell,
     publishExternalApplicationShell,
 } from '../core/application-workspace.mjs';
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import {
     readProductFile,
     verifyGeneratedTree,
@@ -135,7 +136,7 @@ export async function writeDocumentInputs(root, kind, { shell = false } = {}) {
     assert.ok(DOCUMENT_CASES.includes(kind));
     const marker = JSON.parse(
         (
-            await readProductFile(root, '.cmz/application-workspace.json')
+            await readProductFile(root, SIGNATURE_FILES.workspaceManifest)
         ).toString('utf8')
     );
     await planApplicationWorkspace({
@@ -429,7 +430,7 @@ export async function proveNativeDocumentCell(root, cell, prepared = {}) {
     await verifyGeneratedTree(plan.outputAbsolute, plan.files);
     const manifest = JSON.parse(
         await readFile(
-            join(plan.outputAbsolute, '.cmz/app-manifest.json'),
+            join(plan.outputAbsolute, SIGNATURE_FILES.appManifest),
             'utf8'
         )
     );

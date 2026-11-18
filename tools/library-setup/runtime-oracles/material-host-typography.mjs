@@ -7,6 +7,19 @@ import {
     projectOutputPath,
     removeTree,
 } from './support.mjs';
+import {
+    escapeRegExp,
+    SIGNATURE,
+    signatureName,
+} from '../../generator-platform/core/atelier-signature.mjs';
+
+// Identifiants de la sonde, nommés par la signature de l'atelier.
+const RESULT_ID = signatureName('result');
+const CHILD_ID = signatureName('typography-child');
+const RESULT_PATTERN = new RegExp(
+    `<pre id="${escapeRegExp(RESULT_ID)}">([^<]*)<\\/pre>`
+);
+const BROWSER_PROFILE = `node_modules/${SIGNATURE.dir}-browser-profile`;
 
 const EXPECTED_TYPOGRAPHY = Object.freeze({
     fontFamily: '"CMZ Host Sentinel", serif',
@@ -42,7 +55,7 @@ function fail(message) {
 }
 
 function parseProbe(raw) {
-    const match = /<pre id="cmz-result">([^<]*)<\/pre>/.exec(raw);
+    const match = RESULT_PATTERN.exec(raw);
     if (!match || !match[1].trim()) {
         fail('la sonde de typographie n’a produit aucun résultat exploitable');
     }
@@ -121,8 +134,8 @@ html, body {
     font-weight: 700;
 }
 </style><style>${compiledCss}</style></head><body>
-<span id="cmz-typography-child">preuve typographique</span>
-<pre id="cmz-result"></pre>
+<span id="${CHILD_ID}">preuve typographique</span>
+<pre id="${RESULT_ID}"></pre>
 <script>
 const typography = (element) => {
     const style = getComputedStyle(element);
@@ -133,16 +146,19 @@ const typography = (element) => {
         fontWeight: style.fontWeight,
     };
 };
-document.getElementById('cmz-result').textContent = JSON.stringify({
+document.getElementById('${RESULT_ID}').textContent = JSON.stringify({
     root: typography(document.documentElement),
     body: typography(document.body),
-    child: typography(document.getElementById('cmz-typography-child')),
+    child: typography(document.getElementById('${CHILD_ID}')),
 });
 </script></body></html>`;
 }
 
 function renderProbe(context, output, compiledCss, id) {
-    const probe = join(output, `cmz-host-typography-${id}.html`);
+    const probe = join(
+        output,
+        `${signatureName('host-typography')}-${id}.html`
+    );
     writeFileSync(probe, hostTypographyProbeHtml(compiledCss), { flag: 'wx' });
     const result = context.run({
         backend: context.backend,
@@ -163,7 +179,7 @@ function renderProbe(context, output, compiledCss, id) {
             '--disable-gpu',
             '--no-sandbox',
             '--disable-dev-shm-usage',
-            '--user-data-dir={{candidate}}/node_modules/.cmz-browser-profile',
+            `--user-data-dir={{candidate}}/${BROWSER_PROFILE}`,
             '--dump-dom',
             `file://{{candidate}}/${relative(context.workspace, probe)}`,
         ],

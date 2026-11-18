@@ -1,4 +1,6 @@
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
+import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
 import {
     EXTERNAL_CSP_HEADER_PATH,
     renderCspHeaderTemplate,
@@ -7,10 +9,13 @@ import {
 
 // Disposition unique du produit extérieur, consommée aussi par ses preuves et gardes.
 export const EXTERNAL_WORKSPACE_CMZ = Object.freeze({
-    manifest: '.cmz/application-workspace.json',
-    support: '.cmz/support',
-    proof: '.cmz/proof',
+    manifest: SIGNATURE_FILES.workspaceManifest,
+    support: SIGNATURE_FILES.support,
+    proof: SIGNATURE_FILES.proof,
 });
+
+// Formes du préfixe du produit (politique Trusted Types du service worker).
+const forms = productForms(LEGACY_PREFIX);
 
 export const SHELL_PACKAGES = Object.freeze({
     common: {
@@ -175,7 +180,7 @@ export async function checkWorkspace() {
                     consumers.add(consumer);
                     if (path.includes('/src/')) {
                         const appRoot = path.slice(0, path.indexOf('/src/'));
-                        const app = JSON.parse(ts.sys.readFile(resolve(appRoot, '.cmz/app-manifest.json')) ?? '{}');
+                        const app = JSON.parse(ts.sys.readFile(resolve(appRoot, '${SIGNATURE_FILES.appManifest}')) ?? '{}');
                         if (app.profile === 'angular-pwa') assert.ok(!/^react(?:$|-|\\/)/.test(name), 'Import React dans Angular');
                         if (app.profile === 'react-spa') assert.ok(!name.startsWith('@angular/'), 'Import Angular dans React');
                     }
@@ -189,7 +194,7 @@ export async function checkWorkspace() {
     for (const entry of await readdir(resolve(root, 'apps'), { withFileTypes: true })) {
         if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
         const appRoot = resolve(root, 'apps', entry.name);
-        const app = JSON.parse(await readFile(resolve(appRoot, '.cmz/app-manifest.json'), 'utf8'));
+        const app = JSON.parse(await readFile(resolve(appRoot, '${SIGNATURE_FILES.appManifest}'), 'utf8'));
         profiles.add(app.profile);
         const design = JSON.parse((await verifiedSnapshot(app.design_ref.path, app.design_ref.sha256)).toString('utf8'));
         for (const source of design.sources ?? []) await verifiedSnapshot(source.snapshot_uri, source.sha256);
@@ -430,7 +435,7 @@ export default [
 }
 
 // Coque extérieure : le service worker s'enregistre sous Trusted Types par la
-// politique `cmz-sw`, créée avant tout autre code et locale au module.
+// politique `<préfixe>-sw`, créée avant tout autre code et locale au module.
 const WORKSHOP_MAIN = `import { bootstrapApplication } from '@angular/platform-browser';
 
 import { App } from './app/app';
@@ -454,7 +459,7 @@ import { App } from './app/app';
 import { appConfig } from './app/app.config';
 
 // Politique Trusted Types du service worker (politique de la coque) :
-// \`register\` est un puits TrustedScriptURL. \`cmz-sw\` est créée avant tout
+// \`register\` est un puits TrustedScriptURL. \`${forms.kebab}sw\` est créée avant tout
 // autre code, n'accepte que l'URL exacte du service worker et reste locale à ce
 // module. Si Trusted Types existe et que la création échoue, l'erreur remonte :
 // aucun repli. Sans Trusted Types dans le navigateur, il n'y a pas de puits :
@@ -471,10 +476,10 @@ interface TrustedTypesFactory {
 const SERVICE_WORKER_URL = '/sw.js';
 const serviceWorkerPolicy = (
     globalThis as { trustedTypes?: TrustedTypesFactory }
-).trustedTypes?.createPolicy('cmz-sw', {
+).trustedTypes?.createPolicy('${forms.kebab}sw', {
     createScriptURL: (input) => {
         if (input !== SERVICE_WORKER_URL)
-            throw new TypeError('cmz-sw: service worker URL refused');
+            throw new TypeError('${forms.kebab}sw: service worker URL refused');
         return input;
     },
 });

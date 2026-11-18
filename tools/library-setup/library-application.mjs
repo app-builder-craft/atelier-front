@@ -18,6 +18,10 @@ import {
     applyQualifiedAdapter,
     qualifiedAdapterDescriptor,
 } from './qualified-adapters.mjs';
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 const COMMAND_TIMEOUT_MS = 15 * 60_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -239,7 +243,10 @@ function verifyEvidence(verification) {
 
 function loadQualifiedConfiguration(root, app, library) {
     const { platform, project } = detectPlatform(root, app);
-    const appManifest = readJson(root, `apps/${app}/.cmz/libraries.json`);
+    const appManifest = readJson(
+        root,
+        `apps/${app}/${SIGNATURE_FILES.libraries}`
+    );
     if (
         appManifest.schema_version !== '1.0.0' ||
         appManifest.kind !== 'app-library-manifest' ||
@@ -335,8 +342,8 @@ function assertPublishable(root) {
     if (!branch.startsWith('refs/heads/'))
         fail('branche locale attachée requise');
     for (const path of [
-        '.git/cmz-library.lock',
-        '.git/cmz-library-transaction.json',
+        `.git/${signatureName('library.lock')}`,
+        `.git/${signatureName('library-transaction.json')}`,
     ]) {
         if (existsSync(join(root, path))) {
             fail(`ancienne transaction présente (${path})`);
@@ -350,7 +357,7 @@ function assertPublishable(root) {
 
 function createCandidate(root, head) {
     const parent = mkdtempSync(
-        join(realpathSync(tmpdir()), 'cmz-library-apply-')
+        join(realpathSync(tmpdir()), signatureName('library-apply-'))
     );
     chmodSync(parent, 0o700);
     const workspace = join(parent, 'workspace');
@@ -401,7 +408,9 @@ function installWithoutScripts(workspace) {
     const bun = realpathSync(
         execFileSync('which', ['bun'], { encoding: 'utf8' }).trim()
     );
-    const home = mkdtempSync(join(realpathSync(tmpdir()), 'cmz-library-home-'));
+    const home = mkdtempSync(
+        join(realpathSync(tmpdir()), signatureName('library-home-'))
+    );
     chmodSync(home, 0o700);
     try {
         command(
@@ -423,7 +432,7 @@ function installWithoutScripts(workspace) {
                     LC_ALL: 'C',
                     BUN_INSTALL_CACHE_DIR: join(
                         realpathSync(tmpdir()),
-                        'cmz-library-bun-cache-v1'
+                        signatureName('library-bun-cache-v1')
                     ),
                     GIT_CONFIG_NOSYSTEM: '1',
                     GIT_CONFIG_GLOBAL: '/dev/null',

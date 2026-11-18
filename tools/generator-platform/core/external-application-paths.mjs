@@ -17,8 +17,10 @@ import {
     sep,
 } from 'node:path';
 
+import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { syncTreeDirectories } from './generation-transaction.mjs';
+import { LEGACY_PREFIX, productForms } from './product-identity.mjs';
 
 export function externalFailure(code) {
     throw new Error(`external application: ${code}`);
@@ -77,7 +79,7 @@ export async function assertPhysicalPath(path, { missing = false } = {}) {
 
 async function ownedGitRoot(root) {
     try {
-        const path = resolve(root, '.cmz/application-workspace.json');
+        const path = resolve(root, SIGNATURE_FILES.workspaceManifest);
         await assertPhysicalPath(path);
         const manifest = JSON.parse(await readFile(path, 'utf8'));
         const { workspace_id: workspaceId, ...identity } = manifest;
@@ -275,8 +277,8 @@ export async function verifyGeneratedTree(
 // X4-config : seul le script de validation du relais est exécutable (l'image
 // nginx ignore un .envsh non exécutable) ; tout autre fichier possédé est écrit
 // en 0644.
-const EXECUTABLE_OWNED =
-    /(?:^|\/)deploy\/nginx\/docker-entrypoint\.d\/15-cmz-upstreams\.envsh$/;
+export const RELAY_ENVSH = `deploy/nginx/docker-entrypoint.d/15-${productForms(LEGACY_PREFIX).kebab}upstreams.envsh`;
+const EXECUTABLE_OWNED = new RegExp(`(?:^|/)${escapeRegExp(RELAY_ENVSH)}$`);
 export const ownedFileMode = (path) =>
     EXECUTABLE_OWNED.test(path) ? 0o755 : 0o644;
 

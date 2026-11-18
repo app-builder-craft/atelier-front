@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { cp, readFile, rename, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import {
     planExternalApplicationShell,
     publishExternalApplicationShell,
@@ -18,12 +19,12 @@ import {
     TOOLS_ROOT,
 } from './external-application-fixture.mjs';
 import {
-    CMZ_MODULE_SPECIFIER,
+    INTERNAL_MODULE_SPECIFIER,
     sessionShellOptions,
     writeExternalSessionDesign,
 } from './external-session-fixture.mjs';
 
-export const MANIFEST = '.cmz/app-manifest.json';
+export const MANIFEST = SIGNATURE_FILES.appManifest;
 export const NOTICE = 'src/app/generated/x1-proof/notice.ts';
 
 export async function sessionApp(t, domain, edit) {
@@ -113,10 +114,10 @@ export async function interruptAfterSwap(product, options) {
 }
 
 // T11 : la sortie n'importe que les paquets installés du produit et ses propres
-// fichiers possédés ; aucun module cmz ni chemin de l'atelier.
+// fichiers possédés ; aucun module ni chemin de l'atelier.
 export function assertProductOnlyImports(files, owned) {
     for (const [path, content] of Object.entries(files)) {
-        assert.doesNotMatch(content, CMZ_MODULE_SPECIFIER, path);
+        assert.doesNotMatch(content, INTERNAL_MODULE_SPECIFIER, path);
         assert.equal(content.includes(TOOLS_ROOT), false, path);
         assert.doesNotMatch(content, /\/Users\/|\/private\/|https?:\/\//, path);
         if (!path.endsWith('.ts')) continue;

@@ -6,6 +6,7 @@ import {
     externalFailure,
     safeRelativePath,
 } from './external-application-paths.mjs';
+import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 
 export const OWNERSHIP_SCHEMA_VERSION = '1.0.0';
@@ -68,7 +69,9 @@ const inventoryEntries = (inventory) =>
 
 function pageZone(path, inventory) {
     const match = /^src\/app\/pages\/([^/]+)\/[^/].*$/.exec(path);
-    return Boolean(match && inventory.has(`.cmz/pages/${match[1]}.json`));
+    return Boolean(
+        match && inventory.has(`${SIGNATURE_FILES.pages}/${match[1]}.json`)
+    );
 }
 
 // Zones fermées : ajout sous generated/ ou dans une page déclarée ; remplacement
@@ -76,7 +79,7 @@ function pageZone(path, inventory) {
 export function assertPublicationZone(path, change, inventory, published) {
     safeRelativePath(path);
     if (
-        path.startsWith('.cmz/') ||
+        path.startsWith(`${SIGNATURE.dir}/`) ||
         path.split('/').some((part) => part.startsWith('.'))
     )
         externalFailure('publication outside declared zones');

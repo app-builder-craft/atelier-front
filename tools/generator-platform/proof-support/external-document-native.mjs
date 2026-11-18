@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
+import { toolEnv } from '../core/atelier-signature.mjs';
 import { isWithin } from '../core/external-application-paths.mjs';
 import {
     hash,
@@ -62,9 +63,9 @@ export function nativeCellEnvironment(node, root, cell, contextPath) {
         CI: '1',
         NX_DAEMON: 'false',
         NX_NO_CLOUD: 'true',
-        CMZ_EXT03A_NATIVE_CELL: cell,
-        CMZ_EXT03A_NATIVE_ROOT: root,
-        CMZ_EXT03A_NATIVE_CONTEXT: contextPath,
+        [toolEnv('EXT03A_NATIVE_CELL')]: cell,
+        [toolEnv('EXT03A_NATIVE_ROOT')]: root,
+        [toolEnv('EXT03A_NATIVE_CONTEXT')]: contextPath,
     };
 }
 

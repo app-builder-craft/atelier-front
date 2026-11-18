@@ -5,12 +5,16 @@
 import { pathToFileURL } from 'node:url';
 
 import { recoverApplicationPublication } from './generator-platform/core/application-publication.mjs';
+import { toolEnv } from './generator-platform/core/atelier-signature.mjs';
 import { repositoryRoot } from './generator-platform/validate-ir.mjs';
 
 const GUIDE = 'docs/etape-b/external-application-creation.md';
 
+// Code d'erreur d'usage de la ligne de commande.
+const CLI_USAGE = toolEnv('CLI_USAGE');
+
 function fail(message) {
-    throw Object.assign(new Error(message), { code: 'CMZ_CLI_USAGE' });
+    throw Object.assign(new Error(message), { code: CLI_USAGE });
 }
 
 const DRIFT = {
@@ -72,7 +76,7 @@ if (
 ) {
     main().catch((error) => {
         const known =
-            error.code === 'CMZ_CLI_USAGE' ||
+            error.code === CLI_USAGE ||
             error.message.startsWith('external application:');
         const locked = error.message.startsWith('another generation owns');
         console.error(

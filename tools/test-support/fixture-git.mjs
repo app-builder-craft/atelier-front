@@ -1,10 +1,14 @@
 import { execFileSync } from 'node:child_process';
 
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
+
+const TEST_EMAIL = `${signatureName('test')}@example.invalid`;
+
 const TEST_IDENTITY = Object.freeze({
     GIT_AUTHOR_NAME: 'CMZ Test',
-    GIT_AUTHOR_EMAIL: 'cmz-test@example.invalid',
+    GIT_AUTHOR_EMAIL: TEST_EMAIL,
     GIT_COMMITTER_NAME: 'CMZ Test',
-    GIT_COMMITTER_EMAIL: 'cmz-test@example.invalid',
+    GIT_COMMITTER_EMAIL: TEST_EMAIL,
 });
 
 /**

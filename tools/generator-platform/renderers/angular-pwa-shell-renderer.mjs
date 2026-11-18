@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
+import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
 import { adaptExternalShellFiles } from './application-workspace-renderer.mjs';
 import {
     renderAngularApplicationSession,
@@ -14,6 +16,9 @@ import {
 import { sessionRenderConfiguration } from '../core/application-design-session.mjs';
 import { applicationRoutePattern } from '../core/application-route-pattern.mjs';
 import { renderExternalRelayFiles } from './external-relay-renderer.mjs';
+
+// Formes du préfixe du produit (caches, globale du navigateur).
+const forms = productForms(LEGACY_PREFIX);
 
 function sha256(content) {
     return createHash('sha256').update(content).digest('hex');
@@ -83,7 +88,7 @@ export interface AppAccessPolicy {
 declare global {
     interface Window {
         /** Contexte public injecté par le host avant le bootstrap Angular. */
-        __cmzAppAccessContext?: unknown;
+        ${forms.global}AppAccessContext?: unknown;
     }
 }
 
@@ -129,7 +134,7 @@ export const APP_ACCESS_DECISION = new InjectionToken<AppAccessDecisionPort>(
     {
         providedIn: 'root',
         factory: () =>
-            createBrowserAccessDecision(window.__cmzAppAccessContext),
+            createBrowserAccessDecision(window.${forms.global}AppAccessContext),
     }
 );
 
@@ -350,7 +355,7 @@ export async function renderAngularPwaShell({
     const root = `apps/${appName}`;
     const escapedTitle = escapedMarkup(design.design.title);
     const files = {
-        '.cmz/libraries.json': json({
+        [SIGNATURE_FILES.libraries]: json({
             schema_version: '1.0.0',
             kind: 'app-library-manifest',
             platform: 'angular',
@@ -598,7 +603,7 @@ body {
     <path d="M148 270l70 70 150-168" fill="none" stroke="#fff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" />
 </svg>
 `,
-        'public/sw.js': `const CACHE = 'cmz-shell-v1';
+        'public/sw.js': `const CACHE = '${forms.kebab}shell-v1';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -636,7 +641,7 @@ self.addEventListener('fetch', (event) => {
             page,
             Boolean(experience.session)
         );
-        files[`.cmz/pages/${page.id}.json`] = json(
+        files[`${SIGNATURE_FILES.pages}/${page.id}.json`] = json(
             pageContract(design, experience, page, designPath, designSha256)
         );
     }
@@ -644,7 +649,7 @@ self.addEventListener('fetch', (event) => {
     // manifeste, `check:library-setup` refuse une app fraîchement créée. Le
     // `$localize` appartient au socle Angular généré, pas aux bibliothèques
     // optionnelles. Material et Tailwind restent opt-in via `add-library`.
-    files['.cmz/libraries.json'] = json({
+    files[SIGNATURE_FILES.libraries] = json({
         schema_version: '1.0.0',
         kind: 'app-library-manifest',
         platform: 'angular',
@@ -715,9 +720,9 @@ self.addEventListener('fetch', (event) => {
         ),
     };
     const canonicalManifest = await canonicalizeGeneratedFiles({
-        [`${root}/.cmz/app-manifest.json`]: json(manifest),
+        [`${root}/${SIGNATURE_FILES.appManifest}`]: json(manifest),
     });
-    files['.cmz/app-manifest.json'] =
-        canonicalManifest[`${root}/.cmz/app-manifest.json`];
+    files[SIGNATURE_FILES.appManifest] =
+        canonicalManifest[`${root}/${SIGNATURE_FILES.appManifest}`];
     return { files, manifest, experience, pages };
 }

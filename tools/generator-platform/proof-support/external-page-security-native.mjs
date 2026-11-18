@@ -12,6 +12,11 @@ import { networkInterfaces } from 'node:os';
 import { resolve } from 'node:path';
 
 import {
+    SIGNATURE,
+    signatureName,
+    toolEnv,
+} from '../core/atelier-signature.mjs';
+import {
     planExternalPageRealization,
     publishExternalPageRealization,
 } from '../core/external-page-realization.mjs';
@@ -22,7 +27,8 @@ import {
 } from '../test-support/external-realization-probes.mjs';
 import { SECOND_PROBES } from '../test-support/external-realization-second-probes.mjs';
 
-export const CONFINEMENT_RECORD = 'tmp/cmz-confinement-trap.json';
+export const CONFINEMENT_RECORD = `tmp/${signatureName('confinement-trap')}.json`;
+const PROBE_SECRET = toolEnv('PROBE_SECRET');
 
 // Spec écrite comme un réalisateur hostile : aucun import hors de `vitest`,
 // les modules de Node atteints par `process.getBuiltinModule`, le réseau par
@@ -76,7 +82,7 @@ describe('piège de confinement', () => {
     it('tente de sortir du produit', async () => {
         const root = host.process.cwd();
         const record: Record<string, string> = {
-            sentinel: String(host.process.env['CMZ_PROBE_SECRET']),
+            sentinel: String(host.process.env['${PROBE_SECRET}']),
             readOutside: attempt(() => files.readFileSync(${JSON.stringify(outside)}, 'utf8')),
             writeOutside: attempt(() => files.writeFileSync(${JSON.stringify(`${outside}.written`)}, 'x')),
             writeSources: attempt(() => files.writeFileSync(root + '/apps/confinement-trap.txt', 'x')),
@@ -133,8 +139,8 @@ export async function proveConfinedProductOracle(
         `confinement-witness-${label.replaceAll('/', '-')}.txt`
     );
     await writeFile(outside, 'outside-witness');
-    const previous = process.env.CMZ_PROBE_SECRET;
-    process.env.CMZ_PROBE_SECRET = 'host-secret';
+    const previous = process.env[PROBE_SECRET];
+    process.env[PROBE_SECRET] = 'host-secret';
     try {
         await writeDraft(root, workOrder, {
             ...files,
@@ -170,8 +176,8 @@ export async function proveConfinedProductOracle(
     } finally {
         server.close();
         await rm(outside, { force: true });
-        if (previous === undefined) delete process.env.CMZ_PROBE_SECRET;
-        else process.env.CMZ_PROBE_SECRET = previous;
+        if (previous === undefined) delete process.env[PROBE_SECRET];
+        else process.env[PROBE_SECRET] = previous;
     }
 }
 
@@ -210,7 +216,7 @@ export function cspTrapFixture() {
         [
             'trap-inline',
             'script-src',
-            '<script>window.cmzInline = true;</script>',
+            `<script>window.${SIGNATURE.name}Inline = true;</script>`,
         ],
         [
             'trap-form',

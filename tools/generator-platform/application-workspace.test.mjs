@@ -640,16 +640,17 @@ test('v10 : chemins produit déclarés acceptés, journal inconnu refusé', asyn
     const journal = ['.cmz', 'fixture-journal'].join('/');
     await writeFile(join(root, '.gitignore'), journal + '/\n');
     const paths = [...Object.values(EXTERNAL_WORKSPACE_CMZ), journal];
+    // Décision A du lot MARQUE : un outil nomme un chemin sous le dossier de
+    // signature par `signaturePath('<nom>'…)`, que le contrôle lit.
+    const call = (path) =>
+        `signaturePath(${JSON.stringify(path.split('/').slice(1).join('/'))})`;
     const source = join(root, 'tools/fixture.mjs');
-    await writeFile(source, paths.map(JSON.stringify).join(';\n'));
+    await writeFile(source, paths.map(call).join(';\n'));
     const accepted = verifyCmzJournalsIgnored(root);
     assert.equal(accepted.ok, true, accepted.errors.join('\n'));
     assert.deepEqual(accepted.names, ['fixture-journal']);
     const unknown = ['.cmz', 'undeclared-product'].join('/');
-    await writeFile(
-        source,
-        [...paths, unknown].map(JSON.stringify).join(';\n')
-    );
+    await writeFile(source, [...paths, unknown].map(call).join(';\n'));
     const refused = verifyCmzJournalsIgnored(root);
     assert.equal(refused.ok, false);
     assert.equal(refused.errors.length, 1);

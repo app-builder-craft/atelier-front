@@ -14,6 +14,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    SIGNATURE,
+    SIGNATURE_FILES,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
+
 const SOURCE = realpathSync(fileURLToPath(new URL('../..', import.meta.url)));
 const APP = 'library-composition-proof';
 const DESIGN = 'designs/application-conception-proof.application-design.json';
@@ -115,8 +121,9 @@ function assertLibraryResult(repository, result, library) {
 }
 
 // La gate ne vérifiait que l'historique, le manifeste et l'absence de résidu :
-// elle a donc laissé publier une application dont `.cmz/libraries.json` n'était
-// pas canonique, et c'est `format:check` — bien plus loin, au niveau du dépôt —
+// elle a donc laissé publier une application dont le manifeste de
+// bibliothèques (`SIGNATURE_FILES.libraries`) n'était pas canonique, et c'est
+// `format:check` — bien plus loin, au niveau du dépôt —
 // qui l'a révélé. Le mécanisme manquant est ici : ce que la commande publie
 // doit être canonique là où elle le publie, sinon toute application équipée
 // rend la CI rouge.
@@ -167,7 +174,7 @@ function assertFinalState(repository, baseCommit) {
 
     const manifest = JSON.parse(
         readFileSync(
-            join(repository, 'apps', APP, '.cmz', 'libraries.json'),
+            join(repository, 'apps', APP, SIGNATURE_FILES.libraries),
             'utf8'
         )
     );
@@ -188,7 +195,7 @@ function assertFinalState(repository, baseCommit) {
 function main() {
     assertClean(SOURCE, 'dépôt source');
     const temporaryRoot = mkdtempSync(
-        join(realpathSync(tmpdir()), 'cmz-create-app-library-')
+        join(realpathSync(tmpdir()), signatureName('create-app-library-'))
     );
     chmodSync(temporaryRoot, 0o700);
     const repository = join(temporaryRoot, 'repository');
@@ -221,7 +228,11 @@ function main() {
             );
         }
         git(repository, ['config', 'user.name', 'CMZ Integration Proof']);
-        git(repository, ['config', 'user.email', 'cmz-proof@example.invalid']);
+        git(repository, [
+            'config',
+            'user.email',
+            `${signatureName('proof')}@example.invalid`,
+        ]);
         assertClean(repository, 'clone initial');
 
         console.error('[2/6] dépendances propres du clone');
@@ -306,12 +317,14 @@ function main() {
         const transactionRefs = git(repository, [
             'for-each-ref',
             '--format=%(refname)',
-            'refs/cmz/library-transactions/',
+            `${SIGNATURE.gitRefs}library-transactions/`,
         ]);
         if (
             existsSync(join(repository, `apps/.${APP}.generation-lock`)) ||
-            existsSync(join(gitDirectory, 'cmz-library.lock')) ||
-            existsSync(join(gitDirectory, 'cmz-library-transaction.json')) ||
+            existsSync(join(gitDirectory, signatureName('library.lock'))) ||
+            existsSync(
+                join(gitDirectory, signatureName('library-transaction.json'))
+            ) ||
             transactionRefs
         ) {
             fail('résidu transactionnel dans le dépôt final');

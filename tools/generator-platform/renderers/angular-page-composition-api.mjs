@@ -1,7 +1,11 @@
 // X4-sécurité-3, O-A : table `api` de la composition extérieure, source unique
 // de ses membres publiés (G-A1), et assertion de type générée (G-A5).
 // Profil extérieur seulement : le profil interne n'a ni table ni assertion.
+import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
 import { camelCase } from './shared.mjs';
+
+// Formes du préfixe du produit (valeurs d'exemple de la spec générée).
+const forms = productForms(LEGACY_PREFIX);
 
 // Genres publiés. `read` reste réservé et non ajouté (X5, D-X5-3, R1) : une
 // lecture se publie avec les genres existants, `signal` et `command`.
@@ -232,7 +236,9 @@ export function sampleCommandInput(model) {
                     validation.kind === 'format' &&
                     validation.format === 'email'
             );
-            let value = email ? 'cmz@exemple.test' : 'cmz-contrat';
+            let value = email
+                ? `${forms.prefix}@exemple.test`
+                : `${forms.kebab}contrat`;
             const min = field.constraints?.min_length ?? 0;
             const max = field.constraints?.max_length;
             while (value.length < min) value += 'x';

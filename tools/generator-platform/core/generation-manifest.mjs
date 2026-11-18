@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
 
+import { SIGNATURE } from './atelier-signature.mjs';
+
+// Identité du générateur écrite dans chaque `generation-manifest.json` et
+// relue par `generation-change-set.mjs` : une seule source.
+export const GENERATOR = Object.freeze({
+    name: SIGNATURE.generator,
+    version: '1.2.0',
+});
+
 export function stableStringify(value) {
     if (Array.isArray(value)) {
         return `[${value.map(stableStringify).join(',')}]`;
@@ -86,7 +95,7 @@ export function buildGenerationManifest(
         });
     return {
         schema_version: '1.1.0',
-        generator: { name: 'cmz-generator-platform', version: '1.2.0' },
+        generator: { name: GENERATOR.name, version: GENERATOR.version },
         input: {
             model_id: artifactPlan.input.model_id,
             sha256: modelSha256,

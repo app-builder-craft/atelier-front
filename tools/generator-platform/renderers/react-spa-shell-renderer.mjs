@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
+import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
 import { adaptExternalShellFiles } from './application-workspace-renderer.mjs';
+
+// Formes du préfixe du produit (globale du navigateur).
+const forms = productForms(LEGACY_PREFIX);
 
 function sha256(content) {
     return createHash('sha256').update(content).digest('hex');
@@ -78,7 +83,7 @@ export interface AppAccessPolicy {
 declare global {
     interface Window {
         /** Contexte public injecté par le host avant le bootstrap React. */
-        __cmzAppAccessContext?: unknown;
+        ${forms.global}AppAccessContext?: unknown;
     }
 }
 
@@ -143,7 +148,7 @@ export function AppAccessGate({
     children: ReactNode;
 }) {
     const decision = createBrowserAccessDecision(
-        window.__cmzAppAccessContext
+        window.${forms.global}AppAccessContext
     );
     if (evaluateAppAccess(policy, decision)) return children;
 
@@ -312,7 +317,7 @@ export async function renderReactSpaShell({
     const root = `apps/${appName}`;
     const escapedTitle = escapedMarkup(design.design.title);
     const files = {
-        '.cmz/libraries.json': json({
+        [SIGNATURE_FILES.libraries]: json({
             schema_version: '1.0.0',
             kind: 'app-library-manifest',
             platform: 'react',
@@ -498,7 +503,7 @@ body {
     };
     for (const page of pages) {
         files[`src/app/pages/${page.id}/page.tsx`] = placeholderPage(page);
-        files[`.cmz/pages/${page.id}.json`] = json(
+        files[`${SIGNATURE_FILES.pages}/${page.id}.json`] = json(
             pageContract(design, experience, page, designPath, designSha256)
         );
     }
@@ -538,9 +543,9 @@ body {
         ),
     };
     const canonicalManifest = await canonicalizeGeneratedFiles({
-        [`${root}/.cmz/app-manifest.json`]: json(manifest),
+        [`${root}/${SIGNATURE_FILES.appManifest}`]: json(manifest),
     });
-    files['.cmz/app-manifest.json'] =
-        canonicalManifest[`${root}/.cmz/app-manifest.json`];
+    files[SIGNATURE_FILES.appManifest] =
+        canonicalManifest[`${root}/${SIGNATURE_FILES.appManifest}`];
     return { files, manifest, experience, pages };
 }

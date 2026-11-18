@@ -20,6 +20,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { INTERNAL } from './generator-platform/core/atelier-signature.mjs';
+
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const PROBE_REL = 'libs/shared/domain/src/lib/__boundary-negative.probe.ts';
 const PROBE_ABS = join(ROOT, PROBE_REL);
@@ -79,7 +81,7 @@ function runEslintOnProbe() {
 
 const PROBE_SOURCE = [
     '// Sonde temporaire — check-boundary-negative.mjs (ne pas committer).',
-    "import { SKIP_AUTH } from '@cmz/core';",
+    `import { SKIP_AUTH } from '${INTERNAL.scope}/core';`,
     '',
     'export const boundaryNegativeProbe = SKIP_AUTH;',
     '',

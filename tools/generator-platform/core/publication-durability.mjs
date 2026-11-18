@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
+import { SIGNATURE } from './atelier-signature.mjs';
 import {
     commitDirectoryTransaction,
     syncTreeDirectories,
@@ -348,7 +349,9 @@ export function selectPublicationFilesystemProfile(contract, detected) {
 }
 
 export async function probePublicationFilesystem(root = tmpdir()) {
-    const probeRoot = await mkdtemp(resolve(root, '.cmz-publication-probe-'));
+    const probeRoot = await mkdtemp(
+        resolve(root, `${SIGNATURE.dir}-publication-probe-`)
+    );
     const outputRoot = resolve(probeRoot, 'output');
     const transactionRoot = resolve(probeRoot, 'transaction');
     const candidateRoot = resolve(transactionRoot, 'candidate');

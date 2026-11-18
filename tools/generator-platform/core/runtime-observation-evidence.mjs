@@ -4,6 +4,7 @@ import { dirname, isAbsolute, resolve, sep } from 'node:path';
 import { isDeepStrictEqual, TextDecoder } from 'node:util';
 
 import { repositoryRoot, validateJsonSchema } from '../validate-ir.mjs';
+import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
 import {
     assertPhysicalPath,
     isWithin,
@@ -28,12 +29,12 @@ export const OBSERVATION_LIMITS = Object.freeze({
     shapeWidth: 32,
 });
 
-const MARKER = '.cmz/application-workspace.json';
+const MARKER = SIGNATURE_FILES.workspaceManifest;
 const SCHEMAS = 'tools/generator-platform/schemas/';
 const RESERVED = new Set([
     'apps',
     'node_modules',
-    '.cmz',
+    SIGNATURE.dir,
     '.git',
     '.nx',
     '.angular',

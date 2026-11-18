@@ -6,6 +6,7 @@
 // produit (ADR-0103).
 import { resolve } from 'node:path';
 
+import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { resolveRealizationContract } from './page-realization.mjs';
 import { resolvePageRealizationTarget } from './page-realization-files.mjs';
 import {
@@ -90,7 +91,7 @@ const RULES = Object.freeze([
     'A (submit) method is typed false and uses only the non-throwing forms of rule S1 and S2, ending with return false.',
     'The template passes ref.value or literals to page methods, never $event; routerLink is a static declared route.',
     'The stylesheet loads nothing and names no resource: no url(), no @import, no @font-face, no ::ng-deep.',
-    'Map every contract id to one exact static data-cmz-id selector in the template; add no other data-cmz-id.',
+    `Map every contract id to one exact static ${SIGNATURE.idAttribute} selector in the template; add no other ${SIGNATURE.idAttribute}.`,
     'Keep keyboard, screen-reader, loading, error and offline behavior explicit.',
     'The product compiler, build, lint and tests decide; a failure publishes nothing.',
 ]);
@@ -203,7 +204,7 @@ async function mountableComposition(app, appName, pageId, options) {
 // Bon de travail déterministe : même état de l'application, mêmes octets.
 async function buildWorkOrder(app, appName, pageId, toolsRoot, options) {
     assertPageId(pageId);
-    const contractPath = `.cmz/pages/${pageId}.json`;
+    const contractPath = `${SIGNATURE_FILES.pages}/${pageId}.json`;
     if (!app.manifest.generated_files.some(({ path }) => path === contractPath))
         externalFailure('page is not declared by the application');
     const contractDocument = await ownedAppFile(app, contractPath);

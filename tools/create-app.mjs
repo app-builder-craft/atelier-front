@@ -7,10 +7,14 @@ import {
     publicApplicationShellResult,
     publishApplicationShell,
 } from './generator-platform/core/application-shell-publication.mjs';
+import { toolEnv } from './generator-platform/core/atelier-signature.mjs';
 import { loadJson, repositoryRoot } from './generator-platform/validate-ir.mjs';
 
+// Code d'erreur d'usage de la ligne de commande.
+const CLI_USAGE = toolEnv('CLI_USAGE');
+
 function fail(message) {
-    throw Object.assign(new Error(message), { code: 'CMZ_CLI_USAGE' });
+    throw Object.assign(new Error(message), { code: CLI_USAGE });
 }
 
 export function parseArgs(argv) {
@@ -138,7 +142,7 @@ if (
     main().catch((error) => {
         const external = process.argv.includes('--target-root');
         const known =
-            error.code === 'CMZ_CLI_USAGE' ||
+            error.code === CLI_USAGE ||
             error.message.startsWith('external application:') ||
             error.message.startsWith('library dependency resolution:');
         const message =

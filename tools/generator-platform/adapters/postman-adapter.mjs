@@ -1,14 +1,17 @@
+import { SIGNATURE } from '../core/atelier-signature.mjs';
 import { validateBackendContract } from '../core/backend-contract.mjs';
 
 const POSTMAN_SCHEMA =
     'https://schema.getpostman.com/json/collection/v2.1.0/collection.json';
+// Variables de collection de la signature de l'atelier (conventions d'entrée).
+const metadataVariable = (name) => `${SIGNATURE.postmanVariable}${name}`;
 const METADATA_VARIABLES = [
-    'cmz_contract_id',
-    'cmz_contract_version',
-    'cmz_environment',
-    'cmz_service_id',
-    'cmz_source_id',
-];
+    'contract_id',
+    'contract_version',
+    'environment',
+    'service_id',
+    'source_id',
+].map(metadataVariable);
 
 function fail(path, message) {
     throw new Error(`Postman ${path}: ${message}`);
@@ -320,12 +323,12 @@ export function compilePostmanBackendContract({
         fail('#/info/schema', 'Postman Collection v2.1.0 is required');
     const variables = collectionVariables(document);
     const sourceId = canonicalId(
-        variables.get('cmz_source_id'),
-        '#/variable/cmz_source_id'
+        variables.get(metadataVariable('source_id')),
+        `#/variable/${metadataVariable('source_id')}`
     );
     const serviceId = canonicalId(
-        variables.get('cmz_service_id'),
-        '#/variable/cmz_service_id'
+        variables.get(metadataVariable('service_id')),
+        `#/variable/${metadataVariable('service_id')}`
     );
     const description = text(document.info.description, '#/info/description');
     const flattened = flattenItems(document.item, document.auth);
@@ -400,13 +403,13 @@ export function compilePostmanBackendContract({
         kind: 'backend-contract',
         contract: {
             id: canonicalId(
-                variables.get('cmz_contract_id'),
-                '#/variable/cmz_contract_id'
+                variables.get(metadataVariable('contract_id')),
+                `#/variable/${metadataVariable('contract_id')}`
             ),
             title: text(document.info.name, '#/info/name'),
             version: text(
-                variables.get('cmz_contract_version'),
-                '#/variable/cmz_contract_version'
+                variables.get(metadataVariable('contract_version')),
+                `#/variable/${metadataVariable('contract_version')}`
             ),
             status: 'reference',
             description,
@@ -429,8 +432,8 @@ export function compilePostmanBackendContract({
                 base_urls: [
                     {
                         environment: canonicalId(
-                            variables.get('cmz_environment'),
-                            '#/variable/cmz_environment'
+                            variables.get(metadataVariable('environment')),
+                            `#/variable/${metadataVariable('environment')}`
                         ),
                         url: normalizedBaseUrl(variables.get('baseUrl')),
                     },

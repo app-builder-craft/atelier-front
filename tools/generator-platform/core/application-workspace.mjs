@@ -10,6 +10,7 @@ import {
 } from '../renderers/application-workspace-renderer.mjs';
 import { nxConfinementEnvironment } from '../../library-setup/sandbox.mjs';
 import { validateApplicationDesignWithDependencies } from './application-design.mjs';
+import { SIGNATURE_FILES } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import { runConfinedProductCommand } from './external-product-confinement.mjs';
 import {
@@ -94,7 +95,7 @@ async function workspaceSnapshot(context, options, profiles) {
         externalFailure('workspace ownership drift');
     const { workspace_id: identity, ...fields } = manifest;
     if (
-        identity !== sha256(stableStringify(fields)) ||
+        identity !== workspaceId(fields) ||
         stableStringify(profiles) !== stableStringify(manifest.profiles) ||
         options.githubRepository !== manifest.github_repository ||
         options.reviewOwner !== manifest.review_owner
@@ -111,6 +112,31 @@ async function workspaceSnapshot(context, options, profiles) {
 // Public workspace creation and shell generation retain strict ownership.
 // `internal.recoveringApp` est réservé à la reprise sous verrou d'une
 // publication (application-publication.mjs) ; ce n'est pas une option publique.
+// Identifiant de l'espace produit : empreinte de ses champs déclarés.
+export function workspaceId(fields) {
+    return sha256(stableStringify(fields));
+}
+
+// `plan_id` de l'espace : chemins, identifiant, provenance du générateur et
+// fichiers. Exporté pour le recalcul des paliers du lot MARQUE.
+export function workspacePlanId({
+    toolsRoot,
+    productRoot,
+    workspaceId: id,
+    provenance,
+    files,
+}) {
+    return sha256(
+        stableStringify({
+            tools_root: toolsRoot,
+            target_root: productRoot,
+            workspace_id: id,
+            provenance,
+            files: fileArtifacts(files),
+        })
+    );
+}
+
 export async function planApplicationWorkspace(options, internal = {}) {
     return planWorkspace(options, false, internal);
 }
@@ -154,7 +180,7 @@ async function planWorkspace(options, documentSources, internal = {}) {
         };
         const manifest = {
             ...fields,
-            workspace_id: sha256(stableStringify(fields)),
+            workspace_id: workspaceId(fields),
         };
         if (
             validateJsonSchema(
@@ -175,15 +201,13 @@ async function planWorkspace(options, documentSources, internal = {}) {
         );
         snapshot = { files, manifest };
     }
-    const planId = sha256(
-        stableStringify({
-            tools_root: context.toolsRoot,
-            target_root: context.productRoot,
-            workspace_id: snapshot.manifest.workspace_id,
-            provenance,
-            files: fileArtifacts(snapshot.files),
-        })
-    );
+    const planId = workspacePlanId({
+        toolsRoot: context.toolsRoot,
+        productRoot: context.productRoot,
+        workspaceId: snapshot.manifest.workspace_id,
+        provenance,
+        files: snapshot.files,
+    });
     const plan = {
         ...context,
         ...snapshot,
@@ -360,12 +384,12 @@ export async function planExternalApplicationShell(options) {
         profile,
     });
     // ADR-0103 : le manifeste de la coque extérieure naît scellé au produit.
-    const manifestPath = `apps/${options.appName}/.cmz/app-manifest.json`;
+    const manifestPath = `apps/${options.appName}/${SIGNATURE_FILES.appManifest}`;
     const sealed = sealShellManifest(
-        JSON.parse(rendered.files['.cmz/app-manifest.json']),
+        JSON.parse(rendered.files[SIGNATURE_FILES.appManifest]),
         workspace.manifest.workspace_id
     );
-    rendered.files['.cmz/app-manifest.json'] = (
+    rendered.files[SIGNATURE_FILES.appManifest] = (
         await canonicalizeGeneratedFiles({
             [manifestPath]: JSON.stringify(sealed, null, 2) + '\n',
         })

@@ -4,6 +4,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { chromium } from '@playwright/test';
 
+import { toolEnv } from '../../../tools/generator-platform/core/atelier-signature.mjs';
+
 const root = dirname(fileURLToPath(import.meta.url));
 const source = resolve(root, 'mockup.html');
 const cases = [
@@ -26,9 +28,10 @@ const cases = [
     },
 ];
 
-if (process.env.CMZ_WRITE_COMPACT_LAYOUT_EXAMPLES !== '1') {
+const WRITE_GUARD = toolEnv('WRITE_COMPACT_LAYOUT_EXAMPLES');
+if (process.env[WRITE_GUARD] !== '1') {
     throw new Error(
-        'Refus d’écrire les exemples Compact sans CMZ_WRITE_COMPACT_LAYOUT_EXAMPLES=1.'
+        `Refus d’écrire les exemples Compact sans ${WRITE_GUARD}=1.`
     );
 }
 

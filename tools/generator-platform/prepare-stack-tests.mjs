@@ -11,6 +11,7 @@ import {
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SIGNATURE, SIGNATURE_FILES } from './core/atelier-signature.mjs';
 import { computeAngularPageCompositionTarget } from './page-composition-targets.mjs';
 import {
     createApplicationSessionFixture,
@@ -155,7 +156,7 @@ async function prepareSessionTestWorkspace() {
     assert.equal(project.targets.test.options.watch, false);
     assert.equal(
         project.targets.test.options.runnerConfig,
-        '.cmz/support/angular-unit-test.config.mjs'
+        `${SIGNATURE_FILES.support}/angular-unit-test.config.mjs`
     );
     const include = sessionSpecs.map((name) => resolve(view, specRoot, name));
     project.targets.test.options = {
@@ -428,7 +429,8 @@ if (target === 'angular') {
             assert.ok(
                 testPaths.every(
                     (path) =>
-                        !path.startsWith('.cmz/') && !path.startsWith('public/')
+                        !path.startsWith(`${SIGNATURE.dir}/`) &&
+                        !path.startsWith('public/')
                 ),
                 'session test target must not contain product metadata or assets'
             );

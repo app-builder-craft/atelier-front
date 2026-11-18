@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// X4-config, preuves 8 et 10, et politique `cmz-sw` : la coque construite par
+// X4-config, preuves 8 et 10, et politique `<p>-sw` : la coque construite par
 // la preuve native, servie par le relais nginx, ouverte par son Chromium.
 //   10 : Trusted Types et politique exacte en en-tête, meta présente, aucune
 //        violation au chargement ;
@@ -7,7 +7,7 @@
 //        nouveau document au rechargement ; cache conforme à la variante
 //        déclarée par la conception de la coque (table fermée) ; hors ligne,
 //        serveur réellement arrêté, document servi par le service worker ;
-//   cmz-sw : seconde création refusée, nom hors liste refusé ; innerHTML et
+//   <p>-sw : seconde création refusée, nom hors liste refusé ; innerHTML et
 //        new Worker par chaîne toujours bloqués.
 // Usage : --browser-proof-root <racine d'une preuve native>.
 import assert from 'node:assert/strict';
@@ -30,9 +30,19 @@ import {
     stopRelay,
     withRelay,
 } from './check-nginx-relay.mjs';
+import {
+    SIGNATURE,
+    SIGNATURE_FILES,
+    signatureName,
+} from './core/atelier-signature.mjs';
+import { LEGACY_PREFIX, productForms } from './core/product-identity.mjs';
 import { EXTERNAL_CSP_HEADER } from './renderers/external-content-security-policy.mjs';
 
 const READY_TIMEOUT_MS = 15_000;
+const forms = productForms(LEGACY_PREFIX);
+// Globale d'instrumentation du harnais et marqueur de redéploiement.
+const VIOLATIONS = `__${SIGNATURE.name}Violations`;
+const DEPLOY = signatureName('deploy');
 // Composant routé : le premier enfant d'app-root est le router-outlet, caché.
 const ROUTED = 'app-root router-outlet + *';
 export const SW_CACHES_API = `
@@ -60,7 +70,7 @@ export const EXPECTATIONS = {
     'session:none': {
         cache: (cached) =>
             assert.deepEqual(cached, [
-                ['cmz-session-static-v1', SHELL_ENTRIES],
+                [`${forms.kebab}session-static-v1`, SHELL_ENTRIES],
             ]),
         offlineDeploy: 0,
         bootsOffline: false,
@@ -70,7 +80,7 @@ export const EXPECTATIONS = {
     'shell:none': {
         cache: (cached, files) => {
             assert.equal(cached.length, 1);
-            assert.equal(cached[0][0], 'cmz-shell-v1');
+            assert.equal(cached[0][0], `${forms.kebab}shell-v1`);
             const entries = cached[0][1];
             for (const entry of SHELL_ENTRIES)
                 assert.ok(entries.includes(entry), entry);
@@ -112,17 +122,18 @@ export async function runShellBrowserChecks(
         }
     };
     const context = await launched.newContext();
-    await context.addInitScript(() => {
+    await context.addInitScript((name) => {
         const violations = [];
-        Object.defineProperty(globalThis, '__cmzViolations', {
+        Object.defineProperty(globalThis, name, {
             value: violations,
         });
         document.addEventListener('securitypolicyviolation', (event) =>
             violations.push(`${event.effectiveDirective} ${event.sample}`)
         );
-    });
+    }, VIOLATIONS);
     const page = await context.newPage();
-    const violations = () => page.evaluate(() => globalThis.__cmzViolations);
+    const violations = () =>
+        page.evaluate((name) => globalThis[name], VIOLATIONS);
     try {
         await check('10-trusted-types-on-nginx', async () => {
             const response = await page.goto(origin + '/');
@@ -167,7 +178,7 @@ export async function runShellBrowserChecks(
             await server.update((index) =>
                 index.replace(
                     '</head>',
-                    '<meta name="cmz-deploy" content="2"></head>'
+                    `<meta name="${DEPLOY}" content="2"></head>`
                 )
             );
             await page.reload();
@@ -176,7 +187,7 @@ export async function runShellBrowserChecks(
                 .first()
                 .waitFor({ timeout: READY_TIMEOUT_MS });
             assert.equal(
-                await page.locator('meta[name="cmz-deploy"]').count(),
+                await page.locator(`meta[name="${DEPLOY}"]`).count(),
                 1
             );
             assert.equal(
@@ -187,21 +198,27 @@ export async function runShellBrowserChecks(
             );
             assert.deepEqual(await violations(), []);
         });
-        await check('cmz-sw-policy-closed', async () => {
-            const outcome = await page.evaluate(() => {
-                const attempt = (name) => {
-                    try {
-                        globalThis.trustedTypes.createPolicy(name, {});
-                        return 'created';
-                    } catch (error) {
-                        return error.name;
-                    }
-                };
-                return {
-                    duplicate: attempt('cmz-sw'),
-                    unlisted: attempt('cmz-other'),
-                };
-            });
+        await check(`${forms.kebab}sw-policy-closed`, async () => {
+            const outcome = await page.evaluate(
+                (names) => {
+                    const attempt = (name) => {
+                        try {
+                            globalThis.trustedTypes.createPolicy(name, {});
+                            return 'created';
+                        } catch (error) {
+                            return error.name;
+                        }
+                    };
+                    return {
+                        duplicate: attempt(names.duplicate),
+                        unlisted: attempt(names.unlisted),
+                    };
+                },
+                {
+                    duplicate: `${forms.kebab}sw`,
+                    unlisted: `${forms.kebab}other`,
+                }
+            );
             assert.deepEqual(outcome, {
                 duplicate: 'TypeError',
                 unlisted: 'TypeError',
@@ -287,7 +304,7 @@ export async function runShellBrowserChecks(
                 'servi par le service worker'
             );
             assert.equal(
-                await page.locator('meta[name="cmz-deploy"]').count(),
+                await page.locator(`meta[name="${DEPLOY}"]`).count(),
                 expectation.offlineDeploy
             );
             if (expectation.bootsOffline)
@@ -313,7 +330,7 @@ export async function runShellBrowserChecks(
 export async function shellVariant(product, app) {
     const manifest = JSON.parse(
         await readFile(
-            join(product, 'apps', app, '.cmz', 'app-manifest.json'),
+            join(product, 'apps', app, SIGNATURE_FILES.appManifest),
             'utf8'
         )
     );
@@ -377,7 +394,7 @@ export async function runRelayBrowserChecks({
     mutateServiceWorker = false,
 }) {
     const { files, table } = await relayFixture();
-    const root = await mkdtemp(join(tmpdir(), 'cmz-nginx-browser-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('nginx-browser-')));
     try {
         await stage(root, files);
         await rm(join(root, 'html'), { recursive: true, force: true });

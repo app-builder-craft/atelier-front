@@ -25,6 +25,7 @@ import {
     readGitTree,
     verifyMaterializedTree,
 } from './git-tree.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const ID_PATTERN = /^[a-f0-9]{32}$/;
 const LEASE_MODE = 0o700;
@@ -138,7 +139,10 @@ function assertRealDirectory(path, expectedMode, label) {
 }
 
 export function ensureLeaseRoot(
-    requestedRoot = join(realpathSync(tmpdir()), 'cmz-library-candidates')
+    requestedRoot = join(
+        realpathSync(tmpdir()),
+        signatureName('library-candidates')
+    )
 ) {
     const parent = realpathSync(dirname(resolve(requestedRoot)));
     const root = join(parent, basename(requestedRoot));

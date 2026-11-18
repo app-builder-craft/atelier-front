@@ -13,6 +13,7 @@ import {
     planExternalPagePlan,
     publishExternalPagePlan,
 } from '../core/external-page-plan.mjs';
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { verifyGeneratedTree } from '../core/external-application-paths.mjs';
 import { TOOLS_ROOT } from '../test-support/external-application-fixture.mjs';
 import { assertProductOnlyImports } from '../test-support/external-publication-fixture.mjs';
@@ -71,7 +72,7 @@ export async function proveNativePageComposition(session, shell) {
         options
     );
     // T11 : imports limités au produit ; la commande consommée est celle de X2.
-    const manifest = JSON.parse(plan.files['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
     assertProductOnlyImports(
         Object.fromEntries(
             plan.changes.map(({ path }) => [path, plan.files[path]])

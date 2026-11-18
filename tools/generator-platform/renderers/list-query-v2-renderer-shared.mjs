@@ -1,3 +1,4 @@
+import { INTERNAL } from '../core/atelier-signature.mjs';
 import { externalQueryErrors } from '../core/list-query-external-profile.mjs';
 import { pascalCase } from './shared.mjs';
 
@@ -206,7 +207,7 @@ ${constraints}
 export function renderListQueryV2Decoder(
     query,
     renderer,
-    errorsModule = '@cmz/shared-domain'
+    errorsModule = `${INTERNAL.scope}/shared-domain`
 ) {
     const decoderName = `decode${pascalCase(query.id)}Response`;
     // X5 C2 : un décodeur extérieur ignore les champs non lus.

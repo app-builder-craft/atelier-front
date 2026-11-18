@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * check:cmz-journals-ignored — tout journal d'outil sous `<dépôt>/.cmz/` doit
- * être ignoré par Git.
+ * Contrôle des journaux d'outil : tout journal d'outil rangé sous le dossier de
+ * signature du dépôt (`SIGNATURE.dir`) doit être ignoré par Git.
  *
  * Un journal d'exécution non ignoré rend le dépôt sale et peut faire échouer une
  * publication transactionnelle après les étapes coûteuses. Ce contrôle dérive
- * donc la liste depuis le CODE — les segments `.cmz/<nom>` littéraux des outils — et
- * exige que chacun soit ignoré, sauf ceux qui sont relatifs à une app et donc
- * gouvernés, listés ici explicitement. Un nouveau journal non ignoré échoue
- * sans que personne ait à y penser.
+ * donc la liste depuis le CODE : un chemin sous le dossier de signature ne
+ * s'écrit que par `signaturePath('<nom>', …)` (le contrôle des sources uniques
+ * refuse le littéral), et chaque `<nom>` d'outil ainsi appelé doit être
+ * ignoré, sauf ceux qui sont relatifs à une app ou au produit, donc gouvernés.
+ * Un nouveau journal non ignoré échoue sans que personne ait à y penser ; un
+ * balayage vide échoue aussi (fermé par défaut).
  */
 import { execFileSync } from 'node:child_process';
 import {
@@ -21,39 +23,43 @@ import {
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    internalName,
+    SIGNATURE,
+} from './generator-platform/core/atelier-signature.mjs';
 import { EXTERNAL_WORKSPACE_CMZ } from './generator-platform/renderers/application-workspace-renderer.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 /**
- * Répertoires `.cmz/` portés par une APPLICATION (`apps/<app>/.cmz/…`), donc
- * versionnés : ce sont des artefacts gouvernés, pas des journaux d'exécution.
+ * Répertoires de signature portés par une APPLICATION (`apps/<app>/<dir>/…`),
+ * donc versionnés : ce sont des artefacts gouvernés, pas des journaux
+ * d'exécution.
  */
 export const APP_SCOPED = new Set(['app-manifest', 'libraries', 'pages']);
 
 const PRODUCT_SCOPED = new Set(
     Object.values(EXTERNAL_WORKSPACE_CMZ).map(
-        (path) => path.match(/^\.cmz\/([a-z][a-z0-9-]*)/)[1]
+        (path) =>
+            path.slice(SIGNATURE.dir.length + 1).match(/^([a-z][a-z0-9-]*)/)[1]
     )
 );
 
-// `.cmz/<nom>` désigne un répertoire de journal ; `.cmz/<nom>.<ext>` est un
-// fichier. Le nom doit être complet : ni `.`, ni caractère de nom ensuite,
-// sinon `escape.txt` donnerait `escape`, ou, par retour arrière, `escap`.
-const CMZ_DIRECTORY = /\.cmz\/([a-z][a-z0-9-]*)(?![\w.-])/g;
-
-const SELF_TEST = 'tools/check-cmz-journals-ignored.test.mjs';
+// `signaturePath('<nom>'…)` désigne un répertoire de journal ;
+// `signaturePath('<nom>.<ext>')` est un fichier. Le nom doit être complet et
+// littéral : la quote fermante suit immédiatement, sinon `escape.txt`
+// donnerait `escape`.
+const JOURNAL_CALL = /\bsignaturePath\(\s*(['"`])([a-z][a-z0-9-]*)\1\s*[,)]/g;
 
 export function cmzDirectoryNames(source) {
-    return [...source.matchAll(CMZ_DIRECTORY)].map(([, name]) => name);
+    return [...source.matchAll(JOURNAL_CALL)].map(([, , name]) => name);
 }
 
 export function scanCmzDirectories(root = ROOT) {
     const names = new Set();
     for (const file of globSync('tools/**/*.mjs', { cwd: root })) {
-        // Ses propres contre-tests portent des chemins d'exemple, pas des
-        // journaux d'outil.
-        if (file === SELF_TEST) continue;
+        // Les tests portent des noms d'exemple, pas des journaux d'outil.
+        if (file.endsWith('.test.mjs')) continue;
         const source = readFileSync(join(root, file), 'utf8');
         for (const name of cmzDirectoryNames(source)) {
             if (!APP_SCOPED.has(name) && !PRODUCT_SCOPED.has(name))
@@ -74,24 +80,26 @@ export function ignoredByGit(root, relativePath) {
     }
 }
 
+const PROBE = `${SIGNATURE.dir}-ignore-probe`;
+
 export function verifyCmzJournalsIgnored(root = ROOT) {
     const errors = [];
     const names = scanCmzDirectories(root);
     if (names.length === 0)
-        errors.push('aucun journal .cmz détecté — scan cassé');
+        errors.push(`aucun journal ${SIGNATURE.dir} détecté — scan cassé`);
     for (const name of names) {
         // `check-ignore` répond sur un chemin, existant ou non ; on crée une
         // sonde réelle pour couvrir aussi les motifs qui exigent un fichier.
-        const probeDirectory = join(root, '.cmz', name);
-        const probe = join(probeDirectory, '.cmz-ignore-probe');
+        const probeDirectory = join(root, SIGNATURE.dir, name);
+        const probe = join(probeDirectory, PROBE);
         let created = false;
         try {
             mkdirSync(probeDirectory, { recursive: true });
             writeFileSync(probe, '');
             created = true;
-            if (!ignoredByGit(root, `.cmz/${name}/.cmz-ignore-probe`)) {
+            if (!ignoredByGit(root, `${SIGNATURE.dir}/${name}/${PROBE}`)) {
                 errors.push(
-                    `.cmz/${name}/ n'est pas ignoré par Git : ce journal salirait le dépôt et ferait échouer la publication`
+                    `${SIGNATURE.dir}/${name}/ n'est pas ignoré par Git : ce journal salirait le dépôt et ferait échouer la publication`
                 );
             }
         } finally {
@@ -105,12 +113,12 @@ export function verifyCmzJournalsIgnored(root = ROOT) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const result = verifyCmzJournalsIgnored();
     if (!result.ok) {
-        console.error('\n❌ Journaux .cmz non ignorés :');
+        console.error(`\n❌ Journaux ${SIGNATURE.dir} non ignorés :`);
         for (const error of result.errors) console.error(`  - ${error}`);
         process.exitCode = 1;
     } else {
         console.log(
-            `✔ check:cmz-journals-ignored — ${result.names.length} journal(aux) d'outil sous .cmz/, tous ignorés par Git.`
+            `✔ check:${internalName('journals-ignored')} — ${result.names.length} journal(aux) d'outil sous ${SIGNATURE.dir}/, tous ignorés par Git.`
         );
     }
 }

@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 
 import { EXTERNAL_WORKSPACE_CMZ as CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { signatureName } from '../core/atelier-signature.mjs';
 import {
     assertPhysicalPath,
     assertSourceWeight,
@@ -222,7 +223,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const source = ${JSON.stringify(TOOLS_ROOT)};
 const require = createRequire(import.meta.url);
-for (const root of [source, '/cmz-repository-0']) {
+for (const root of [source, '/${signatureName('repository-0')}']) {
     let readable = false;
     try { readFileSync(root + '/package.json'); readable = true; } catch {}
     assert.equal(readable, false, 'Lecture atelier autorisée');

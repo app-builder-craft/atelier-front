@@ -21,7 +21,8 @@
  * Sécurité : toute lecture — recette, schéma, fichier d'app, lockfile — est
  * confinée sous la racine du dépôt et traverse ZÉRO lien symbolique (lstat par
  * segment, y compris le dossier d'app lui-même). Toute app avec un `project.json`
- * régulier DOIT déclarer `.cmz/libraries.json`. Une plateforme indéterminable
+ * régulier DOIT déclarer son manifeste de bibliothèques
+ * (`SIGNATURE_FILES.libraries`). Une plateforme indéterminable
  * échoue. Fail-closed.
  */
 import { globSync, lstatSync, readFileSync } from 'node:fs';
@@ -45,6 +46,7 @@ import {
 } from './check-library-setup-deps.mjs';
 import { validateJsonSchema } from './generator-platform/validate-ir.mjs';
 import { RUNTIME_ORACLE_KEYS } from './library-setup/runtime-proofs.mjs';
+import { SIGNATURE_FILES } from './generator-platform/core/atelier-signature.mjs';
 
 export { verifyResolvedVersion } from './check-library-setup-deps.mjs';
 
@@ -565,10 +567,10 @@ export function verifyApps(rootAbs = ROOT, recipes) {
             continue;
         }
 
-        const manifestRelative = `${appRelative}/.cmz/libraries.json`;
+        const manifestRelative = `${appRelative}/${SIGNATURE_FILES.libraries}`;
         const manifestGuard = resolveReal(
             root,
-            `${appRelative}/.cmz/libraries.json`,
+            `${appRelative}/${SIGNATURE_FILES.libraries}`,
             'file'
         );
         if (manifestGuard.error) {
@@ -624,7 +626,7 @@ export function verifyApps(rootAbs = ROOT, recipes) {
 }
 
 function verifyAppManifest(root, appRelative, manifest, recipes, errors) {
-    const manifestRelative = `${appRelative}/.cmz/libraries.json`;
+    const manifestRelative = `${appRelative}/${SIGNATURE_FILES.libraries}`;
     const declared = new Set(manifest.libraries);
 
     for (const libraryId of manifest.libraries) {

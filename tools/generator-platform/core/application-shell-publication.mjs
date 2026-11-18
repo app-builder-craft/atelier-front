@@ -258,6 +258,17 @@ async function verifyPublishedApp({
     }
 }
 
+// Empreinte de l'arbre rendu de la coque : chemins triés et empreintes des
+// contenus. Exportée pour le recalcul des paliers du lot MARQUE.
+export function shellTreeSha256(files) {
+    return sha256(
+        Object.entries(files)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([path, content]) => `${path}\0${sha256(content)}`)
+            .join('\0')
+    );
+}
+
 export async function planApplicationShell({
     workspaceRoot,
     targetRoot,
@@ -309,12 +320,7 @@ export async function planApplicationShell({
         designPath: source.relative,
         designSha256,
     });
-    const treeSha256 = sha256(
-        Object.entries(rendered.files)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([path, content]) => `${path}\0${sha256(content)}`)
-            .join('\0')
-    );
+    const treeSha256 = shellTreeSha256(rendered.files);
     const planId = sha256(
         JSON.stringify({
             app_name: appName,

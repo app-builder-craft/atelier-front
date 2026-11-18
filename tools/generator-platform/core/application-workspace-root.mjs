@@ -7,6 +7,11 @@ import { resolve } from 'node:path';
 import { EXTERNAL_WORKSPACE_CMZ } from '../renderers/application-workspace-renderer.mjs';
 import { verifyApplicationOwnership } from './application-ownership.mjs';
 import {
+    escapeRegExp,
+    SIGNATURE,
+    SIGNATURE_FILES,
+} from './atelier-signature.mjs';
+import {
     assertNoLocalConfiguration,
     assertPhysicalPath,
     externalApplicationContext,
@@ -19,6 +24,10 @@ import {
 import { sha256 } from './generation-manifest.mjs';
 
 const MANIFEST = EXTERNAL_WORKSPACE_CMZ.manifest;
+// Espaces de noms réservés à la racine du produit.
+const RESERVED_NAMESPACE = new RegExp(
+    `^(?:apps|node_modules|${escapeRegExp(SIGNATURE.dir)}|\\.git|\\.nx|\\.angular|dist|coverage|tmp)/`
+);
 
 // Racine d'un produit déjà créé : racine vérifiée, puis marqueur présent. Sans
 // marqueur, refus fermé plutôt qu'une erreur système portant un chemin local.
@@ -78,9 +87,9 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
             externalFailure('unowned app entry');
         const appRoot = resolve(productRoot, 'apps', entry.name);
         const app = JSON.parse(
-            (await readProductFile(appRoot, '.cmz/app-manifest.json')).toString(
-                'utf8'
-            )
+            (
+                await readProductFile(appRoot, SIGNATURE_FILES.appManifest)
+            ).toString('utf8')
         );
         if (app.app_name !== entry.name || !plan.profiles.includes(app.profile))
             externalFailure('unowned app manifest');
@@ -100,9 +109,9 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         ))
             inputs.add(input.path);
         const files = await ownedFiles(appRoot, app.generated_files);
-        files['.cmz/app-manifest.json'] = await readProductFile(
+        files[SIGNATURE_FILES.appManifest] = await readProductFile(
             appRoot,
-            '.cmz/app-manifest.json'
+            SIGNATURE_FILES.appManifest
         );
         await verifyGeneratedTree(appRoot, files);
     }
@@ -186,12 +195,7 @@ export function inputFilePath(path) {
         'README.md',
         'AGENTS.md',
     ]);
-    if (
-        reserved.has(path) ||
-        /^(?:apps|node_modules|\.cmz|\.git|\.nx|\.angular|dist|coverage|tmp)\//.test(
-            path
-        )
-    )
+    if (reserved.has(path) || RESERVED_NAMESPACE.test(path))
         externalFailure('input collides with reserved workspace namespace');
     return path;
 }

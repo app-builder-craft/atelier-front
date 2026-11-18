@@ -22,6 +22,13 @@ import {
 } from './external-page-realization-structure.mjs';
 import { validatePageRealizationEvidence } from './page-realization-verification.mjs';
 import { pageGrammarViolations } from './page-grammar/index.mjs';
+import {
+    escapeRegExp as escapePattern,
+    SIGNATURE,
+} from './atelier-signature.mjs';
+
+// Ancre DOM de la grammaire, réservée au gabarit.
+const ID_ATTRIBUTE = new RegExp(escapePattern(SIGNATURE.idAttribute), 'i');
 
 // Motifs lexicaux de première intention, sur tous les fichiers de code : ils
 // nomment l'erreur ordinaire d'un réalisateur de bonne foi.
@@ -314,10 +321,10 @@ export function realizationViolations({
         );
     if (
         text['page.component.ts'] !== undefined &&
-        /data-cmz-id/i.test(text['page.component.ts'])
+        ID_ATTRIBUTE.test(text['page.component.ts'])
     )
         violations.push(
-            'data-cmz-id belongs to the template, not page.component.ts'
+            `${SIGNATURE.idAttribute} belongs to the template, not page.component.ts`
         );
     const markupFiles = Object.keys(text).filter(
         (name) => /\.(?:ts|html)$/.test(name) && !name.endsWith('.spec.ts')
