@@ -73,11 +73,17 @@ export async function assertDesignPrefix({ toolsRoot, design, fail }) {
 // Produit extérieur : le préfixe n'a qu'une source, son espace. Une
 // conception qui déclare `identity.prefix` est refusée, même égal au préfixe
 // scellé : liée par `design_ref.sha256`, une telle déclaration ne pourrait ni
-// changer ni resservir après un renommage (cadrage § 19, point 7).
-export function assertSealedPrefix(design, sealed) {
+// changer ni resservir après un renommage (cadrage § 19, point 7). Le même
+// refus nommé vaut à la compilation d'une conception dans un produit et à la
+// création d'une coque.
+export function assertNoProductDesignPrefix(design) {
     if (design?.design?.identity !== undefined)
         externalFailure(
             'PRODUCT_PREFIX_IN_DESIGN: an external product design must not declare identity.prefix; the prefix is sealed in the workspace'
         );
+}
+
+export function assertSealedPrefix(design, sealed) {
+    assertNoProductDesignPrefix(design);
     return sealed;
 }

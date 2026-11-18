@@ -21,6 +21,7 @@ import {
     publicApplicationWorkspacePlan,
     publishApplicationWorkspace,
 } from './core/application-workspace.mjs';
+import { planApplicationDesignPublication } from './core/application-design-publication.mjs';
 import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 import { pathExists } from './core/external-application-paths.mjs';
 import {
@@ -46,6 +47,10 @@ import {
     createApplicationSessionFixture,
     SESSION_FIXTURE_DOMAINS,
 } from './test-support/application-session-fixture.mjs';
+import {
+    compileDocumentFixture,
+    documentFixture,
+} from './test-support/external-document-fixture.mjs';
 import {
     fixtureParent,
     schemas,
@@ -346,6 +351,47 @@ test('produit extérieur : le préfixe n’a qu’une source, l’espace ; une c
             options.designPath
         );
     assert.deepEqual(await snapshotTree(fixture.root), before);
+});
+
+test('produit extérieur : la compilation d’une conception qui déclare identity.prefix est refusée, même refus nommé', async (t) => {
+    const fixture = await documentFixture(t, 'A');
+    await compileDocumentFixture(fixture);
+    // Conception 1.2.0 qui porte le préfixe scellé, compilée dans le produit.
+    const sourcePath = `${fixture.prefix}/design-source-declaring.json`;
+    await writeFile(
+        join(fixture.root, sourcePath),
+        `${JSON.stringify(withProductPrefix(fixture.design, FIXTURE_PREFIX), null, 2)}\n`,
+        { flag: 'wx' }
+    );
+    const before = await snapshotTree(fixture.root);
+    await assert.rejects(
+        planApplicationDesignPublication({
+            workspaceRoot: TOOLS_ROOT,
+            targetRoot: fixture.root,
+            sourcePath,
+            outputPath: `${fixture.prefix}/application-design-declaring.json`,
+            applicationDesignSchema: fixture.applicationDesignSchema,
+            backendContractSchema: fixture.backendContractSchema,
+        }),
+        /PRODUCT_PREFIX_IN_DESIGN: an external product design must not declare identity\.prefix; the prefix is sealed in the workspace/
+    );
+    assert.deepEqual(await snapshotTree(fixture.root), before);
+    // La même source, sans la déclaration, se compile toujours.
+    const plain = `${fixture.prefix}/design-source-plain.json`;
+    await writeFile(
+        join(fixture.root, plain),
+        `${JSON.stringify(fixture.design, null, 2)}\n`,
+        { flag: 'wx' }
+    );
+    const plan = await planApplicationDesignPublication({
+        workspaceRoot: TOOLS_ROOT,
+        targetRoot: fixture.root,
+        sourcePath: plain,
+        outputPath: `${fixture.prefix}/application-design-plain.json`,
+        applicationDesignSchema: fixture.applicationDesignSchema,
+        backendContractSchema: fixture.backendContractSchema,
+    });
+    assert.match(plan.plan_id, /^[a-f0-9]{64}$/);
 });
 
 test('banc interne : préfixe obligatoire dans la conception 1.2.0, réservés refusés, schéma fermé', async (t) => {
