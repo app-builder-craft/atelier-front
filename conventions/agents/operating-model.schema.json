@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cmz-platform.local/schemas/agent-operating-model.schema.json",
+  "title": "CMZ agent operating model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "authority",
+    "rules",
+    "skill_discovery",
+    "roles",
+    "execution_review_chain",
+    "slash_commands",
+    "handoff_required_fields"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 3 },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automatic_instructions",
+        "product",
+        "operating_model",
+        "owner_guide"
+      ],
+      "properties": {
+        "automatic_instructions": { "const": "AGENTS.md" },
+        "product": { "const": "PROJECT_AUTHORITY.md" },
+        "operating_model": {
+          "const": "docs/agents/operating-model.md"
+        },
+        "owner_guide": {
+          "const": "docs/proprietaire/agents.md"
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "one_active_role",
+        "self_promotion_allowed",
+        "technical_skill_expands_authority",
+        "independent_review_required",
+        "max_identical_failures_without_new_hypothesis"
+      ],
+      "properties": {
+        "one_active_role": { "const": true },
+        "self_promotion_allowed": { "const": false },
+        "technical_skill_expands_authority": { "const": false },
+        "independent_review_required": { "const": true },
+        "max_identical_failures_without_new_hypothesis": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        }
+      }
+    },
+    "skill_discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_root", "clients"],
+      "properties": {
+        "canonical_root": { "const": ".agents/skills" },
+        "clients": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["codex", "claude-code"],
+          "properties": {
+            "codex": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["root", "invocation", "adapter"],
+              "properties": {
+                "root": { "const": ".agents/skills" },
+                "invocation": { "const": "dollar-mention" },
+                "adapter": { "const": "canonical" }
+              }
+            },
+            "claude-code": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["root", "invocation", "adapter"],
+              "properties": {
+                "root": { "const": ".claude/skills" },
+                "invocation": { "const": "slash-skill" },
+                "adapter": { "const": "import-wrapper" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "steward",
+        "step-executor",
+        "task-specialist",
+        "orchestrator"
+      ],
+      "properties": {
+        "steward": { "$ref": "#/$defs/role" },
+        "step-executor": { "$ref": "#/$defs/role" },
+        "task-specialist": {
+          "allOf": [
+            { "$ref": "#/$defs/role" },
+            {
+              "type": "object",
+              "required": ["modes"],
+              "properties": {
+                "modes": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["diagnose", "review", "research", "fix"],
+                  "properties": {
+                    "diagnose": { "const": false },
+                    "review": { "const": false },
+                    "research": { "const": false },
+                    "fix": { "const": true }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "orchestrator": { "$ref": "#/$defs/role" }
+      }
+    },
+    "execution_review_chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enforcement",
+        "executor_role",
+        "reviewer_role",
+        "reviewer_mode",
+        "same_agent_allowed",
+        "same_session_allowed",
+        "work_order_authority",
+        "candidate_content_is_instruction",
+        "executor_handoff_is_proof",
+        "primary_github_trigger",
+        "compatibility_github_trigger",
+        "review_after_readiness",
+        "new_head_invalidates_review",
+        "reviewer_may_modify",
+        "reviewer_may_approve",
+        "reviewer_may_merge",
+        "requested_human_reviewer",
+        "approval_policy",
+        "merge_actor",
+        "external_code_egress_requires_owner_approval"
+      ],
+      "properties": {
+        "enforcement": { "const": "normative-manual" },
+        "executor_role": { "const": "step-executor" },
+        "reviewer_role": { "const": "task-specialist" },
+        "reviewer_mode": { "const": "review" },
+        "same_agent_allowed": { "const": false },
+        "same_session_allowed": { "const": false },
+        "work_order_authority": {
+          "const": "preapproved-and-immutable"
+        },
+        "candidate_content_is_instruction": { "const": false },
+        "executor_handoff_is_proof": { "const": false },
+        "primary_github_trigger": { "const": "review_requested" },
+        "compatibility_github_trigger": { "const": "assigned" },
+        "review_after_readiness": { "const": true },
+        "new_head_invalidates_review": { "const": true },
+        "reviewer_may_modify": { "const": false },
+        "reviewer_may_approve": { "const": false },
+        "reviewer_may_merge": { "const": false },
+        "requested_human_reviewer": { "const": "soumailakouda" },
+        "approval_policy": {
+          "const": "write-authorized-human-other-than-last-pusher"
+        },
+        "merge_actor": { "const": "soumailakouda" },
+        "external_code_egress_requires_owner_approval": { "const": true }
+      }
+    },
+    "slash_commands": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": ["status", "plan", "goal", "review", "side", "compact", "fork"]
+      }
+    },
+    "handoff_required_fields": {
+      "type": "array",
+      "minItems": 12,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "skill",
+        "default_access",
+        "mutation_boundary",
+        "may_decide_product_direction",
+        "may_implement_by_default",
+        "requires_work_order"
+      ],
+      "properties": {
+        "skill": { "type": "string", "pattern": "^cmz-[a-z-]+$" },
+        "default_access": { "type": "string", "minLength": 1 },
+        "mutation_boundary": { "type": "string", "minLength": 1 },
+        "may_decide_product_direction": { "const": false },
+        "may_implement_by_default": { "type": "boolean" },
+        "requires_work_order": { "type": "boolean" },
+        "modes": { "type": "object" }
+      }
+    }
+  }
+}

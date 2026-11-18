@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "library": "tailwind",
+  "platform": "react",
+  "tracks": [
+    {
+      "id": "react-19-tailwind-4-vite-8",
+      "status": "verified",
+      "requirements": {
+        "node": ">=26.12.0 <27",
+        "bun": ">=1.3.14 <2",
+        "nx": ">=24.0.3 <25",
+        "framework": ">=19.3.0 <20"
+      },
+      "packages": {
+        "@tailwindcss/vite": "4.3.3",
+        "tailwindcss": "4.3.3"
+      },
+      "dependency_section": "devDependencies",
+      "catalog": "default",
+      "reason": "Piste officielle Tailwind 4 via le plugin Vite, qualifiée pour React 19 et Vite 8.",
+      "verification": {
+        "schema_version": "1.3.0",
+        "commit": "8d089decc0497a8cc38f9e3ef6e462eea731756c",
+        "source_context_sha256": "c744965384fe4d17d37937ddba37bc471668363eff06f7a2e17a0806ebf317d6",
+        "app": "library-qualification-react",
+        "plan_id": "library-plan:595e9e8569662a5c4766d880b240ec6ce8022c0828a4faf360c4e2db64a8f1d6",
+        "change_set_id": "changes:e7586328c94a5cc2a1e2bbdbfa955c216628af8b5d4163425153d087f7c7495e",
+        "app_tree_sha256": "4ba9854888b3a6d774b73cb55f33baa870731a4b7a521e153609b16cef6df08a",
+        "track_sha256": "bb1f0e720b1efcd48bae3f531f595ba3f49901dd3c785dc5f0190994bae19f5f",
+        "tested_versions": {
+          "node": "26.13.1",
+          "bun": "1.4.4",
+          "nx": "24.0.3",
+          "framework": "19.3.1",
+          "packages": {
+            "@tailwindcss/vite": "4.3.3",
+            "tailwindcss": "4.3.3"
+          }
+        },
+        "dependency_state_sha256": {
+          "initial": "78d9d928d454d673bd21ad497639fb402035de66e8849c7150af76c28a9bdec7",
+          "final": "51308bdefe26780032e8c7ad7f40d668f83d74a8fd75ee06a531827b67a09db4"
+        },
+        "proofs": [
+          "offline-production-build",
+          "sentinel-class-emits-rule"
+        ],
+        "qualified_adapter": {
+          "schema_version": "1.0.0",
+          "id": "react/tailwind@1",
+          "inputs_sha256": {
+            "conventions/libraries/react/tailwind.template.css": "27ce92c272f4281074b2f58b697899f7b591b5382f97281df75096044d58eb4f",
+            "conventions/presentation/tailwind-theme.css": "956d9573a41853800e631134b883233ec411a66be7fbd26c7f00855fb50ec14d",
+            "tools/library-setup/qualified-adapters.mjs": "07df1d713c78d2bbc7991db9e3aab419b9de3265945c26c3eb474480d29a17d9",
+            "tools/scaffold-tailwind-core.mjs": "06d92e42a01d159c790920b4a63adaf308ea10bc7f5fc1f8982b36caa6586550"
+          },
+          "digest_sha256": "ca1bbae22a45563c199812db5020d7c926f697005f88236a257f070138b8823d",
+          "change_set_id": "changes:e7586328c94a5cc2a1e2bbdbfa955c216628af8b5d4163425153d087f7c7495e"
+        },
+        "inputs_sha256": {
+          "recipe": "e036262dcb245f54a296897124076e53f9b3c3a4ed3bcdcf4b87339f912dbf76",
+          "recipe_schema": "37e2ef056403547abc8955d42bc804e5f24a16f9779f9693856c14ac16a6e6c9",
+          "compat_schema": "086134ad4b213328416aacaa2e96d845b8ba74773052238d3bee877e9bb22245",
+          "policy": "0214979004c123e0fd06b8310df7fd1bba208ab4e3b46c8f634a0eb690a2567e",
+          "policy_schema": "a71cc60b0692e3704ac8f09847b202af9da92453c7de486f09d0106ff3db0c96",
+          "nx_json": "2b063f2ef79648e0c4f74a4d8ff3fa8d60f21d981c673bf9587dbca33c8d2cf0",
+          "tsconfig": "98e36daf937b243db90c46db46ba63350c9d6e78ae272d988285002fb31afd4f",
+          "gitattributes": "e85a53f73d839eb277369785d6a2faf052a642126ad001cb3b85b8ffcfbd272d",
+          "proof_contracts": "b5aeced95a3d0fb950ae5e9f2bca8aff0dbd205d9ac4254dec61c2936c310526",
+          "runner": "12ad03f1d4081abaddd909093cc22ddcc8640833d96831108db2717b482f4be5",
+          "runner_sources": {
+            "tools/check-library-setup-deps.mjs": "3fd82a88564c9e29174f3d6310eabafe3d327fded02d323a8f2e1a9567514b05",
+            "tools/check-library-setup.mjs": "10d9bc018ef6a61c49c15150c8075d61a25aa326f9333b0cc5b19d2f2b51a1a3",
+            "tools/generator-platform/validate-ir.mjs": "e35740a645af5df10ecfb245ea101cbe644ba0a568d1e96b0261bcf70167efa7",
+            "tools/library-setup/add-library-core.mjs": "de190423863bdc41125086087beb0d149957a921d7d746ead995807e8c424bb1",
+            "tools/library-setup/candidate-lease.mjs": "309d571289839a3d50683ba91221d03af959f1d1af1238a2fb87e64d2cadefa4",
+            "tools/library-setup/compatibility-promotion-runner.mjs": "826b0b8e5358651b3ae68b8fbbd8361ab5452e3a123efa978889f0a980c1f7c6",
+            "tools/library-setup/compatibility-promotion.mjs": "a16e528e6fd2ca22257cd5c45c7186264416489f6b20ffc6d895825cf3dad16f",
+            "tools/library-setup/compatibility.mjs": "4da95d700d280f36b5f3243dcdaa49bc6eb626704d7a7ff4140c2e5b07a25a2c",
+            "tools/library-setup/dependency-resolution.mjs": "079dd875146201ebfff2a76b17cfb35da64298ea8cf593ab39f181ea4e7d67e8",
+            "tools/library-setup/filesystem-snapshot.mjs": "5811c240d74f7b9f3cb355f3cba1b4a8de966f575fbb9ef632ff89149401fd2b",
+            "tools/library-setup/git-tree.mjs": "85f94f5f09adc9eee6798af4859766f9192443cf05ea7e0811b07dc2005f74c8",
+            "tools/library-setup/install-protocol.mjs": "a9bba03808b743b7df6c7c646ced2b138e03828e142fdae35dacbc8db69aa0ce",
+            "tools/library-setup/library-plan.mjs": "1505b63ac1e2524ef492b74e510e9e3011f179c888a8a9f354467c8414052990",
+            "tools/library-setup/publication-transaction.mjs": "c321fabf31846425530ef845527c0fa5a58610c49a12cc32326f58f81b140790",
+            "tools/library-setup/qualification-contracts.mjs": "02819658acf19c890e8fda535100aa63ca57ac6ef6a03c094933dfee79756955",
+            "tools/library-setup/qualified-adapters.mjs": "07df1d713c78d2bbc7991db9e3aab419b9de3265945c26c3eb474480d29a17d9",
+            "tools/library-setup/recipe-execution.mjs": "02428e8149e3fee79eb9a2a982b99962af2e6ab31004f7907823febdc39f22d6",
+            "tools/library-setup/resolution-policy.mjs": "b78cccdb1db18b9c3de3af958c5ca0844245525a9a6cd9d995b2d24f06db1da4",
+            "tools/library-setup/runtime-oracles/production-build.mjs": "a4e323a13b60236100ebc40605e937083e29784d38d4055f0109db17caafd3ea",
+            "tools/library-setup/runtime-oracles/support.mjs": "05123e716c838738f409d7c5de78d9121be01aa6567c0a75f4211e8ce3298639",
+            "tools/library-setup/runtime-oracles/tailwind-sentinel.mjs": "eab5d08b739442aef13cf9aa58b519a578da1f50328e518802a1ff304f8cb36d",
+            "tools/library-setup/runtime-proofs.mjs": "a902f0135349d6c7e1fe951585d36092596e90130f1e15462bab08dbbee1afba",
+            "tools/library-setup/sandbox.mjs": "68ea096d8bd3626e6c4a51aed196fe3e925fbe730ec089ce5426628f0f88dc62",
+            "tools/library-setup/tooling-fingerprint.mjs": "29110b4d51d71af0735073fcadeb30845fe4743222197fa3e15520daf2f12514",
+            "tools/scaffold-tailwind.mjs": "e12cd0be13839fc2177930d56fdfe1032ec5acdddfe8b0c34e9f134bc071200d"
+          }
+        },
+        "evidence_sha256": "42dc4061ce22ad97aa9033458b5558331afbe56aebe911735a47d4bb721f605e"
+      }
+    }
+  ]
+}

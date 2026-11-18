@@ -1,0 +1,178 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+
+import {
+    commandExplanation,
+    EXPLAINED_COMMANDS,
+    formatCommandExplanation,
+} from './command-explanations.mjs';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const RUNBOOK = 'docs/proprietaire/produit.md';
+const TOP_LEVEL_KEYS = [
+    'schema_version',
+    'command',
+    'summary',
+    'runbook',
+    'invocations',
+    'ownership',
+    'phases',
+    'checks',
+    'transaction',
+];
+const EXPECTED_PHASES = {
+    'prepare:application-workspace': [
+        'preconditions',
+        'render',
+        'publication',
+        'ownership',
+    ],
+    'create-app': [
+        'preconditions',
+        'render',
+        'candidate-checks',
+        'publication',
+    ],
+    'add-library': [
+        'preconditions',
+        'qualified-track',
+        'candidate',
+        'adapter',
+        'install-without-scripts',
+        'targeted-checks',
+        'plan',
+        'publication',
+    ],
+};
+
+function exactKeys(value, keys) {
+    return Object.keys(value).sort().join('\0') === [...keys].sort().join('\0');
+}
+
+test('le contrat explain est fermé, versionné et complet pour chaque commande', () => {
+    assert.deepEqual(EXPLAINED_COMMANDS, [
+        'create-app',
+        'add-library',
+        'prepare:application-workspace',
+    ]);
+    for (const command of EXPLAINED_COMMANDS) {
+        const explanation = commandExplanation(command);
+        assert.equal(exactKeys(explanation, TOP_LEVEL_KEYS), true, command);
+        assert.equal(explanation.schema_version, '1.0.0');
+        assert.equal(explanation.command, command);
+        assert.equal(explanation.runbook, RUNBOOK);
+        assert.ok(explanation.summary.length > 20);
+        assert.ok(explanation.invocations.length >= 2);
+        assert.equal(
+            exactKeys(explanation.ownership, [
+                'creates',
+                'modifies',
+                'protects',
+                'temporary',
+            ]),
+            true
+        );
+        assert.deepEqual(
+            explanation.phases.map(({ id }) => id),
+            EXPECTED_PHASES[command]
+        );
+        if (command !== 'add-library') {
+            assert.ok(
+                explanation.phases.length <= 4,
+                `${command} dépasse le budget de quatre phases visibles`
+            );
+        }
+        assert.equal(
+            explanation.phases.every(
+                (phase) =>
+                    exactKeys(phase, ['id', 'description']) &&
+                    phase.description.length > 20
+            ),
+            true
+        );
+        assert.ok(explanation.checks.length >= 5);
+        assert.equal(
+            exactKeys(explanation.transaction, [
+                'journal',
+                'lock',
+                'recovery',
+                'resume_command',
+                'abort_command',
+            ]),
+            true
+        );
+    }
+});
+
+test('aucune commande expliquée n’annonce de journal ni de reprise manuelle', () => {
+    for (const command of EXPLAINED_COMMANDS) {
+        const transaction = commandExplanation(command).transaction;
+        assert.equal(transaction.journal, null);
+        assert.equal(transaction.resume_command, null);
+        assert.equal(transaction.abort_command, null);
+    }
+});
+
+test('--explain fonctionne hors workspace et ne crée aucun fichier', (t) => {
+    const directory = mkdtempSync(join(tmpdir(), 'cmz-command-explain-'));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    for (const command of EXPLAINED_COMMANDS) {
+        const script =
+            command === 'prepare:application-workspace'
+                ? 'prepare-application-workspace'
+                : command;
+        const result = spawnSync(
+            process.execPath,
+            [join(ROOT, 'tools', `${script}.mjs`), '--explain'],
+            { cwd: directory, encoding: 'utf8' }
+        );
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stderr, '');
+        assert.equal(result.stdout, formatCommandExplanation(command));
+        assert.deepEqual(readdirSync(directory), []);
+    }
+});
+
+test('--explain refuse toute combinaison ambiguë', () => {
+    for (const command of EXPLAINED_COMMANDS) {
+        const script =
+            command === 'prepare:application-workspace'
+                ? 'prepare-application-workspace'
+                : command;
+        const result = spawnSync(
+            process.execPath,
+            [join(ROOT, 'tools', `${script}.mjs`), '--explain', '--dry-run'],
+            { encoding: 'utf8' }
+        );
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /--explain doit être utilisé seul/);
+    }
+});
+
+// Le runbook des commandes fait partie du guide produit du propriétaire, qui
+// couvre aussi le parcours et le dépannage : le plafond borne ce guide entier.
+test('le guide produit reste borné et couvre chaque commande et chaque reprise', () => {
+    const content = readFileSync(join(ROOT, RUNBOOK), 'utf8');
+    const lines = content.split('\n').length - 1;
+    assert.ok(lines <= 400, `guide produit trop long : ${lines} lignes`);
+    assert.ok(lines >= 80, `guide produit trop superficiel : ${lines} lignes`);
+    for (const command of EXPLAINED_COMMANDS) {
+        assert.match(content, new RegExp(`## .*${command}`));
+        assert.match(content, new RegExp(`bun run ${command} --explain`));
+    }
+});
+
+test('un appelant ne peut pas modifier la source de vérité partagée', () => {
+    const modified = commandExplanation('create-app');
+    modified.phases[0].id = 'corrompu';
+    assert.equal(
+        commandExplanation('create-app').phases[0].id,
+        'preconditions'
+    );
+    assert.throws(() => commandExplanation('commande-inconnue'));
+});

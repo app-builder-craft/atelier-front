@@ -1,0 +1,34 @@
+# Catalogue des exemples de mise en page
+
+Ce dossier contient des exemples génériques approuvés qui peuvent guider la
+composition d'une interface sans devenir une preuve de page ou une autorité
+métier.
+
+## Protocole obligatoire
+
+Un humain ou un LLM doit toujours lire le `README.md` et le `example-set.json`
+du même ensemble avant d'utiliser une image. Une image n'est applicable que si
+le contrat de page déclare les capacités qu'elle montre. Une preuve runtime et
+une validation humaine de la page réalisée restent obligatoires.
+
+## Ensembles disponibles
+
+| Ensemble | Espaces couverts | Statut | Ressources |
+| --- | --- | --- | --- |
+| Vue de données Medium/Expanded | `medium`, `expanded` | `approved-example` | [guide](./data-view-layout-examples/README.md) · [manifeste](./data-view-layout-examples/example-set.json) |
+| Vue de données Compact | `compact` | `approved-example` | [guide](./compact-data-view-layout-examples/README.md) · [manifeste](./compact-data-view-layout-examples/example-set.json) |
+| Shell à vues vivantes | `medium`, `expanded` | `approved-example` | [guide](./workspace-shell-layout-examples/README.md) · [manifeste](./workspace-shell-layout-examples/example-set.json) |
+| Composition workspace + vue de données | `compact`, `medium`, `expanded` | `approved-example` | [guide](./composed-workspace-data-view-layout-examples/README.md) · [manifeste](./composed-workspace-data-view-layout-examples/example-set.json) |
+
+## Limites communes
+
+- ces exemples n'autorisent aucun endpoint, payload, rôle ou permission ;
+- une capacité visible mais absente du contrat reste absente du runtime ;
+- les HTML et scripts de rendu servent à reproduire les PNG, pas à être copiés
+  dans une application ;
+- les primitives officielles de la stack cible restent prioritaires ;
+- les couleurs, contenus et détails graphiques illustratifs ne constituent pas
+  une exigence pixel-perfect.
+
+Ces exemples sont des références de présentation génériques et fictives : ils
+guident la mise en page sans faire autorité sur les contrats ni sur le code.

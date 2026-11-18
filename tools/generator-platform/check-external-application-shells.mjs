@@ -1,0 +1,328 @@
+#!/usr/bin/env node
+import assert from 'node:assert/strict';
+import { rm } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
+import { pathToFileURL } from 'node:url';
+
+import { provisionBrowser } from '../library-setup/browser-provisioning.mjs';
+import {
+    planApplicationWorkspace,
+    planExternalApplicationShell,
+    publishApplicationWorkspace,
+    publishExternalApplicationShell,
+} from './core/application-workspace.mjs';
+import { verifyGeneratedTree } from './core/external-application-paths.mjs';
+import { EXTERNAL_WORKSPACE_CMZ as CMZ } from './renderers/application-workspace-renderer.mjs';
+import {
+    formatProofStop,
+    snapshotTree,
+    TOOLS_ROOT,
+    workspaceOptions,
+} from './test-support/external-application-fixture.mjs';
+import {
+    confinedNode,
+    installRealPackages,
+    proofSession,
+    record,
+} from './proof-support/external-application-runtime.mjs';
+import {
+    displacedEntry,
+    instrumentProduct,
+    qualifyBrowser,
+    qualifyMutations,
+    qualifyWeights,
+} from './proof-support/external-application-checks.mjs';
+
+import {
+    nativeDocumentFixture,
+    runNativeDocumentCell,
+    SHARED_DOCUMENT_SOURCE,
+} from './proof-support/external-document-native.mjs';
+import {
+    publishNativeSessionShell,
+    qualifySessionBrowser,
+} from './proof-support/external-session-native.mjs';
+import { proveNativeActionRequest } from './proof-support/external-action-request-native.mjs';
+import { proveNativePageComposition } from './proof-support/external-page-composition-native.mjs';
+import { proveNativeListQuery } from './proof-support/external-list-query-native.mjs';
+import {
+    proveNativePageRealization,
+    qualifyRealizationBrowser,
+} from './proof-support/external-page-realization-native.mjs';
+import { proveNativePublication } from './proof-support/external-publication-native.mjs';
+
+export { qualifyNodeVersion } from './proof-support/external-application-runtime.mjs';
+export { qualifyBrowser, qualifyWeights };
+
+export function parseArgs(argv) {
+    const options = {};
+    const names = new Map([
+        ['--proof-root', 'proofRoot'],
+        ['--backend', 'backend'],
+        ['--bun-executable', 'bunExecutable'],
+    ]);
+    for (let index = 0; index < argv.length; index += 1) {
+        const key = names.get(argv[index]);
+        const value = argv[++index];
+        if (!key || options[key] || !value || value.startsWith('--'))
+            throw new Error(
+                'Arguments de preuve absents, inconnus ou répétés.'
+            );
+        options[key] = value;
+    }
+    if (!options.proofRoot || options.proofRoot !== resolve(options.proofRoot))
+        throw new Error('--proof-root absolu canonique requis.');
+    if (options.backend && !['macos', 'docker'].includes(options.backend))
+        throw new Error('Backend non qualifié.');
+    return options;
+}
+
+export async function main(argv = process.argv.slice(2)) {
+    const options = parseArgs(argv);
+    const proofStarted = performance.now();
+    const session = await proofSession(options);
+    const sourceBefore = await snapshotTree(TOOLS_ROOT);
+    try {
+        // Keep the two single-profile installation oracles, then install A and B
+        // independently. No copied node_modules or synthetic certificate.
+        for (const profile of ['angular-pwa', 'react-spa']) {
+            const installStarted = performance.now();
+            const options = workspaceOptions(resolve(session.root, profile), [
+                profile,
+            ]);
+            const plan = await planApplicationWorkspace(options);
+            assert.equal(
+                (
+                    await publishApplicationWorkspace({
+                        ...options,
+                        expectedPlanId: plan.plan_id,
+                    })
+                ).status,
+                'prepared'
+            );
+            await installRealPackages(session, plan);
+            session.lines.push(
+                `installation/${profile} elapsed_ms=${Math.round(performance.now() - installStarted)}`
+            );
+        }
+        const allPlans = [];
+        let product;
+        let input;
+        let plans;
+        for (const kind of ['A', 'B']) {
+            const installStarted = performance.now();
+            const root = resolve(session.root, `product-${kind.toLowerCase()}`);
+            const options = workspaceOptions(root);
+            const workspace = await planApplicationWorkspace(options);
+            assert.equal(
+                (
+                    await publishApplicationWorkspace({
+                        ...options,
+                        expectedPlanId: workspace.plan_id,
+                    })
+                ).status,
+                'prepared'
+            );
+            await installRealPackages(session, workspace);
+            session.lines.push(
+                `installation/${kind} elapsed_ms=${Math.round(performance.now() - installStarted)}`
+            );
+            const fixture = await nativeDocumentFixture(root, kind);
+            const currentPlans = [];
+            const shells = [];
+            for (const profile of ['angular-pwa', 'react-spa']) {
+                await runNativeDocumentCell(session, fixture, profile);
+                const shell = {
+                    workspaceRoot: TOOLS_ROOT,
+                    targetRoot: root,
+                    appName: `ext03a-${kind.toLowerCase()}-${profile}`,
+                    profile,
+                    designPath: fixture.designPath,
+                    experienceId: fixture.design.experiences[0].id,
+                };
+                const plan = await planExternalApplicationShell(shell);
+                await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+                currentPlans.push(plan);
+                allPlans.push(plan);
+                shells.push({ ...shell, expectedPlanId: plan.plan_id });
+            }
+            if (kind === 'A') {
+                await displacedEntry(
+                    session,
+                    root,
+                    SHARED_DOCUMENT_SOURCE,
+                    () =>
+                        confinedNode(session, root, [
+                            `${CMZ.support}/check-workspace.mjs`,
+                        ]),
+                    /Échec du contrat workspace/
+                );
+            } else {
+                // Preserve recovery, mutation, confinement and browser T9–T18.
+                const run = (command, args, cwd) => {
+                    assert.equal(command, process.execPath);
+                    assert.equal(cwd, root);
+                    // Libellé stable, sans chemin du laboratoire.
+                    const label =
+                        args[1] === 'run'
+                            ? args[2]
+                            : args[0].endsWith('check-workspace.mjs')
+                              ? 'workspace-contract'
+                              : 'native-compiler';
+                    record(
+                        session,
+                        `T9-T12/recovery/${label}`,
+                        confinedNode(session, root, args)
+                    );
+                };
+                for (const shell of shells)
+                    assert.equal(
+                        (await publishExternalApplicationShell(shell, { run }))
+                            .recovered,
+                        true
+                    );
+                product = root;
+                plans = currentPlans;
+                const publicPage = fixture.design.pages.find(
+                    (page) => page.access.mode === 'public'
+                );
+                const protectedPage = fixture.design.pages.find(
+                    (page) => page.access.mode === 'authenticated'
+                );
+                assert.ok(publicPage && protectedPage);
+                input = {
+                    browserFixture: {
+                        title: fixture.design.design.title,
+                        publicPath: publicPage.path,
+                        publicTitle: publicPage.title,
+                        protectedPath: protectedPage.path,
+                        protectedTitle: protectedPage.title,
+                    },
+                };
+            }
+        }
+        // X0 : une coque Angular avec session par produit fictif indépendant.
+        const sessionShells = [];
+        for (const [kind, domain] of [
+            ['A', 'observatory'],
+            ['B', 'equipment-hire'],
+        ]) {
+            const started = performance.now();
+            const shell = await publishNativeSessionShell(
+                session,
+                resolve(session.root, `product-${kind.toLowerCase()}`),
+                domain
+            );
+            session.lines.push(
+                `X0/${domain} elapsed_ms=${Math.round(performance.now() - started)}`
+            );
+            // X1 : publications scellées sous plan dans cette coque.
+            const publishing = performance.now();
+            const published = await proveNativePublication(session, shell);
+            shell.plan = { ...shell.plan, files: published.files };
+            session.lines.push(
+                `X1/${domain} elapsed_ms=${Math.round(performance.now() - publishing)}`
+            );
+            // X2 : commande de connexion 2.1 publiée sous plan dans cette coque.
+            const commanding = performance.now();
+            const command = await proveNativeActionRequest(session, shell);
+            shell.plan = { ...shell.plan, files: command.files };
+            session.lines.push(
+                `X2/${domain} elapsed_ms=${Math.round(performance.now() - commanding)}`
+            );
+            // X3 : plan et composition de la page Connexion, sur la commande X2.
+            const composing = performance.now();
+            const composition = await proveNativePageComposition(
+                session,
+                shell
+            );
+            shell.plan = { ...shell.plan, files: composition.files };
+            session.lines.push(
+                `X3/${domain} elapsed_ms=${Math.round(performance.now() - composing)}`
+            );
+            // X4 : bon de travail puis page Connexion réalisée, sous plan.
+            const realizing = performance.now();
+            const realization = await proveNativePageRealization(
+                session,
+                shell
+            );
+            shell.plan = { ...shell.plan, files: realization.plan.files };
+            shell.page = realization.page;
+            session.lines.push(
+                `X4/${domain} elapsed_ms=${Math.round(performance.now() - realizing)}`
+            );
+            // X5 : lecture publiée, puis plan et composition de la page à
+            // lecture (C3a, C3b, C4), après la page Connexion qu'ils ne
+            // touchent pas.
+            const reading = performance.now();
+            const read = await proveNativeListQuery(session, shell);
+            shell.plan = { ...shell.plan, files: read.files };
+            session.lines.push(
+                `X5/${domain} elapsed_ms=${Math.round(performance.now() - reading)}`
+            );
+            sessionShells.push(shell);
+            allPlans.push(shell.plan);
+        }
+        await session.save();
+        const instrumentation = await instrumentProduct(
+            session,
+            product,
+            input.browserFixture
+        );
+        for (const plan of plans)
+            await qualifyMutations(session, product, plan);
+        await qualifyWeights(session, product);
+        const browser = await provisionBrowser({
+            policy: session.policy,
+            backend: session.backend,
+            cacheRoot: resolve(session.root, 'browser-cache'),
+            extractionRoot: resolve(session.root, 'browser'),
+        });
+        session.lines.push(
+            `browser=${session.policy.browser.distribution}/${session.policy.browser.version}`
+        );
+        await qualifyBrowser(session, product, plans, browser);
+        await verifyGeneratedTree(instrumentation.proof, instrumentation.files);
+        await rm(instrumentation.proof, { recursive: true });
+        await qualifyRealizationBrowser(session, sessionShells, browser);
+        await qualifySessionBrowser(session, sessionShells, browser);
+        for (const plan of allPlans)
+            await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+        assert.deepEqual(
+            await snapshotTree(TOOLS_ROOT),
+            sourceBefore,
+            'L’atelier a changé pendant la preuve'
+        );
+        session.lines.push(
+            `native-proof elapsed_ms=${Math.round(performance.now() - proofStarted)}`,
+            'PASS real-native-shells-and-mutants',
+            'PASS EXT03a four document/native cells A+B Angular+React; no PWA or backend claim',
+            'PASS X0 two fictitious Angular session shells via create-app --target-root; React refused; no business page or backend claim',
+            'PASS X1 sealed publications under reviewed plans in both session shells; hand-added file and forged registry refused',
+            'PASS X2 action-request 2.1 login command published under reviewed plan in both session shells, compiled by product tools; stale plan refused; no business page or backend claim',
+            'PASS X3 login page execution plan and composition published under reviewed plans in both session shells, consuming the X2 command, compiled by product tools; no backend claim',
+            'PASS X4 login page realized under a published work order in both session shells, replacing the placeholder under a reviewed plan, compiled, built, linted and tested by product tools; network, direct command import and red spec refused; opened in the browser without service address and without any request; no backend claim',
+            'PASS X4-security product commands confined (default runner: trap spec without network, outside read or write, or host environment; publication rolled back); shell Content-Security-Policy measured by violation events: realized page without violation or request outside the bundle, trap page and 13 validator probes blocked with no request to another origin; no backend claim',
+            'T19–T28 restent non qualifiés.'
+        );
+        await session.save();
+        process.stdout.write(
+            `Preuve shells terminée : ${session.root}/report.txt\n`
+        );
+    } catch (error) {
+        session.lines.push(formatProofStop(error));
+        await session.save();
+        throw error;
+    }
+}
+
+if (
+    process.argv[1] &&
+    pathToFileURL(process.argv[1]).href === import.meta.url
+) {
+    main().catch((error) => {
+        process.stderr.write(`${formatProofStop(error)}\n`);
+        process.exitCode = 1;
+    });
+}

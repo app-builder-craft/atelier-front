@@ -1,0 +1,18 @@
+node_modules
+dist
+tmp
+out-tsc
+coverage
+.nx
+.angular
+bun.lock
+*.min.js
+*.min.css
+
+# Périmètre format produit (B5) : `format` / `format:check` ne portent que sur
+# apps/, libs/, tools/ + configs racine listées dans package.json.
+# `docs/**` reste hors gate (audits figés, prose narrative) — formater à la main
+# si besoin, hors CI.
+
+# Templates envsubst — extension .in hors parse JS ; filet de sûreté.
+*.in

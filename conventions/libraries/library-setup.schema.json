@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cmz.local/schemas/conventions/library-setup.schema.json",
+  "title": "CMZ Library Setup Recipe",
+  "description": "Une recette par (bibliothèque, plateforme). Le fichier vit sous conventions/libraries/<platform>/<library>.setup.json : le dossier == `platform`, le nom == `library`, et check:library-setup indexe par le couple (platform, library) — deux plateformes peuvent donc avoir chacune leur recette `tailwind`. PÉRIMÈTRE DE CETTE VERSION : paquets npm pour Angular / React, résolus via Bun workspaces (package.json racine + catalog + bun.lock). Kotlin/Swift : hors périmètre. Elle sépare trois choses. (1) `static_invariants` : présence structurelle, vérifiable en lisant des fichiers de l'app — garde-fou de DÉRIVE de configuration, PAS un test d'acceptation. (2) `runtime_acceptance` : critères de fonctionnement réels exécutés par tools/library-setup/runtime-proofs.mjs dans le candidat isolé ; le registre d'oracles et le status de la recette doivent concorder dans les deux sens. (3) le COMMENT d'installation, volatile, représenté par une commande structurée ou un outil de référence ; jamais une chaîne shell. Voir conventions/README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "library",
+    "platform",
+    "packages",
+    "install",
+    "static_invariants",
+    "runtime_acceptance",
+    "guidance"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "library": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "platform": { "enum": ["angular", "react"] },
+    "packages": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
+      }
+    },
+    "install": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "command", "notes"],
+          "properties": {
+            "method": { "const": "official-schematic" },
+            "command": { "$ref": "#/$defs/command" },
+            "normalizations": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/exactReplacement" }
+            },
+            "notes": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "reference_tool", "notes"],
+          "properties": {
+            "method": { "const": "reference-derived" },
+            "reference_tool": {
+              "type": "string",
+              "pattern": "^tools/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.mjs$"
+            },
+            "notes": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "static_invariants": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/static_invariant" }
+    },
+    "runtime_acceptance": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/runtime_acceptance" }
+    },
+    "coexistence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/coexistence" }
+    },
+    "guidance": {
+      "type": "string",
+      "pattern": "^https://[^\\s]+$"
+    }
+  },
+  "$defs": {
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable", "argv"],
+      "properties": {
+        "executable": {
+          "type": "string",
+          "enum": ["nx"],
+          "description": "Binaire résolu EXPLICITEMENT dans le workspace cible (`<racine>/node_modules/.bin/nx`), sa version étant comparée à celle du lockfile (`node_modules/nx/package.json`). `bunx` et les gestionnaires de paquets ne peuvent pas être résolus par leur nom pendant l'exécution : PATH est vide sur les deux backends. `ng` seul n'est pas un binaire du workspace — passer par un schematic local qui ne planifie aucune installation de dépendances."
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?:\\{\\{app\\}\\}|[A-Za-z0-9@:/._=-]+)$"
+          },
+          "description": "Exactement un élément doit être le jeton littéral `{{app}}` — l'exécuteur (add-library, lot B) le remplace par le nom du projet Nx cible. check:library-setup refuse une commande official-schematic sans ce jeton."
+        }
+      }
+    },
+    "exactReplacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "file", "search", "replacement", "occurrences"],
+      "properties": {
+        "kind": { "const": "exact-replacement" },
+        "file": { "$ref": "#/$defs/appRelativeFile" },
+        "search": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "replacement": { "type": "string", "maxLength": 4096 },
+        "occurrences": { "const": 1 }
+      },
+      "description": "Normalisation versionnée et fail-closed d'une sortie volatile du schematic. Le remplacement n'est appliqué que si le fragment exact apparaît le nombre déclaré de fois."
+    },
+    "static_invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "assert"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "footprint": {
+          "type": "boolean",
+          "description": "Marque l'assertion la plus distinctive et locale à l'app : si elle passe alors que la bibliothèque n'est pas déclarée dans le manifeste de l'app, la gate échoue (bibliothèque utilisée sans déclaration). Exactement une par recette."
+        },
+        "assert": { "$ref": "#/$defs/assert" }
+      }
+    },
+    "assert": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "kind"],
+          "properties": {
+            "file": { "$ref": "#/$defs/appRelativeFile" },
+            "kind": { "const": "file-exists" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "kind", "value"],
+          "properties": {
+            "file": { "$ref": "#/$defs/appRelativeFile" },
+            "kind": { "enum": ["file-contains", "file-matches"] },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "appRelativeFile": {
+      "type": "string",
+      "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$",
+      "description": "Chemin POSIX relatif à la racine de l'app cible (dotfiles admis, jamais de segment `..`). Le contenu du chemin est aussi vérifié au runtime : aucun segment ne peut être un lien symbolique ni un fichier spécial."
+    },
+    "runtime_acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "proof", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "proof": {
+          "enum": [
+            "compile-component",
+            "compiled-css-rule",
+            "browser-coexistence",
+            "browser-style-preservation",
+            "production-build"
+          ]
+        },
+        "status": { "enum": ["harness-pending", "enforced"] }
+      }
+    },
+    "coexistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["with", "intent"],
+      "description": "Un bloc de coexistence doit porter AU MOINS un contrôle : un invariant statique, une acceptance runtime, ou les deux (`anyOf`). Un bloc sans aucun contrôle serait une déclaration décorative. L'intention, elle, est de la prose relue par un humain — jamais une assertion textuelle sur un fichier de l'app : un regex qui cherche des mots dans un commentaire ne peut pas régresser, passe sur n'importe quel `// TODO`, et donne une fausse confiance (invariant `component-boundary` retiré le 2026-09-06 pour cette raison, sa propriété étant désormais prouvée par `material-tailwind-cascade-order` sur le CSS compilé et par `material-tailwind-render-together` dans un vrai moteur).",
+      "anyOf": [
+        { "type": "object", "required": ["static_invariants"] },
+        { "type": "object", "required": ["runtime_acceptance"] }
+      ],
+      "properties": {
+        "with": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "description": "Une autre bibliothèque ; ces contrôles ne sont vérifiés que si l'app déclare aussi celle-ci."
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Ce que la coexistence doit garantir, en clair, pour la relecture humaine. N'est vérifié par aucune machine — ce qui est vérifié vit dans static_invariants et runtime_acceptance."
+        },
+        "static_invariants": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/static_invariant" }
+        },
+        "runtime_acceptance": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/runtime_acceptance" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "$schema": "./profile.schema.json",
+  "platform": "angular",
+  "platform_version": "22",
+  "description": "Profil de convention Angular 22. Source unique des choix de code qui changent d'une version majeure à l'autre. Le générateur et l'IA le LISENT ; ils ne le contiennent pas. Pour Angular 23, créer angular-23.profile.json — ne pas modifier les générateurs.",
+  "source_of_truth": {
+    "origin": "https://angular.dev/ai/develop-with-ai",
+    "verified_for": "22.2.0",
+    "note": "Copie de travail narrative : conventions/best-practices.md. Le sous-ensemble mécaniquement vérifiable est appliqué par le plugin Angular de tools/check-convention-profile.mjs."
+  },
+  "version_pin": {
+    "source": "package.json → workspaces.catalog['@angular/core']",
+    "must_match": "22.2.x"
+  },
+  "conventions": {
+    "component_model": {
+      "native": "Composant standalone : `@Component` avec `standalone` implicite ; `changeDetection` non déclaré (OnPush est le défaut v22+) ; entrées `input()`, sorties `output()`, liaison bidirectionnelle `model()` ; état dérivé `computed()` ; host bindings dans l'objet `host` du décorateur ; injection par `inject()`.",
+      "packages": [],
+      "forbid": [
+        "NgModule",
+        "standalone: true explicite",
+        "changeDetection: ChangeDetectionStrategy.OnPush explicite",
+        "@HostBinding / @HostListener",
+        "décorateurs @Input() / @Output()",
+        "injection par constructeur"
+      ],
+      "guidance": "https://angular.dev/ai/develop-with-ai"
+    },
+    "local_state": {
+      "native": "Signals : `signal()`, `computed()`, mise à jour par `set()` / `update()`. Store de formulaire ou de filtre porté par un composant de page/dialog via `@Injectable()` sans options + `providers: [XxxStore]` sur ce composant.",
+      "packages": [],
+      "forbid": [
+        "mutate()",
+        "BehaviorSubject pour de l'état de vue",
+        "@Injectable({ providedIn: 'root' }) pour un store de composant"
+      ],
+      "guidance": "https://angular.dev/guide/signals"
+    },
+    "server_state": {
+      "native": "`httpResource()` / `resource()` / `rxResource()` — la facade expose `value` / `isLoading` / `error` (signaux) ; interop RxJS par `rxResource({ stream })` ou `toSignal()`.",
+      "packages": ["@angular/core"],
+      "forbid": [
+        "état serveur maintenu à la main dans un signal + loader Observable quand resource() suffit",
+        "subscribe() manuel dans un composant",
+        "BaseFacade/PaginatedFacade comme défaut d'une nouvelle facade"
+      ],
+      "guidance": "https://angular.dev/guide/http/making-requests#httpresource"
+    },
+    "navigation": {
+      "native": "Routes lazy : `export const <MODULE>_ROUTES: Routes` avec `loadComponent: () => import(...)` ; gardes fonctionnelles (`CanActivateFn`) au niveau shell ; `data.breadcrumb` = clé i18n ; `withComponentInputBinding()`.",
+      "packages": ["@angular/router"],
+      "forbid": [
+        "RouterModule.forChild",
+        "import statique d'un composant de page dans le fichier routes",
+        "canActivate déclaré par une classe"
+      ],
+      "guidance": "https://angular.dev/guide/routing"
+    },
+    "forms": {
+      "native": "Signal Forms — état signal, accès typé aux champs.",
+      "packages": ["@angular/forms"],
+      "forbid": [
+        "Template-driven Forms pour un nouveau formulaire",
+        "FormGroup non typé"
+      ],
+      "guidance": "https://angular.dev/guide/forms/signals",
+      "notes": "Reactive Forms toléré uniquement si Signal Forms ne couvre pas le cas."
+    },
+    "i18n": {
+      "native": "Internationalisation Angular native : attributs `i18n`, `i18n-*` et métadonnées stables sur les textes statiques des templates ; `$localize` pour les messages TypeScript. Déclarer `sourceLocale`, charger `@angular/localize/init` et produire une variante compilée par locale. Le pont `LocalizeTranslationService` est borné aux clés historiques réellement dynamiques et reçoit exclusivement un catalogue `$localize` généré statiquement.",
+      "packages": ["@angular/localize"],
+      "forbid": [
+        "@ngx-translate/core",
+        "@jsverse/transloco",
+        "dictionnaire de traduction chargé par HTTP au runtime comme défaut Angular",
+        "clé dynamique sans inventaire compilé et sans identifiant de message stable",
+        "abstraction cross-platform TranslationPort / I18nPort / provideI18n()"
+      ],
+      "guidance": "https://angular.dev/guide/i18n",
+      "notes": "Une nouvelle page emploie directement les primitives Angular. React conserve son propre mécanisme natif."
+    },
+    "styling": {
+      "native": "Hiérarchie officielle : HTML sémantique pour les contrôles simples ; Angular Material standalone pour un composant visuel M3 dans une app qui l'a adopté ; Angular Aria pour un motif WAI-ARIA headless au visuel propre ; CDK pour une primitive bas niveau manquante. Mise en page, espacement, échelle typographique et one-offs : Tailwind ou styles de composant scopés. `NgOptimizedImage` pour les images statiques.",
+      "packages": [
+        "@angular/material",
+        "@angular/aria",
+        "@angular/cdk",
+        "tailwindcss",
+        "@tailwindcss/postcss"
+      ],
+      "forbid": [
+        "ngClass / ngStyle (bindings natifs class / style à la place)",
+        "CSS global hors thème M3 / couche `@theme` Tailwind",
+        "autre librairie de composants (PrimeNG, NG-ZORRO, Nebular…) — Material est la seule",
+        "le reset Tailwind qui réinitialise les composants Material (préserver la frontière Material / Tailwind)",
+        "Material et Angular Aria superposés sur le même comportement interactif",
+        "style Tailwind / CSS utilisé pour simuler une sémantique ou une gestion clavier absente"
+      ],
+      "guidance": "https://angular.dev/guide/components/styling",
+      "notes": "Material et Tailwind restent opt-in via leurs recettes. Angular Aria est un paquet headless sans setup d'application : catalogue + lockfile + premier usage réel, sans recette artificielle ; une recette ne devient candidate qu'après deux configurations d'app concordantes."
+    },
+    "accessibility": {
+      "native": "WCAG AA et HTML sémantique d'abord. Pour un motif composite au visuel propre, utiliser la directive Angular Aria officielle ; pour une UI M3 adoptée, le composant Angular Material ; CDK A11y seulement pour une primitive manquante. Boutons nommés, champs avec `<label for>`, icônes décoratives `aria-hidden=\"true\"`, focus visible et parcours clavier/lecteur d'écran prouvé.",
+      "packages": ["@angular/aria", "@angular/cdk", "@angular/material"],
+      "forbid": [
+        "div cliquable sans rôle ni gestion clavier",
+        "bouton icône sans nom accessible",
+        "rôle ARIA redondant ou contradictoire avec la sémantique HTML native",
+        "réimplémentation manuelle d'un motif clavier/focus couvert par une primitive officielle applicable",
+        "AXE présenté comme unique preuve d'accessibilité"
+      ],
+      "guidance": "https://angular.dev/best-practices/a11y",
+      "notes": "AXE est un gate structurel, pas une preuve complète. Ajouter tests de composant/harness, Playwright clavier/focus et validation manuelle sur la matrice navigateur/technologie d'assistance pertinente."
+    },
+    "testing": {
+      "native": "Vitest + `TestBed` (`@angular/core/testing`) pour les composants ; tests de règle unitaires purs pour domain/application ; Playwright pour la navigation bout-en-bout.",
+      "packages": ["vitest", "@analogjs/vitest-angular"],
+      "forbid": ["Karma / Jasmine", "test qui ne couvre que le cas passant"],
+      "guidance": "https://angular.dev/guide/testing"
+    }
+  }
+}

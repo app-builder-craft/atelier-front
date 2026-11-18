@@ -1,0 +1,201 @@
+import { lstat, readFile, realpath } from 'node:fs/promises';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
+
+import {
+    validateBackendContract,
+    verifyBackendContractSnapshots,
+} from './core/backend-contract.mjs';
+import {
+    bindRenderedArtifacts,
+    buildArtifactPlan,
+} from './core/artifact-plan.mjs';
+import { canonicalizeGeneratedFiles } from './core/canonicalize-generated.mjs';
+import { buildGenerationManifest } from './core/generation-manifest.mjs';
+import { parseContractGraph } from './core/backend-contract-reader.mjs';
+import { compileListQueryV2ExecutionModel } from './core/list-query-v2-compiler.mjs';
+import {
+    contractModels,
+    queryBindingModelId,
+    resolveListCollection,
+    resolvePageCollection,
+} from './core/list-query-collection.mjs';
+import { conformanceFixture } from './core/list-query-conformance.mjs';
+import { renderListQueryConformanceSpec } from './renderers/angular-list-query-conformance-spec.mjs';
+import { renderAngularExternalListQuery } from './renderers/angular-external-list-query.mjs';
+import {
+    loadJson,
+    repositoryRoot,
+    validateJsonSchema,
+} from './validate-ir.mjs';
+
+const BACKEND_SCHEMA = new URL(
+    './schemas/backend-contract.schema.json',
+    import.meta.url
+);
+const DEFINITION_SCHEMA = new URL(
+    './schemas/list-query-definition-v2.schema.json',
+    import.meta.url
+);
+const ANGULAR_PROFILE = new URL(
+    './profiles/angular-nx.profile.json',
+    import.meta.url
+);
+
+function failOnErrors(label, errors) {
+    if (errors.length > 0) {
+        throw new Error(`${label}:\n${errors.join('\n')}`);
+    }
+}
+
+// `root` : l'atelier, ou la racine du produit en extérieur (X5 C3a).
+function resolveBackendPath(uri, root = repositoryRoot) {
+    if (typeof uri !== 'string') {
+        throw new Error('backend contract uri must be a string');
+    }
+    const path = resolve(root, uri);
+    const workspaceRelative = relative(root, path);
+    if (
+        workspaceRelative === '..' ||
+        workspaceRelative.startsWith(`..${sep}`) ||
+        isAbsolute(workspaceRelative)
+    ) {
+        throw new Error('backend contract uri must stay inside the workspace');
+    }
+    return path;
+}
+
+async function readBackendDocument(uri, root = repositoryRoot) {
+    const path = resolveBackendPath(uri, root);
+    const metadata = await lstat(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+        throw new Error('backend contract must be a regular non-symlink file');
+    }
+    const [canonicalRoot, canonicalPath] = await Promise.all([
+        realpath(root),
+        realpath(path),
+    ]);
+    const canonicalRelative = relative(canonicalRoot, canonicalPath);
+    if (
+        canonicalRelative === '..' ||
+        canonicalRelative.startsWith(`..${sep}`) ||
+        isAbsolute(canonicalRelative)
+    ) {
+        throw new Error('backend contract must resolve inside the workspace');
+    }
+    return readFile(canonicalPath);
+}
+
+async function computeListQueryV2Model(
+    definitionPath,
+    definitionDocument,
+    { root = repositoryRoot, profile = 'internal' } = {}
+) {
+    definitionDocument ??= await readFile(definitionPath);
+    const definition = JSON.parse(definitionDocument.toString('utf8'));
+    const [backendSchema, definitionSchema] = await Promise.all([
+        loadJson(BACKEND_SCHEMA),
+        loadJson(DEFINITION_SCHEMA),
+    ]);
+    failOnErrors(
+        'invalid active list-query definition',
+        validateJsonSchema(definition, definitionSchema)
+    );
+    const backendDocument = await readBackendDocument(
+        definition.backend_contract.uri,
+        root
+    );
+    // Lecture bornée du contrat (CI #389, X5) : même budget que tout lecteur.
+    let backendContract;
+    try {
+        backendContract = parseContractGraph(backendDocument);
+    } catch (error) {
+        throw new Error(
+            `invalid active backend contract:\nbackend contract is not readable within limits (${error.message})`,
+            { cause: error }
+        );
+    }
+    failOnErrors(
+        'invalid active backend contract',
+        validateBackendContract(backendContract, backendSchema)
+    );
+    failOnErrors(
+        'invalid active backend provenance',
+        await verifyBackendContractSnapshots(backendContract, root)
+    );
+    const model = compileListQueryV2ExecutionModel({
+        definition,
+        backendContractDocument: backendDocument,
+        backendContractUri: definition.backend_contract.uri,
+        profile,
+    });
+    return { definition, model, backendContract };
+}
+
+// X5 C3a : lecture d'un produit EXTÉRIEUR. Définition et contrat lus dans le
+// produit ; profil extérieur ; rendu extérieur seul. L'atelier ne type-check
+// pas cette sortie : le compilateur installé dans le produit le fait, sur le
+// candidat de publication (comme l'action-request extérieure).
+export async function computeExternalAngularListQueryTarget({
+    definitionPath,
+    definitionDocument,
+    artifactRoot,
+    hostBindings,
+}) {
+    const { definition, model, backendContract } =
+        await computeListQueryV2Model(definitionPath, definitionDocument, {
+            root: artifactRoot,
+            profile: 'external',
+        });
+    const artifactPlan = buildArtifactPlan(model, 'list-query-execution-model');
+    const profile = await loadJson(ANGULAR_PROFILE);
+    const rendered = renderAngularExternalListQuery(model, hostBindings(model));
+    const files = await canonicalizeGeneratedFiles(rendered.files);
+    const bound = bindRenderedArtifacts(artifactPlan, files, {
+        'src/index.ts': 'public-api',
+        [`src/${rendered.queryId}.decoder.ts`]: 'response-decoder',
+        [`src/${rendered.queryId}.facade.ts`]: 'execution-controller',
+        [`src/${rendered.queryId}.source.ts`]: 'integration-client',
+        'src/models.ts': 'domain-model',
+    });
+    return {
+        definition,
+        model,
+        artifactPlan,
+        ...rendered,
+        ...bound,
+        manifest: buildGenerationManifest(model, artifactPlan, profile, bound),
+        // C3b : hors du plan d'artefacts, publié à côté du modèle.
+        conformanceSpec: {
+            path: `src/${rendered.queryId}.contract.spec.ts`,
+            content: renderListQueryConformanceSpec(
+                model.queries[0],
+                externalConformanceFixture(model.queries[0], backendContract)
+            ),
+        },
+    };
+}
+
+// Élément (et page) du contrat COMPLET, par le résolveur unique (C1).
+function externalConformanceFixture(query, backendContract) {
+    const resolveModel = contractModels(backendContract);
+    const { result } = query.transport;
+    if (result.kind === 'page') {
+        const page = resolveModel(result.page_model_id);
+        const { item } = resolvePageCollection(
+            resolveModel,
+            page,
+            result.items_field
+        );
+        return conformanceFixture({
+            item,
+            page,
+            itemsField: result.items_field,
+            resolveModel,
+        });
+    }
+    const { item } = resolveListCollection(
+        resolveModel,
+        resolveModel(queryBindingModelId(query))
+    );
+    return conformanceFixture({ item, resolveModel });
+}

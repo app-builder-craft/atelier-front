@@ -1,0 +1,33 @@
+export const PAGE_COMPOSITION_CAPABILITIES = Object.freeze([
+    'action.authorization.permissions-all@1',
+    'action.concurrency.reject-while-pending@1',
+    'action.idempotency.none@1',
+    'action.invalidation.caller-declared@1',
+    'action.invalidation.none@1',
+    'action.post-success.none@1',
+    'action.retry.none@1',
+    'composition.independent-node-state@1',
+    'composition.producer-node-binding@1',
+    'host.authentication.bearer@1',
+    'host.authentication.omit@1',
+    'query.cache.host.principal@1',
+    'query.cache.host.public@1',
+    'query.cancellation.on-destroy@1',
+    'query.cancellation.on-superseded@1',
+    'query.concurrency.latest-wins@1',
+    'query.retry.none@1',
+    'query.stale-data.reload-preserve.error-preserve@1',
+]);
+
+export const ANGULAR_SESSION_PAGE_CAPABILITIES = Object.freeze([
+    ...PAGE_COMPOSITION_CAPABILITIES,
+    'action.typed-result@1',
+    'action.declared-errors@1',
+    'action.body.none@1',
+    'session.memory@1',
+    'session.decoded-producer@1',
+    'session.epoch@1',
+    // X5 C2 : profil extérieur d'une lecture, Angular de session seulement.
+    'query.cache.bypass@1',
+    'query.stale-data.reload-preserve.error-clear@1',
+]);

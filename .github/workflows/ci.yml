@@ -1,0 +1,879 @@
+# CI Pipeline — atelier
+# Les garde-fous locaux (hooks Husky) sont reproduits ici pour qu'ils soient
+# incontournables. --no-verify local ne passe pas en CI.
+#
+# Stratégie : nx affected pour ne reconstruire que ce qui a changé, avec le
+# cache local de Nx. Aucun workspace Nx Cloud n'est configuré (pas de
+# `nxCloudId` dans nx.json) ; NX_NO_CLOUD reste vrai par défaut. Les étapes qui
+# reçoivent encore `NX_CLOUD_ACCESS_TOKEN` sur `main` retombent sur le cache
+# local quand le secret est absent : l'indisponibilité d'un accélérateur de
+# cache ne doit jamais faire échouer le pipeline, seulement le ralentir.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Le workflow d'auto-réparation crée sa PR avec GITHUB_TOKEN. GitHub ne
+  # redéclenche pas pull_request dans ce cas ; ce dispatch explicite attache
+  # exactement les mêmes checks requis au SHA de la branche automatisée.
+  workflow_dispatch:
+
+# Audit G-8 : un seul run actif par PR / branche — annule le précédent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Moindre privilège : le jeton du workflow ne peut que lire le dépôt. Un job
+# qui doit écrire le déclare lui-même, et `check:workflow-privileges` le refuse
+# s'il n'est pas dans sa liste fermée ou s'il n'est pas lié à `main`.
+permissions:
+  contents: read
+
+env:
+  # Par défaut, rien n'utilise Nx Cloud : le cache local suffit et aucun
+  # secret n'est distribué au workflow. Le jeton n'est remis, pour le seul
+  # code de `main`, qu'aux étapes listées dans `ALLOWED_SECRET_HANDOVERS`
+  # (tools/check-workflow-privileges.mjs) : dans `oracle`, lint, build,
+  # bundle production, typecheck et test.
+  # Toute autre commande Nx de ce fichier tourne en cache local, par choix.
+  # Une PR ou un lancement manuel depuis une autre branche n'a jamais le jeton.
+  NX_NO_CLOUD: 'true'
+
+jobs:
+  # ─── Job 1 : Garde-fous socle (rapide, bloquant) ─────────────────────────
+  guardrails:
+    name: Garde-fous socle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # nécessaire pour nx affected --base=origin/main
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Le modèle opératoire parse des manifests YAML de skills avec la
+      # dépendance versionnée `yaml`. Il appartient donc au job installé, pas
+      # au job Docs freshness volontairement autonome et sans node_modules.
+      - name: check:agent-operating-model (rôles bornés + manifests)
+        run: bun run check:agent-operating-model
+
+      # Charte unique de l'atelier et liens Markdown : aucun lien mort.
+      - name: check:docs (charte + liens documentaires)
+        run: bun run check:docs
+
+      # Rejoue les contrôles des hooks locaux (ADR-0006)
+      - name: check:engines
+        run: node tools/check-engines.mjs
+
+      - name: check:versions (catalog sans dérive)
+        run: node tools/check-catalog-usage.mjs
+
+      # OPS-26 — le canary Dependabot Bun ne doit jamais supprimer ni
+      # réécrire silencieusement les catalog/catalogs du lockfile.
+      - name: check:bun-lock-catalog-integrity (miroir catalog du lockfile)
+        run: bun run check:bun-lock-catalog-integrity
+
+      # React et react-dom forment une unité de compatibilité stricte. Ce gate
+      # empêche Dependabot (ou un humain) de les faire évoluer séparément.
+      - name: check:dependabot-policy (groupes de mises à jour atomiques)
+        run: bun run check:dependabot-policy
+
+      - name: check:weight (poids + plafond lignes, tools/ inclus)
+        run: node tools/check-file-weight.mjs --all
+
+      # Un journal d'outil non ignoré rend le dépôt sale et fait échouer la
+      # publication d'add-library APRÈS le travail coûteux. Défaut réel :
+      # .cmz/library-llm-audit/ manquait à .gitignore.
+      - name: check:cmz-journals-ignored (journaux d'outil hors index)
+        run: bun run check:cmz-journals-ignored
+
+      # SIMPL-5 — les trois commandes de construction exposent une explication
+      # JSON stable et un runbook court, sans précondition ni écriture.
+      - name: check:command-explanations (CLI explicables)
+        run: bun run check:command-explanations
+
+      # Ces trois audits globaux restent directement bloquants ici.
+      - name: check:project-names (ADR-0003 nommage @cmz/)
+        run: node tools/check-project-names.mjs
+
+      # Audit A-5 — chaque lib doit exposer build + lint (oracle package-based)
+      - name: check:targets (build + lint sur toutes les libs)
+        run: bun run check:targets
+
+      # Audit D-1 / P1-7 / ADR-0004 — imports externes déclarés dans package.json
+      - name: check:declared-deps (graphe déclaré complet)
+        run: bun run check:declared-deps
+
+      # Une violation de couche doit faire échouer ESLint (barrière machine)
+      - name: check:boundary-negative (import de couche interdit)
+        run: bun run check:boundary-negative
+
+      # Chantier Q, Q-6/Q-7 (ADR-0024/ADR-0025) — layering test rendu
+      # exécutable : type:domain/type:constants doit rester compilable sans
+      # Angular (0 import @angular/*, 0 décorateur Angular). RxJS autorisé.
+      - name: check:framework-purity (0 couplage Angular en domain/constants)
+        run: bun run check:framework-purity
+
+      # Moteur de l'étape B : tests node:test, puis type-check et test natif
+      # Angular des deux produits de session fictifs.
+      - name: check:generator-platform (moteur de l'étape B)
+        run: bun run check:generator-platform
+
+      # Conception sans code manuel — chaque artefact versionné doit rester
+      # complet, target-neutral et traçable vers un contrat backend exact.
+      - name: check:application-designs (contrats de conception)
+        run: bun run check:application-designs
+
+      # Un rôle n'existe que s'il a un producteur IR, un consommateur réel et
+      # une forme cible validée. La première tranche verticale couvre `screen`.
+      - name: check:target-archetype-coverage (rôles réellement consommés)
+        run: bun run check:target-archetype-coverage
+
+      # J-2 (audit-workspace-2026-08-03.md, chantier J) — ADR-0010 fait de
+      # conventions/angular-22.profile.json la source unique lisible par
+      # machine des conventions de code ; J-1 l'a rendu vérifiable
+      # (tools/check-convention-profile.mjs). Bloquant dès l'ajout : 7/7
+      # règles déjà à 0 violation sur tout le dépôt (105 fichiers codemodés
+      # le 2026-08-03) — pas de dette pré-existante à tolérer comme pour
+      # security-audit/i18n-check.
+      - name: check:convention-profile (ADR-0010)
+        run: bun run check:convention-profile
+
+      # ADR-0041 — garde-fou de DÉRIVE de configuration : les recettes
+      # conventions/libraries/<platform>/<lib>.setup.json figent des
+      # static_invariants structurels (présence de fichiers/fragments), le
+      # schéma fermé du manifeste apps/<app>/.cmz/libraries.json, la cohérence
+      # package.json/catalog/bun.lock, et le confinement de toute lecture (zéro
+      # lien symbolique). Cette step vérifie les contrats ; leurs acceptances
+      # réelles sont exécutées par le job `library-end-to-end`. Le recours LLM
+      # est borné et fail-closed sans adaptateur approuvé — cf. ADR-0042.
+      - name: check:library-setup (ADR-0041)
+        run: bun run check:library-setup
+
+      # `eslint.config.mjs` `files:` ne couvre que .ts/.tsx/.js/.jsx et `tools/`
+      # n'est pas un projet Nx : ce script lint tout tools/**/*.mjs. Seul le
+      # répertoire généré tools/generator-platform/.stack-test-runtime/** est
+      # exclu ; les applications gardent leurs cibles lint natives.
+      - name: check:lint-tools (eslint sur tools/**/*.mjs)
+        run: bun run check:lint-tools
+
+      # Gouvernance `main` — même classe de bug côté forge : la liste
+      # `required_status_checks.contexts` de .github/branch-protection.main.json
+      # est maintenue à la main et peut dériver des jobs bloquants réels de ce
+      # fichier (job ajouté non exigé → fusion sans ce check ; contexte obsolète
+      # → GitHub attend un check qui n'arrive jamais, toute PR bloquée).
+      - name: check:branch-protection-contexts (JSON de protection ↔ jobs ci.yml)
+        run: bun run check:branch-protection-contexts
+
+      # Moindre privilège — constat du 2026-10-09 : trois workflows héritaient
+      # du jeton en écriture du dépôt et remettaient le secret Nx Cloud au code
+      # des PR. Ce garde refuse un événement non relu, un workflow sans bloc
+      # `permissions`, une écriture de job non liée à `main` et tout secret
+      # remis ailleurs que dans l'`env` d'une étape `run` gardée par `main`
+      # et inscrite, par son `id`, dans la liste fermée du garde.
+      - name: check:workflow-privileges (événements, jetons, écritures, secrets)
+        run: bun run check:workflow-privileges
+
+      # Playwright transmet déjà l'environnement au webserver à l'exécution.
+      # Le recopier dans `webServer.env` ne fait que l'exposer au reporter JSON.
+      # Ce gate découvre tous les profils suivis et vérifie cette frontière avec
+      # une sentinelle synthétique, sans serveur, navigateur ni secret CI.
+      - name: check:playwright-secret-safety (reporter sans environnement)
+        run: bun run check:playwright-secret-safety
+
+      # Audit Big Tech 2026-08-14 — root cause du bug "script dans check:all
+      # jamais réellement câblé en CI" (rencontré 3 fois : check:pair-schema/
+      # check:corpus-tools en 2026-08-11, check:dto-schema/check:pattern-nx:
+      # workflow-action/action-request/read-only-view en 2026-08-14).
+      # Dernière step du job guardrails à dessein : elle vérifie que TOUS
+      # les scripts check:all (y compris ceux ajoutés ci-dessus) ont une
+      # step CI ou un hook husky dédié — se garde donc elle-même de devenir,
+      # un jour, le prochain script orphelin non détecté.
+      - name: check:ci-wiring (angle mort — gate déclaré vs gate exécuté)
+        run: bun run check:ci-wiring
+
+      - name: Format check (Prettier)
+        run: bun run format:check
+
+  # ─── PLAT-5F : durabilité de publication multi-filesystem ───────────────
+  # Le gate général exécute déjà les tests sur Linux. Cette matrice rend la
+  # preuve explicite sur chaque profil de stockage supporté et échoue si le
+  # runner ne correspond pas au type statfs déclaré. Les tests lancent de vrais
+  # processus éditeurs, les tuent par SIGKILL après chacun des deux renommages,
+  # puis vérifient la reprise complète par manifests et hashes.
+  publication-durability:
+    name: Publication durability (${{ matrix.profile }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: linux-ext4
+            runner: ubuntu-24.04
+            platform: linux
+          - profile: macos-apfs
+            runner: macos-15
+            platform: darwin
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: check:publication-durability (${{ matrix.profile }})
+        env:
+          CMZ_PUBLICATION_PLATFORM: ${{ matrix.platform }}
+        run: bun run check:publication-durability
+
+  # ADR-0042 — la frontière du candidat est prouvée sur les deux backends,
+  # avec la même suite hostile. Aucun résultat add-library n'est autorisé si
+  # l'un des OS permet réseau, credentials ou accès hors candidat.
+  library-candidate-isolation:
+    name: Library candidate isolation (${{ matrix.profile }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: linux-docker
+            runner: ubuntu-24.04
+          - profile: macos-sandbox
+            runner: macos-15
+    steps:
+      # SIMPL-1 — le contexte requis existe sur toute PR, mais la preuve OS
+      # coûteuse ne tourne que si sa fermeture de dépendances a changé.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - name: Contrat rapide — impact de la preuve d'isolation
+        id: library-impact
+        env:
+          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        run: node tools/library-ci-impact.mjs --base "$LIBRARY_DIFF_BASE" >> "$GITHUB_OUTPUT"
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.library-impact.outputs.isolation == 'true'
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        if: steps.library-impact.outputs.isolation == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        if: steps.library-impact.outputs.isolation == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: check:library-candidate-isolation (${{ matrix.profile }})
+        if: steps.library-impact.outputs.isolation == 'true'
+        run: bun run check:library-candidate-isolation
+
+  # Gate END-TO-END : part d'un dépôt temporaire, crée une app depuis le design
+  # versionné, committe automatiquement le shell puis publie réellement Material
+  # et Tailwind. Résolution Bun, schematics, compilation/build, navigateur,
+  # transactions Git et état final sont donc exercés ensemble, sans édition
+  # applicative par le harnais. Sur ubuntu (amd64), Chromium tourne nativement.
+  library-end-to-end:
+    name: Library integration (create-app → Material → Tailwind)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Les attestations de compatibilité référencent le commit exact qui
+          # a produit leurs preuves. Un checkout shallow rendrait ces commits
+          # invisibles et transformerait une preuve valide en faux négatif.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - name: Contrat rapide — impact de la preuve d'intégration
+        id: library-impact
+        env:
+          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        run: node tools/library-ci-impact.mjs --base "$LIBRARY_DIFF_BASE" >> "$GITHUB_OUTPUT"
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.library-impact.outputs.integration == 'true'
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        if: steps.library-impact.outputs.integration == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        if: steps.library-impact.outputs.integration == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: check:library-setup-integration
+        if: steps.library-impact.outputs.integration == 'true'
+        run: bun run check:library-setup-integration
+
+  # ─── Job T4-5 : secret scanning (gitleaks) ───────────────────────────────
+  # ADR-0006 : même contrôle que husky pre-push (`check:secrets -- --pre-push`).
+  # Ici scan **complet** de l'historique git (detect, blocking).
+  # Binaire piné via tools/check-secrets.mjs — 0 secret GITLEAKS_LICENSE.
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - name: check:secrets (gitleaks detect)
+        run: node tools/check-secrets.mjs
+
+  # ─── Job T4-3 : SAST complémentaire (Semgrep) ────────────────────────────
+  # Gap identifié : ESLint (style/qualité)
+  # et gitleaks (secrets, job ci-dessus) ne couvrent pas les patterns de
+  # vulnérabilité applicative (injection, XSS, désérialisation dangereuse,
+  # etc.). Semgrep choisi plutôt que CodeQL : gratuit sans dépendre d'un
+  # plan GitHub Advanced Security (statut du repo non confirmé), CLI open
+  # source, pas de dépendance à une Action tierce non pinnée.
+  #
+  # **Mode rapport seul, volontairement non bloquant pour ce premier
+  # rollout** (2026-08-11) : je n'ai pas pu exécuter Semgrep localement
+  # avant d'ajouter ce job (sandbox sans accès réseau sortant vers le
+  # registre de règles — `semgrep --version` reste bloqué indéfiniment),
+  # donc aucune vérification empirique de ce qu'il remonterait sur les
+  # ~2700 fichiers du dépôt n'a pu être faite avant ce commit. Pas de
+  # `--error` (Semgrep n'échoue alors jamais sur des findings) +
+  # `continue-on-error: true` (n'échoue pas non plus sur un crash/timeout
+  # de l'outil) : le job tourne et publie ses résultats sans jamais
+  # bloquer un push/PR. À repasser en bloquant une fois qu'un run réel (sur
+  # GitHub, avec accès réseau) a été revu par un humain et que les faux
+  # positifs pertinents ont été exclus (`.semgrepignore` / commentaires
+  # `nosemgrep`).
+  sast:
+    name: SAST (Semgrep, rapport seul)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install Semgrep (piné)
+        run: pip install semgrep==1.172.0
+
+      - name: Semgrep scan (p/default + p/owasp-top-ten, rapport seul)
+        continue-on-error: true
+        run: |
+          semgrep scan \
+            --config p/default \
+            --config p/owasp-top-ten \
+            --metrics off \
+            --exclude 'dist' \
+            --exclude 'node_modules' \
+            .
+
+  # ─── Job 2 : Oracle de vérification (nx affected) ────────────────────────
+  oracle:
+    name: Oracle — lint + build + ngc + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    needs: guardrails
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Set NX base branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
+          else
+            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
+          fi
+
+      # ESLint — boundaries Nx + règles Angular (ADR-0010 portail niveau Lint)
+      # --max-warnings=0 est porté par targetDefaults.lint (nx.json), pas par nx CLI
+      - name: Lint (nx affected)
+        id: nx-lint
+        env:
+          NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.NX_CLOUD_ACCESS_TOKEN || '' }}
+          NX_NO_CLOUD: ${{ (github.ref != 'refs/heads/main' || secrets.NX_CLOUD_ACCESS_TOKEN == '') && 'true' || 'false' }}
+        run: bunx nx affected -t lint --base=${{ env.NX_BASE }}
+
+      # Build package-based — tsc --noEmit par lib (audit A-4)
+      - name: Build (nx affected)
+        id: nx-build
+        env:
+          NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.NX_CLOUD_ACCESS_TOKEN || '' }}
+          NX_NO_CLOUD: ${{ (github.ref != 'refs/heads/main' || secrets.NX_CLOUD_ACCESS_TOKEN == '') && 'true' || 'false' }}
+        run: bunx nx affected -t build --base=${{ env.NX_BASE }}
+
+      # Vite transpile TypeScript sans le vérifier. Les projets Vite exposent
+      # donc un target `typecheck` distinct ; Nx ignore les projets qui n'en ont
+      # pas au lieu de dupliquer ngc pour Angular.
+      - name: Typecheck Vite projects (nx affected)
+        id: nx-typecheck
+        env:
+          NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.NX_CLOUD_ACCESS_TOKEN || '' }}
+          NX_NO_CLOUD: ${{ (github.ref != 'refs/heads/main' || secrets.NX_CLOUD_ACCESS_TOKEN == '') && 'true' || 'false' }}
+        run: bunx nx affected -t typecheck --base=${{ env.NX_BASE }}
+
+      # strictTemplates bloquant en PR (shift-left), sur les deux bancs Angular.
+      - name: strictTemplates (ngc)
+        run: |
+          bunx ngc -p apps/library-qualification-angular/tsconfig.app.json --noEmit
+          bunx ngc -p apps/library-qualification-angular-tailwind/tsconfig.app.json --noEmit
+
+      # Tests Vitest — ADR-0008. Ne pas passer `--passWithNoTests` ici : Nx
+      # le forward à tous les targets ; `@angular/build:unit-test` (app) a un
+      # schéma strict et échoue. Les libs ont `passWithNoTests: true` dans
+      # tools/vitest-lib.config.ts (SSoT).
+      - name: Test (nx affected)
+        id: nx-test
+        env:
+          NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.NX_CLOUD_ACCESS_TOKEN || '' }}
+          NX_NO_CLOUD: ${{ (github.ref != 'refs/heads/main' || secrets.NX_CLOUD_ACCESS_TOKEN == '') && 'true' || 'false' }}
+        run: bunx nx affected -t test --base=${{ env.NX_BASE }}
+
+  # ─── Job : e2e Playwright du banc React workspace ─────────────────────────
+  # Serveur statique local, 0 secret. La preuve ne tourne que si son projet
+  # (ou son serveur statique partagé) est affecté.
+  e2e-smoke:
+    name: E2E smoke (Playwright)
+    runs-on: ubuntu-latest
+    needs: guardrails
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # actions/runner-images#14594 : le miroir Azure des runners Ubuntu peut
+      # rester muet plus de 20 minutes avant le fallback archive.ubuntu.com.
+      # On borne le comportement natif d'APT ; aucune erreur n'est ignorée et
+      # l'installation officielle Playwright reste l'unique source des paquets.
+      - name: Bound APT mirror retries
+        run: |
+          sudo tee /etc/apt/apt.conf.d/80-cmz-ci-network >/dev/null <<'APT_CONFIG'
+          Acquire::Retries "1";
+          Acquire::http::Timeout "10";
+          Acquire::https::Timeout "10";
+          APT_CONFIG
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install chromium --with-deps
+
+      - name: Set NX base branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
+          else
+            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
+          fi
+
+      - name: Detect React workspace browser-proof impact
+        id: react-workspace-proof
+        run: |
+          if bunx nx show projects --affected --base=${{ env.NX_BASE }} | grep -qx workspace-react-proof \
+            || ! git diff --quiet ${{ env.NX_BASE }}...HEAD -- \
+              tools/e2e-static-server.mjs; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: React workspace browser proof
+        if: steps.react-workspace-proof.outputs.run == 'true'
+        run: bunx nx run workspace-react-proof:e2e
+        env:
+          CI: 'true'
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  dead-code:
+    name: Dead-code (knip)
+    runs-on: ubuntu-latest
+    needs: guardrails
+    # Bloquant : exit 0 local/CI attendu.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: check:dead-code (knip)
+        run: bun run check:dead-code
+
+  # ─── Job I-12/I-13 : audit des dépendances (bun audit) ───────────────────
+  # Complète Dependabot (N2, PR hebdo) par une porte en CI — Dependabot ouvre
+  # des PR mais ne bloque rien tant qu'elles ne sont pas mergées.
+  # `--audit-level=high` : ne remonte que high/critical (moderate/low restent
+  # visibles via Dependabot, pas bloquants ici — cf. audit-workspace-
+  # 2026-08-03.md, analyse par chemin de code réel avant ce commit).
+  #
+  # Bloquant depuis le 2026-08-04 (backlog #7, cartographie). Historique : au
+  # moment où ce job a été écrit, seuls 2 avisos (axios, brace-expansion)
+  # avaient été identifiés manuellement. Un vrai `bun audit --audit-level=high`
+  # (bun installé localement pour l'occasion, absent jusque-là de
+  # l'environnement d'audit) en a trouvé **8** (axios, brace-expansion — 3
+  # CVE distincts, fast-uri, ip-address), tous dans l'outillage de build
+  # (nx/eslint/@angular-devkit/@angular/cli/commitlint) sauf brace-expansion
+  # dont une chaîne remonte réellement jusqu'à `exceljs` (dépendance
+  # applicative de `@cmz/shared-browser`, via
+  # `unzipper → fstream → rimraf@2 → glob@7 → minimatch@3` — la vérification
+  # d'origine, limitée au seul champ `browser` d'exceljs, n'avait pas vu cette
+  # chaîne Node-only). Les 8 corrigés par un bloc `overrides` racine
+  # (`package.json`) forçant initialement `axios@1.19.0`/
+  # `brace-expansion@5.0.9`/
+  # `fast-uri@4.1.2`/`ip-address@10.4.0` dans tout l'arbre — sans les ajouter
+  # en dépendance directe (`bun update <pkg>` seul les ajoute à tort en
+  # dépendance directe de l'app, testé et annulé avant ce commit). `bun audit
+  # --audit-level=high` : 0 vulnérabilité après. Vérifié aussi : aucun import
+  # direct d'`axios` dans `apps/`/`libs/` (grep, 0 résultat — usage nx interne
+  # uniquement) ; build/lint/`check:boundary-negative` rejoués après le bump,
+  # 0 régression.
+  #
+  # Le 2026-09-09, l'audit a détecté js-yaml<4.3.2 ; l'override racine impose
+  # la première version corrigée. (L'override SVGO 4.1.0 et sa preuve
+  # `check:security-overrides` ont été retirés le 2026-09-10 : `@nx/react@23.2.0`
+  # a supprimé `@svgr/webpack` de ses dépendances, et le dépôt n'a aucun build
+  # webpack — toute la chaîne `@svgr/plugin-svgo`/`postcss-svgo`/`svgo` a quitté
+  # l'arbre, `bun audit` le confirme.)
+  # Le 2026-09-30, cinq nouveaux avis high publiés pour axios>=1.16.1<1.20.0
+  # ont invalidé l'override exact 1.19.0. L'override impose désormais la plage
+  # ^1.20.0 : plancher corrigé et mises à jour 1.x futures autorisées dans le
+  # lockfile. `security-overrides-repair.yml` audite chaque jour et ouvre une
+  # PR confinée à bun.lock lorsque l'un de ces overrides redevient vulnérable.
+  # `check:dependabot-policy` impose des planchers caret matérialisés et sûrs
+  # pour les paquets installés. Il refuse et nomme tout plancher dont le paquet
+  # est absent de packages dans bun.lock : ce plancher doit être retiré.
+  # Aucun de ces cinq GHSA n'est ignoré.
+  # Le 2026-11-17, GHSA-fc5q-39xc-vjpf (picomatch<=4.0.7, ReDoS, high) n'a
+  # aucune version corrigée. Décision « B » du propriétaire : exception ciblée
+  # de 14 jours au plus, dans AUDIT_IGNORES (tools/audit-exceptions.mjs),
+  # outillage de build et de dev seulement. Elle devient rouge seule à son
+  # expiration, dès que l'avis disparaît ou dès qu'une version corrigée paraît.
+  # Le 2026-10-06, le flux d'avis a signalé après fusion deux nouvelles
+  # transitives : proxy-addr<2.0.8 (critical) via @nx/react/express et
+  # source-map-js<1.2.2 (high) via les outils CSS/build/test. Elles sont
+  # alors gouvernées par des planchers caret explicites et testés. Le plancher
+  # proxy-addr est retiré le 2026-10-17, car le paquet n'est plus installé ;
+  # celui de source-map-js reste requis. La même passe a corrigé les avis
+  # modérés compatibles de fast-uri, smol-toml et qs.
+  # L'audit complet conserve visible l'avis modéré uuid@8 imposé par la dernière
+  # version d'ExcelJS : l'usage réel est uuid.v4() sans buffer, hors primitive
+  # vulnérable ; aucune majeure incompatible ni aucun ignore n'est forcé.
+  security-audit:
+    name: Dependency audit (bun audit)
+    runs-on: ubuntu-latest
+    needs: guardrails
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Garde anti-régression : le dépôt n'utilise aucun fichier Less. Le gate
+      # refuse donc tout fichier .less non formalisé, toute résolution de
+      # image-size et toute dépendance directe ou override artificiel. Less peut
+      # rester une peer optionnelle corrigée d'Angular/Vite, jamais un usage app.
+      - name: check:image-size-security
+        run: bun run check:image-size-security
+
+      # Point d'entrée unique (tools/audit-exceptions.mjs) : il valide les
+      # exceptions d'AUDIT_IGNORES (un avis, un paquet, 14 jours au plus,
+      # rouge à l'expiration ou dès qu'une version corrigée existe), puis lance
+      # le `bun audit --audit-level=high` natif. Aucun `--ignore` n'est écrit
+      # dans un workflow (garde : check:workflow-privileges).
+      - name: bun audit (high/critical bloquant)
+        run: node tools/audit-exceptions.mjs
+
+  # ─── Job T6-2 : inventaire de licences tierces (license-checker) ─────────
+  # Production 100 % permissive bloquante sans exception ; dev-only limité à
+  # une allowlist nominative documentée (tools/check-licenses.mjs).
+  licenses:
+    name: Third-party licenses (license-checker)
+    runs-on: ubuntu-latest
+    needs: guardrails
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: check:licenses (production permissive + exceptions dev-only)
+        run: node tools/check-licenses.mjs
+
+  # ─── Job : fichiers byte-identiques entre modules ─────────────────────────
+  # Baseline 0 — bloquant.
+  duplicates:
+    name: Duplicate files (MD5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+
+      - name: check:duplicates (empreinte MD5 cross-module)
+        run: node tools/check-duplicate-files.mjs
+
+  external-application-shells:
+    name: External application shells
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Verify bun runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          expected="$(node -p 'require("./package.json").packageManager.slice(4)')"
+          test "$(bun --version)" = "$expected"
+      - name: Installer le seul atelier depuis son verrou
+        run: bun install --frozen-lockfile
+      - name: Tests des chemins, plans, ownership et reprise
+        run: bun run test:external-application-shells
+      # X4-config : relais nginx sur l'image officielle épinglée (en-têtes,
+      # amont, redirections, cookies, arrêts sans valeur, contre-mutations).
+      - name: Relais nginx de même origine (X4-config)
+        run: bun run check:nginx-relay
+      # Filet d'empreinte : l'image épinglée correspond-elle encore à son tag ?
+      # Trois issues fermées ; un registre injoignable rougit l'étape.
+      - name: Empreinte de l'image nginx du relais (X4-config)
+        run: bun run check:nginx-digest
+      - name: Racine physique de la preuve hors atelier
+        id: external-proof-root
+        shell: bash
+        run: |
+          proof_parent="$(cd "$(dirname "$GITHUB_WORKSPACE")" && pwd -P)"
+          printf 'CMZ_EXTERNAL_APPLICATION_PROOF_ROOT=%s/cmz-external-application-proof\n' "$proof_parent" >> "$GITHUB_ENV"
+      - name: T9–T18 outils natifs confinés, deux apps et mutations
+        run: bun run check:external-application-shells --proof-root "${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}" --backend docker
+      # X4-config, preuves 8 et 10 : la coque construite par la preuve native,
+      # servie par le relais nginx, ouverte par son Chromium (Trusted Types et
+      # politique sans violation, service worker).
+      - name: Coque servie par le relais nginx (X4-config)
+        run: bun run check:nginx-relay-browser "${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}"
+      # X4-sécurité-3, N4 (O-S-V) : trois témoins natifs de (submit), construits
+      # par les outils du produit de la preuve et mesurés dans son Chromium.
+      - name: Témoins natifs de la soumission (X4-sécurité-3)
+        run: bun run check:page-submit-witnesses "${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}"
+      - name: Reçu texte sans environnement
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: external-application-shells-text
+          path: ${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}/report.txt
+          if-no-files-found: warn
+          retention-days: 7

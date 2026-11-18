@@ -1,0 +1,723 @@
+import { createHash } from 'node:crypto';
+
+import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
+import { adaptExternalShellFiles } from './application-workspace-renderer.mjs';
+import {
+    renderAngularApplicationSession,
+    renderExternalSessionGuardSpec,
+} from './angular-application-session-renderer.mjs';
+import {
+    renderExternalConnectivity,
+    renderExternalConnectivitySpec,
+    renderExternalSessionNavigationSpec,
+} from './angular-external-shell-renderer.mjs';
+import { sessionRenderConfiguration } from '../core/application-design-session.mjs';
+import { applicationRoutePattern } from '../core/application-route-pattern.mjs';
+import { renderExternalRelayFiles } from './external-relay-renderer.mjs';
+
+function sha256(content) {
+    return createHash('sha256').update(content).digest('hex');
+}
+
+function json(value) {
+    return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function quoted(value) {
+    return JSON.stringify(value);
+}
+
+function escapedMarkup(value) {
+    return Array.from(
+        value,
+        (character) => `&#${character.codePointAt(0)};`
+    ).join('');
+}
+
+function routePath(page) {
+    return page.path === '/'
+        ? ''
+        : page.path.replace(/^\//, '').replace(/\/$/, '');
+}
+
+function renderRoutes(pages) {
+    const guardImport = pages.some((page) => page.access.mode !== 'public')
+        ? "\nimport { appAccessGuard } from './access.guard';\n"
+        : '';
+    const routes = pages
+        .map(
+            (page) => `    {
+        path: ${quoted(routePath(page))},
+        data: { access: ${JSON.stringify(page.access)} },
+${page.access.mode === 'public' ? '' : '        canActivate: [appAccessGuard],\n'}        loadComponent: () =>
+            import('./pages/${page.id}/page.component').then(
+                (module) => module.PageComponent
+            ),
+    },`
+        )
+        .join('\n');
+    return `import { Routes } from '@angular/router';
+${guardImport}
+
+export const appRoutes: Routes = [
+${routes}
+    { path: '**', redirectTo: '' },
+];
+`;
+}
+
+function accessGuard() {
+    return `import { inject, InjectionToken } from '@angular/core';
+import { CanActivateFn } from '@angular/router';
+
+export interface AppAccessDecisionPort {
+    isAuthenticated(): boolean;
+    hasPermission(permission: string): boolean;
+}
+
+export interface AppAccessPolicy {
+    mode: 'public' | 'authenticated' | 'authorized';
+    permissions: readonly string[];
+}
+
+declare global {
+    interface Window {
+        /** Contexte public injecté par le host avant le bootstrap Angular. */
+        __cmzAppAccessContext?: unknown;
+    }
+}
+
+function denyAll(): AppAccessDecisionPort {
+    return Object.freeze({
+        isAuthenticated: () => false,
+        hasPermission: () => false,
+    });
+}
+
+export function createBrowserAccessDecision(
+    raw: unknown
+): AppAccessDecisionPort {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return denyAll();
+    }
+
+    const context = raw as Record<string, unknown>;
+    const keys = Object.keys(context).sort();
+    if (
+        keys.length !== 2 ||
+        keys[0] !== 'authenticated' ||
+        keys[1] !== 'permissions' ||
+        context['authenticated'] !== true ||
+        !Array.isArray(context['permissions']) ||
+        !context['permissions'].every(
+            (permission) =>
+                typeof permission === 'string' && permission.length > 0
+        )
+    ) {
+        return denyAll();
+    }
+
+    const permissions = new Set(context['permissions'] as readonly string[]);
+    return Object.freeze({
+        isAuthenticated: () => true,
+        hasPermission: (permission: string) => permissions.has(permission),
+    });
+}
+
+export const APP_ACCESS_DECISION = new InjectionToken<AppAccessDecisionPort>(
+    'APP_ACCESS_DECISION',
+    {
+        providedIn: 'root',
+        factory: () =>
+            createBrowserAccessDecision(window.__cmzAppAccessContext),
+    }
+);
+
+export function evaluateAppAccess(
+    policy: AppAccessPolicy | null | undefined,
+    decision: AppAccessDecisionPort | null
+): boolean {
+    if (!policy || !Array.isArray(policy.permissions)) return false;
+    if (policy.mode === 'public') return policy.permissions.length === 0;
+    if (!decision?.isAuthenticated()) return false;
+    if (policy.mode === 'authenticated') return policy.permissions.length === 0;
+    if (policy.mode !== 'authorized') return false;
+    if (policy.permissions.length === 0) return false;
+    return policy.permissions.every((permission) =>
+        permission.length > 0 && decision.hasPermission(permission)
+    );
+}
+
+export const appAccessGuard: CanActivateFn = (route) =>
+    evaluateAppAccess(
+        route.data['access'] as AppAccessPolicy,
+        inject(APP_ACCESS_DECISION, { optional: true })
+    );
+`;
+}
+
+function accessGuardSpec() {
+    return `import { describe, expect, it } from 'vitest';
+
+import {
+    createBrowserAccessDecision,
+    evaluateAppAccess,
+} from './access.guard';
+import type { AppAccessDecisionPort } from './access.guard';
+
+function decision(
+    authenticated: boolean,
+    granted: readonly string[] = []
+): AppAccessDecisionPort {
+    return {
+        isAuthenticated: () => authenticated,
+        hasPermission: (permission) => granted.includes(permission),
+    };
+}
+
+describe('evaluateAppAccess', () => {
+    it('autorise une page publique sans port', () => {
+        expect(evaluateAppAccess({ mode: 'public', permissions: [] }, null)).toBe(true);
+    });
+
+    it('refuse une page connectée sans session', () => {
+        expect(evaluateAppAccess({ mode: 'authenticated', permissions: [] }, null)).toBe(false);
+        expect(evaluateAppAccess({ mode: 'authenticated', permissions: [] }, decision(false))).toBe(false);
+    });
+
+    it('exige toutes les permissions d’une page autorisée', () => {
+        const policy = { mode: 'authorized' as const, permissions: ['reports.read', 'reports.write'] };
+        expect(evaluateAppAccess({ mode: 'authorized', permissions: [] }, decision(true))).toBe(false);
+        expect(evaluateAppAccess(policy, decision(true, ['reports.read']))).toBe(false);
+        expect(evaluateAppAccess(policy, decision(true, policy.permissions))).toBe(true);
+    });
+
+    it('refuse une politique absente ou incohérente', () => {
+        expect(evaluateAppAccess(undefined, decision(true))).toBe(false);
+        expect(evaluateAppAccess({ mode: 'public', permissions: ['unexpected'] }, null)).toBe(false);
+    });
+});
+
+describe('createBrowserAccessDecision', () => {
+    it.each([
+        undefined,
+        null,
+        true,
+        {},
+        { authenticated: false, permissions: [] },
+        { authenticated: true, permissions: 'users.create' },
+        { authenticated: true, permissions: [''] },
+        { authenticated: true, permissions: [1] },
+        {
+            authenticated: true,
+            permissions: ['users.create'],
+            unexpected: true,
+        },
+    ])('échoue fermé pour un contexte absent ou invalide', (raw) => {
+        const access = createBrowserAccessDecision(raw);
+
+        expect(access.isAuthenticated()).toBe(false);
+        expect(access.hasPermission('users.create')).toBe(false);
+    });
+
+    it('expose uniquement les permissions explicites du host', () => {
+        const access = createBrowserAccessDecision({
+            authenticated: true,
+            permissions: ['users.create'],
+        });
+
+        expect(access.isAuthenticated()).toBe(true);
+        expect(access.hasPermission('users.create')).toBe(true);
+        expect(access.hasPermission('users.delete')).toBe(false);
+    });
+});
+`;
+}
+
+export function pageContract(
+    design,
+    experience,
+    page,
+    designPath,
+    designSha256
+) {
+    return {
+        schema_version: '1.0.0',
+        kind: 'page-realization-contract',
+        design_ref: { path: designPath, sha256: designSha256 },
+        design: {
+            id: design.design.id,
+            title: design.design.title,
+            version: design.design.version,
+        },
+        experience: {
+            id: experience.id,
+            channel: experience.channel,
+            offline_policy: experience.offline_policy,
+            audience_ids: experience.audience_ids,
+            ...(experience.session
+                ? { session: sessionRenderConfiguration(design, experience) }
+                : {}),
+        },
+        backend_contracts: design.backend_contracts,
+        page,
+    };
+}
+
+function placeholderPage(page, session = false) {
+    return `import { Component } from '@angular/core';
+
+@Component({
+    selector: 'app-page-${page.id.slice(-8)}',
+    template: \`
+        <${session ? 'section' : 'main'} tabindex="-1">
+            <h1 i18n="Titre de page@@${page.id}.title">${escapedMarkup(page.title)}</h1>
+            <p i18n="État de réalisation@@${page.id}.pending">Cette page doit être réalisée depuis son contrat validé.</p>
+        </${session ? 'section' : 'main'}>
+    \`,
+})
+export class PageComponent {}
+`;
+}
+
+// Relais de même origine : fichiers possédés, liaisons de même origine
+// fournies à SESSION_ENDPOINTS, proxy du serveur de développement.
+function addExternalRelay(files, appName, design, experience) {
+    const relay = renderExternalRelayFiles({
+        appName,
+        config: sessionRenderConfiguration(design, experience),
+    });
+    Object.assign(files, relay.files);
+    const config = files['src/app/app.config.ts'];
+    const imported =
+        "import { applicationSessionInterceptor } from './session/session.interceptor';";
+    const provided =
+        '{ provide: APPLICATION_SESSION, useExisting: ApplicationSession }]';
+    if (
+        config.split(imported).length !== 2 ||
+        config.split(provided).length !== 2
+    )
+        throw new Error(
+            'application shell: app config is not the session config'
+        );
+    files['src/app/app.config.ts'] = config
+        .replace(
+            imported,
+            `${imported}\nimport { RELAY_ENDPOINTS } from './session/relay-endpoints';`
+        )
+        .replace(
+            provided,
+            '{ provide: APPLICATION_SESSION, useExisting: ApplicationSession }, RELAY_ENDPOINTS]'
+        );
+    const project = JSON.parse(files['project.json']);
+    project.targets.serve.options = {
+        ...project.targets.serve.options,
+        proxyConfig: `apps/${appName}/proxy.conf.mjs`,
+    };
+    files['project.json'] = json(project);
+}
+
+export async function renderAngularPwaShell({
+    design,
+    experienceId,
+    appName,
+    designPath,
+    designSha256,
+    externalWorkspace = false,
+}) {
+    if (!/^[a-z][a-z0-9-]*$/.test(appName ?? ''))
+        throw new Error('application shell: app name must be kebab-case');
+    if (design.design?.status !== 'approved')
+        throw new Error('application shell: design must be approved');
+    const experience = design.experiences.find(
+        (entry) => entry.id === experienceId
+    );
+    if (!experience)
+        throw new Error(
+            `application shell: unknown experience ${experienceId}`
+        );
+    if (experience.channel !== 'web')
+        throw new Error(
+            'application shell: angular-pwa supports only the web channel'
+        );
+    const pageById = new Map(design.pages.map((page) => [page.id, page]));
+    const pages = experience.page_ids.map((id) => pageById.get(id));
+    if (pages.some((page) => !page))
+        throw new Error(
+            'application shell: experience contains an unresolved page'
+        );
+
+    const root = `apps/${appName}`;
+    const escapedTitle = escapedMarkup(design.design.title);
+    const files = {
+        '.cmz/libraries.json': json({
+            schema_version: '1.0.0',
+            kind: 'app-library-manifest',
+            platform: 'angular',
+            libraries: [],
+        }),
+        'project.json': json({
+            name: appName,
+            $schema: '../../node_modules/nx/schemas/project-schema.json',
+            projectType: 'application',
+            prefix: 'app',
+            sourceRoot: `${root}/src`,
+            i18n: { sourceLocale: 'fr' },
+            tags: ['type:app', `experience:${experience.id}`],
+            targets: {
+                build: {
+                    executor: '@angular/build:application',
+                    outputs: ['{options.outputPath}'],
+                    defaultConfiguration: 'production',
+                    options: {
+                        outputPath: `dist/${root}`,
+                        browser: `${root}/src/main.ts`,
+                        polyfills: ['@angular/localize/init'],
+                        tsConfig: `${root}/tsconfig.app.json`,
+                        inlineStyleLanguage: 'scss',
+                        assets: [{ glob: '**/*', input: `${root}/public` }],
+                        styles: [`${root}/src/styles.scss`],
+                    },
+                    configurations: {
+                        production: {
+                            budgets: [
+                                {
+                                    type: 'initial',
+                                    maximumWarning: '500kb',
+                                    maximumError: '750kb',
+                                },
+                                {
+                                    type: 'anyComponentStyle',
+                                    maximumWarning: '4kb',
+                                    maximumError: '8kb',
+                                },
+                            ],
+                            outputHashing: 'all',
+                        },
+                        development: {
+                            optimization: false,
+                            extractLicenses: false,
+                            sourceMap: true,
+                        },
+                    },
+                },
+                serve: {
+                    continuous: true,
+                    executor: '@angular/build:dev-server',
+                    defaultConfiguration: 'development',
+                    readyWhen: { signal: true },
+                    configurations: {
+                        production: {
+                            buildTarget: `${appName}:build:production`,
+                        },
+                        development: {
+                            buildTarget: `${appName}:build:development`,
+                        },
+                    },
+                },
+                lint: {
+                    options: {
+                        lintFilePatterns: [
+                            `${root}/**/*.ts`,
+                            `${root}/**/*.html`,
+                        ],
+                    },
+                },
+                test: {
+                    executor: '@angular/build:unit-test',
+                    options: {
+                        watch: false,
+                        runnerConfig:
+                            'tools/generator-platform/page-realization-vitest.config.mjs',
+                    },
+                },
+                'serve-static': {
+                    continuous: true,
+                    executor: '@nx/web:file-server',
+                    options: {
+                        buildTarget: `${appName}:build`,
+                        staticFilePath: `dist/${root}/browser`,
+                        spa: true,
+                    },
+                    readyWhen: { signal: true },
+                    dependsOn: ['build'],
+                },
+            },
+        }),
+        'tsconfig.json': json({
+            extends: '../../tsconfig.base.json',
+            compilerOptions: {
+                noPropertyAccessFromIndexSignature: true,
+                isolatedModules: true,
+                emitDecoratorMetadata: false,
+            },
+            angularCompilerOptions: {
+                enableI18nLegacyMessageIdFormat: false,
+                strictInjectionParameters: true,
+                strictInputAccessModifiers: true,
+                strictTemplates: true,
+            },
+            files: [],
+            include: [],
+            references: [
+                { path: './tsconfig.app.json' },
+                { path: './tsconfig.spec.json' },
+            ],
+        }),
+        'tsconfig.app.json': json({
+            extends: './tsconfig.json',
+            compilerOptions: {
+                outDir: '../../dist/out-tsc',
+                types: ['@angular/localize'],
+            },
+            include: ['src/**/*.ts'],
+            exclude: ['src/**/*.spec.ts', 'src/**/*.test.ts'],
+        }),
+        'tsconfig.spec.json': json({
+            extends: './tsconfig.json',
+            compilerOptions: {
+                outDir: '../../dist/out-tsc',
+                types: ['vitest/globals', '@angular/localize'],
+            },
+            include: ['src/**/*.spec.ts', 'src/**/*.d.ts'],
+        }),
+        'eslint.config.mjs': `import nx from '@nx/eslint-plugin';
+import baseConfig from '../../eslint.config.mjs';
+
+export default [
+    ...nx.configs['flat/angular'],
+    ...nx.configs['flat/angular-template'],
+    ...baseConfig,
+    {
+        files: ['**/*.ts'],
+        rules: {
+            '@angular-eslint/directive-selector': [
+                'error',
+                { type: 'attribute', prefix: 'app', style: 'camelCase' },
+            ],
+            '@angular-eslint/component-selector': [
+                'error',
+                { type: 'element', prefix: 'app', style: 'kebab-case' },
+            ],
+        },
+    },
+];
+`,
+        'src/index.html': `<!doctype html>
+<html lang="fr">
+    <head>
+        <meta charset="utf-8" />
+        <title>${escapedTitle}</title>
+        <base href="/" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#0b5d3b" />
+        <link rel="manifest" href="manifest.webmanifest" />
+    </head>
+    <body>
+        <app-root></app-root>
+        <noscript>JavaScript est nécessaire pour utiliser cette application.</noscript>
+    </body>
+</html>
+`,
+        'src/main.ts': `import { bootstrapApplication } from '@angular/platform-browser';
+
+import { App } from './app/app';
+import { appConfig } from './app/app.config';
+
+bootstrapApplication(App, appConfig)
+    .then(() => {
+        if ('serviceWorker' in navigator) {
+            void navigator.serviceWorker.register('/sw.js');
+        }
+    })
+    .catch((error: unknown) => console.error(error));
+`,
+        'src/app/app.ts': `import { Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
+
+@Component({
+    imports: [RouterOutlet],
+    selector: 'app-root',
+    template: '<router-outlet />',
+})
+export class App {}
+`,
+        'src/app/app.config.ts': `import { provideHttpClient } from '@angular/common/http';
+import {
+    ApplicationConfig,
+    provideBrowserGlobalErrorListeners,
+} from '@angular/core';
+import { provideRouter } from '@angular/router';
+
+import { appRoutes } from './app.routes';
+
+export const appConfig: ApplicationConfig = {
+    providers: [
+        provideBrowserGlobalErrorListeners(),
+        provideHttpClient(),
+        provideRouter(appRoutes),
+    ],
+};
+`,
+        'src/app/access.guard.ts': accessGuard(),
+        'src/app/access.guard.spec.ts': accessGuardSpec(),
+        'src/app/app.routes.ts': renderRoutes(pages),
+        'src/styles.scss': `:root {
+    color-scheme: light;
+    font-family: system-ui, sans-serif;
+}
+
+body {
+    margin: 0;
+}
+
+:focus-visible {
+    outline: 3px solid #005fcc;
+    outline-offset: 3px;
+}
+`,
+        'public/manifest.webmanifest': json({
+            name: design.design.title,
+            short_name: design.design.title.slice(0, 24),
+            start_url: '/',
+            scope: '/',
+            display: 'standalone',
+            background_color: '#ffffff',
+            theme_color: '#0b5d3b',
+            icons: [
+                {
+                    src: 'icon.svg',
+                    sizes: 'any',
+                    type: 'image/svg+xml',
+                    purpose: 'any maskable',
+                },
+            ],
+        }),
+        'public/icon.svg': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="${escapedTitle}">
+    <rect width="512" height="512" rx="96" fill="#0b5d3b" />
+    <path d="M148 270l70 70 150-168" fill="none" stroke="#fff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
+`,
+        'public/sw.js': `const CACHE = 'cmz-shell-v1';
+const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+
+self.addEventListener('install', (event) => {
+    event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('fetch', (event) => {
+    if (event.request.method !== 'GET') return;
+    const requestUrl = new URL(event.request.url);
+    if (requestUrl.origin !== self.location.origin) return;
+    const cacheableDestination = ['document', 'script', 'style', 'image', 'font'].includes(
+        event.request.destination
+    );
+    if (event.request.mode !== 'navigate' && !cacheableDestination) return;
+    event.respondWith(
+        fetch(event.request)
+            .then((response) => {
+                if (response.ok && response.type === 'basic') {
+                    const copy = response.clone();
+                    void caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+                }
+                return response;
+            })
+            .catch(() => caches.match(event.request).then((hit) => hit ?? caches.match('/index.html')))
+    );
+});
+`,
+    };
+    for (const page of pages) {
+        files[`src/app/pages/${page.id}/page.component.ts`] = placeholderPage(
+            page,
+            Boolean(experience.session)
+        );
+        files[`.cmz/pages/${page.id}.json`] = json(
+            pageContract(design, experience, page, designPath, designSha256)
+        );
+    }
+    // Toute app gérée doit déclarer ses bibliothèques (ADR-0041) : sans ce
+    // manifeste, `check:library-setup` refuse une app fraîchement créée. Le
+    // `$localize` appartient au socle Angular généré, pas aux bibliothèques
+    // optionnelles. Material et Tailwind restent opt-in via `add-library`.
+    files['.cmz/libraries.json'] = json({
+        schema_version: '1.0.0',
+        kind: 'app-library-manifest',
+        platform: 'angular',
+        libraries: [],
+    });
+    if (externalWorkspace) {
+        adaptExternalShellFiles(files, { profile: 'angular-pwa', appName });
+    }
+    if (experience.session) {
+        Object.assign(
+            files,
+            await renderAngularApplicationSession({ design, experience })
+        );
+        delete files['src/app/access.guard.ts'];
+        delete files['src/app/access.guard.spec.ts'];
+        // Le mode atelier ne lance pas la cible test : sa sortie reste inchangée.
+        if (externalWorkspace)
+            files['src/app/session/session.guard.spec.ts'] =
+                renderExternalSessionGuardSpec();
+        // X4-config : relais de même origine (topologie A), extérieur seulement.
+        if (externalWorkspace)
+            addExternalRelay(files, appName, design, experience);
+        // X4-sécurité-3, G1 : connectivité détenue par la coque, extérieur
+        // seulement. La coque n'est pas republiable : seuls les produits créés
+        // après ce changement la reçoivent.
+        if (externalWorkspace) {
+            files['src/app/session/connectivity.ts'] =
+                renderExternalConnectivity();
+            files['src/app/session/connectivity.spec.ts'] =
+                renderExternalConnectivitySpec();
+            // P-A4 : navigation de session bornée aux routes déclarées.
+            files['src/app/session/session.navigation.spec.ts'] =
+                renderExternalSessionNavigationSpec(
+                    applicationRoutePattern().source
+                );
+        }
+    }
+    const canonicalFiles = await canonicalizeGeneratedFiles(
+        Object.fromEntries(
+            Object.entries(files).map(([path, content]) => [
+                `${root}/${path}`,
+                content,
+            ])
+        )
+    );
+    for (const path of Object.keys(files)) {
+        files[path] = canonicalFiles[`${root}/${path}`];
+    }
+    const artifacts = Object.entries(files)
+        .map(([path, content]) => ({
+            path,
+            bytes: Buffer.byteLength(content),
+            sha256: sha256(content),
+        }))
+        .sort((left, right) => left.path.localeCompare(right.path));
+    const manifest = {
+        schema_version: '1.0.0',
+        kind: 'application-shell-manifest',
+        app_name: appName,
+        profile: 'angular-pwa',
+        design_ref: { path: designPath, sha256: designSha256 },
+        experience_id: experience.id,
+        generated_files: artifacts,
+        tree_sha256: sha256(
+            artifacts
+                .map((entry) => `${entry.path}\0${entry.sha256}`)
+                .join('\0')
+        ),
+    };
+    const canonicalManifest = await canonicalizeGeneratedFiles({
+        [`${root}/.cmz/app-manifest.json`]: json(manifest),
+    });
+    files['.cmz/app-manifest.json'] =
+        canonicalManifest[`${root}/.cmz/app-manifest.json`];
+    return { files, manifest, experience, pages };
+}

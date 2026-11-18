@@ -1,0 +1,109 @@
+---
+archetype: component
+role: screen
+shape:
+    Composant Angular de page standalone implicite, borné au contrat de
+    réalisation et sans accès réseau direct.
+forbid:
+    - 'standalone: true explicite'
+    - "import direct d'une couche data"
+    - 'appel HTTP, fetch, Axios ou XMLHttpRequest'
+    - 'règle métier dans la présentation'
+---
+
+# Contrat d'archétype — `component`
+
+## Rôle
+
+Un **composant de page / feature UI** orchestre l'affichage et les actions
+utilisateur pour un volet métier. Il lit l'état via une **façade application**
+(signaux), mappe vers un **VM** (presenter) et délègue les contrôles
+réutilisables au design system (`@cmz/shared-ui`). **Zéro** règle métier dans le
+template ou la classe : validation et mapping wire/domaine restent en
+domain/data.
+
+## Couche
+
+`ui` → `@cmz/<module>-ui`. Dépend de `application` + `domain` (types) +
+`shared-ui` / `shared-application` (ports i18n, notification). **Jamais**
+d'import direct de `data` (DTO/HTTP) ni d'autre `scope:` métier.
+
+## Règle mécanique
+
+| Invariant    | Exigence                                                                                                                                                                                                                                                        |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Standalone   | `@Component({ … })` standalone implicite — jamais `standalone: true`, jamais de `NgModule` local                                                                                                                                                                |
+| OnPush       | Signaux uniquement ; ne pas déclarer `changeDetection` explicitement (OnPush est le défaut v22+) ; pas de `detectChanges` manuel hors tests                                                                                                                     |
+| DI           | `inject()` pour ports/façades — pas de constructeur gonflé de services HTTP                                                                                                                                                                                     |
+| Template     | i18n via le **mécanisme du profil actif** (`conventions/<plateforme>-<v>.profile.json` → `conventions.i18n` ; pour Angular : attributs `i18n` / `i18n-*` avec identifiants stables) — **pas** de texte visible non annoté, **pas** d'abstraction cross-platform |
+| A11y         | Boutons nommés (texte ou `aria-label`) ; champs filtrés avec `<label for>` ; icônes décoratives `aria-hidden="true"` ; groupes de toggle `role="group"` + `aria-pressed` (cf. T12-8)                                                                            |
+| Side-effects | Chargement initial dans le constructeur ou `effect` documenté via `facade.load(...)` — **pas** d'HTTP inline                                                                                                                                                    |
+| Export       | Exporté depuis `libs/<module>/ui/src/index.ts` et référencé en **lazy** par le contrat `route`                                                                                                                                                                  |
+
+## Non-reproduction (défauts source corrigés)
+
+- PrimeNG / `*ngIf` / modules NgModule massifs → components standalone +
+  design-system maison.
+- `UiFeedbackService` UI dans la page pour les erreurs HTTP → errors routées par
+  la facade/`ErrorHandlerRegistry` (application).
+- `console.log` de debug (filters, grafana link) → non reproduits.
+- Couplage direct Repository/API depuis le composant → **interdit**.
+
+## Exemplaire de référence (page RO-view)
+
+```ts
+@Component({
+    selector: 'cmz-dashboard-page',
+    imports: [DashboardSkeletonComponent],
+    providers: [DashboardFilterStore],
+    template: `
+        <section class="flex flex-col gap-6">
+            <header>
+                <h1 i18n="Titre du tableau de bord@@dashboard.title">
+                    Tableau de bord
+                </h1>
+                <!-- filtre période : role=group + aria-pressed (T12-8) -->
+            </header>
+            @if (loading()) {
+                <cmz-dashboard-skeleton />
+            } @else if (vm(); as data) {
+                <!-- cartes stats depuis presenter -->
+            }
+        </section>
+    `,
+})
+export class DashboardPageComponent {
+    private readonly facade = inject(DashboardFacade);
+    private readonly presenter = inject(DashboardPresenter);
+    private readonly store = inject(DashboardFilterStore);
+
+    protected readonly loading = this.facade.isLoading;
+    protected readonly vm = computed(() => {
+        const entity = this.facade.value();
+        return entity ? this.presenter.map(entity) : undefined;
+    });
+
+    constructor() {
+        this.facade.load(this.store.toContract());
+    }
+}
+```
+
+> i18n : attribut `i18n="sens@@identifiant.stable"` sur les nœuds statiques,
+> `i18n-*` sur les attributs et `$localize` pour un message construit en TS. Le
+> pont `LocalizeTranslationService` est réservé aux anciennes clés dynamiques
+> inventoriées du backoffice (ADR-0085), jamais à une nouvelle page.
+
+## Prompt
+
+> Produis un composant standalone `<Nom>PageComponent` (ou `*ListComponent` /
+> `*FormDialogComponent` suivant le nœud). Injecte la façade du module. i18n :
+> mécanisme du profil actif (Angular → attributs `i18n` / `i18n-*`, `$localize`
+> en TypeScript). Template : clés i18n, a11y (labels, aria-\*, boutons nommés),
+> `@if` / `@for` Angular control flow. Aucun import `@cmz/*-data`. Providers
+> locaux uniquement pour stores de filtre page-scoped.
+
+**Données** : nom du volet, façade, champs filter, colonnes table, actions
+autorisées (`PermissionActionsService` si workflow-action).
+
+**Oracle** : `@cmz/<module>-ui:build` ; tests a11y archétype (T12-8) en app.

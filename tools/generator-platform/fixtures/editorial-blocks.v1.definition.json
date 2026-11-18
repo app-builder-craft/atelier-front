@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "list-query",
+  "feature": {
+    "id": "editorial-blocks",
+    "name": "Editorial blocks",
+    "description": "Generic retained input used only to prove migration from list-query v1."
+  },
+  "operations": [
+    {
+      "id": "list-editorial-blocks",
+      "description": "Loads generic editorial blocks.",
+      "item": {
+        "id": "editorial-block",
+        "description": "A generic editorial block.",
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "kind": "primitive",
+              "name": "integer",
+              "nullable": false
+            },
+            "required": true
+          },
+          {
+            "name": "title",
+            "type": {
+              "kind": "primitive",
+              "name": "string",
+              "nullable": false
+            },
+            "required": true
+          }
+        ]
+      },
+      "access": { "mode": "public" },
+      "http": {
+        "method": "GET",
+        "path": "editorial/blocks",
+        "authentication": "none",
+        "response_envelope": "simple"
+      }
+    }
+  ]
+}

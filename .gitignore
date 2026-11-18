@@ -1,0 +1,117 @@
+# ---------------------------------------------------------------------------
+# Sorties de compilation
+# ---------------------------------------------------------------------------
+dist
+tmp
+out-tsc
+build
+target
+.angular
+
+# ---------------------------------------------------------------------------
+# Dépendances
+# ---------------------------------------------------------------------------
+node_modules
+.pnp
+.pnp.js
+
+# ---------------------------------------------------------------------------
+# Cache Nx
+# ---------------------------------------------------------------------------
+.nx/cache
+.nx/workspace-data
+.nx/migrate-runs
+
+# ---------------------------------------------------------------------------
+# Configuration d'environnement — observation O1
+#
+# Ces motifs n'ont d'effet que sur des fichiers NON ENCORE SUIVIS par Git.
+# Un fichier déjà versionné continue de l'être malgré son inscription ici :
+# c'est exactement le piège rencontré sur le projet d'origine, dont le
+# .gitignore listait tools/env et src/assets/config alors que ces fichiers
+# étaient suivis depuis longtemps.
+#
+# Pour retirer un fichier déjà suivi :  git rm --cached <fichier>
+# Pour vérifier qu'un fichier est bien ignoré :  git check-ignore -v <fichier>
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+**/src/assets/config/env.js
+**/environments/environment.local.ts
+*.local.json
+
+# Secrets et certificats — ne doivent jamais entrer dans l'historique
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+
+# ---------------------------------------------------------------------------
+# Tests et couverture
+# ---------------------------------------------------------------------------
+/coverage
+playwright-report
+.playwright
+test-results
+/blob-report
+
+# ---------------------------------------------------------------------------
+# Éditeurs et IDE
+# ---------------------------------------------------------------------------
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ---------------------------------------------------------------------------
+# Journaux et fichiers système
+# ---------------------------------------------------------------------------
+/.sass-cache
+/connect.lock
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+*.log
+
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Outils
+# ---------------------------------------------------------------------------
+.claude/worktrees
+.claude/settings.local.json
+
+# Cache binaire gitleaks (T4-5 / tools/check-secrets.mjs)
+tools/.cache/
+tools/generator-platform/.stack-test-runtime/
+
+__screenshots__/
+
+.nx/polygraph
+
+# Verrou et transactions durables de l'atelier (retire-app) — jamais versionnés
+/.cmz/retire-module-transactions/
+/apps/.*.create-app-candidate-*
+/apps/.*.generation-lock/
+/.cmz/retire-app-transactions/
+/.cmz/page-realization-work-orders/
+/.cmz/application-shell-integration/
+
+vite.config.*.timestamp*
+vitest.config.*.timestamp*
+.vitest

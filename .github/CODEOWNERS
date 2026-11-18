@@ -1,0 +1,56 @@
+# CODEOWNERS — relecture obligatoire par zone
+#
+# Objectif : empêcher qu'une modification du socle, du moteur de génération,
+# des sources recopiées dans les produits ou de la documentation passe sans
+# relecture de la zone responsable. La **dernière** règle qui correspond à un
+# fichier l'emporte : ordre = général → spécifique.
+#
+# Format : <motif>  <propriétaires>
+# Comptes (@utilisateur) ou équipes (@organisation/equipe) GitHub. Une équipe
+# inexistante est **ignorée sans erreur** : ne jamais laisser une zone sans
+# handle valide.
+#
+# Propriétaires courants — alias local pour lisibilité des diffs.
+# OWNERS = @ismaelkouda @soumailakouda
+
+# ---------------------------------------------------------------------------
+# Défaut — tout ce qui n'est pas couvert plus bas
+# ---------------------------------------------------------------------------
+*                                           @ismaelkouda @soumailakouda
+
+# ---------------------------------------------------------------------------
+# Socle du monorepo — impacte tous les projets
+# ---------------------------------------------------------------------------
+/package.json                               @ismaelkouda @soumailakouda
+/bun.lock                                   @ismaelkouda @soumailakouda
+/nx.json                                    @ismaelkouda @soumailakouda
+/tsconfig.base.json                         @ismaelkouda @soumailakouda
+/eslint.config.mjs                          @ismaelkouda @soumailakouda
+/commitlint.config.mjs                      @ismaelkouda @soumailakouda
+/knip.json                                  @ismaelkouda @soumailakouda
+/.husky/                                    @ismaelkouda @soumailakouda
+/.github/                                   @ismaelkouda @soumailakouda
+/tools/                                     @ismaelkouda @soumailakouda
+/tools/check-*.mjs                          @ismaelkouda @soumailakouda
+/tools/vitest-lib.config.ts                 @ismaelkouda @soumailakouda
+
+# ---------------------------------------------------------------------------
+# Sources génériques recopiées octet pour octet dans chaque produit
+# ---------------------------------------------------------------------------
+/libs/core/                                 @ismaelkouda @soumailakouda
+/libs/shared/                               @ismaelkouda @soumailakouda
+
+# ---------------------------------------------------------------------------
+# Bancs de qualification
+# ---------------------------------------------------------------------------
+/apps/                                      @ismaelkouda @soumailakouda
+
+# ---------------------------------------------------------------------------
+# Documentation, contrats, conventions
+# ---------------------------------------------------------------------------
+/docs/                                      @ismaelkouda @soumailakouda
+/conventions/                               @ismaelkouda @soumailakouda
+/PROJECT_AUTHORITY.md                       @ismaelkouda @soumailakouda
+/AGENTS.md                                  @ismaelkouda @soumailakouda
+/CLAUDE.md                                  @ismaelkouda @soumailakouda
+/README.md                                  @ismaelkouda @soumailakouda

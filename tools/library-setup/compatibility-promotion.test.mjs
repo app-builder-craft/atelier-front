@@ -1,0 +1,704 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import {
+    cpSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
+import semver from 'semver';
+
+import { validateRecipes } from '../check-library-setup.mjs';
+import { validateCompatibilityMatrices } from './compatibility.mjs';
+import {
+    buildVerificationFromExecution,
+    commitExists,
+    qualificationSourceSha256,
+    requiredProofIds,
+    verificationFailures,
+    verificationInputs,
+} from './compatibility-promotion.mjs';
+import { buildLibraryPlan, stableJson } from './library-plan.mjs';
+import {
+    dependencyClosureSha256,
+    dependencyProjectionSha256,
+} from './dependency-resolution.mjs';
+import { gitBlobOid } from './git-tree.mjs';
+import {
+    compatibilityTrackDigest,
+    libraryRunnerDigest,
+} from './tooling-fingerprint.mjs';
+import { qualifiedAdapterDescriptor } from './qualified-adapters.mjs';
+import { removeTemporaryFixture } from '../test-support/remove-temporary-fixture.mjs';
+import {
+    fixtureGit as git,
+    initFixtureRepo,
+} from '../test-support/fixture-git.mjs';
+
+const ROOT = new URL('../..', import.meta.url).pathname;
+const HEAD = execFileSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+}).trim();
+
+function sha256(value) {
+    return createHash('sha256').update(value).digest('hex');
+}
+
+function recipe(root = ROOT) {
+    return recipes(root).get('angular/angular-material');
+}
+
+function recipes(root = ROOT) {
+    return validateRecipes(root).recipes;
+}
+
+function track(root = ROOT) {
+    return JSON.parse(
+        readFileSync(
+            join(
+                root,
+                'conventions/libraries/angular/angular-material.compat.json'
+            ),
+            'utf8'
+        )
+    ).tracks[0];
+}
+
+function execution(overrides = {}, root = ROOT) {
+    const { plan: planOverrides = {}, ...executionOverrides } = overrides;
+    const sourceRecipe = recipe(root);
+    const sourceTrack = track(root);
+    const versions = Object.fromEntries(
+        Object.entries(sourceTrack.requirements).map(([tool, range]) => [
+            tool,
+            semver.minVersion(range).version,
+        ])
+    );
+    const inputs = verificationInputs(root, sourceRecipe, recipes(root));
+    const changePayload = {
+        schema_version: '1.0.0',
+        changes: [
+            {
+                op: 'create',
+                path: 'apps/demo-angular/proof',
+                mode: '100644',
+                sha256_after: '1'.repeat(64),
+            },
+        ],
+    };
+    const changeSet = {
+        ...changePayload,
+        change_set_id: `changes:${sha256(stableJson(changePayload))}`,
+    };
+    const format = git(root, ['rev-parse', '--show-object-format']);
+    const planInputs = {
+        app: 'demo-angular',
+        library: sourceRecipe.library,
+        platform: sourceRecipe.platform,
+        commit: git(root, ['rev-parse', '--verify', 'HEAD']),
+        recipe_sha256: inputs.recipe,
+        recipe_schema_sha256: inputs.recipe_schema,
+        policy_sha256: inputs.policy,
+        policy_schema_sha256: inputs.policy_schema,
+        compat_sha256: sha256(
+            readFileSync(
+                join(
+                    root,
+                    'conventions/libraries/angular/angular-material.compat.json'
+                )
+            )
+        ),
+        compat_schema_sha256: inputs.compat_schema,
+        runner_sha256: libraryRunnerDigest(root, sourceRecipe, recipes(root)),
+        nx_json_sha256: inputs.nx_json,
+        tsconfig_sha256: inputs.tsconfig,
+        gitattributes_sha256: inputs.gitattributes,
+        app_tree_sha256: '2'.repeat(64),
+        package_json_initial_oid: gitBlobOid(
+            readFileSync(join(root, 'package.json')),
+            format
+        ),
+        package_json_final_oid: '4'.repeat(format === 'sha1' ? 40 : 64),
+        bun_lock_initial_oid: gitBlobOid(
+            readFileSync(join(root, 'bun.lock')),
+            format
+        ),
+        bun_lock_final_oid: '6'.repeat(format === 'sha1' ? 40 : 64),
+        dependency_initial_sha256: dependencyProjectionSha256(
+            readFileSync(join(root, 'package.json')),
+            readFileSync(join(root, 'bun.lock')),
+            sourceTrack
+        ),
+        dependency_final_sha256: '7'.repeat(64),
+        node_version: versions.node,
+        bun_version: versions.bun,
+        nx_version: versions.nx,
+        framework_version: versions.framework,
+        schematic_version: Object.entries(sourceTrack.packages)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([name, version]) => `${name}@${version}`)
+            .join(','),
+        change_set_id: changeSet.change_set_id,
+    };
+    return {
+        published: false,
+        changeSet,
+        plan: buildLibraryPlan({ ...planInputs, ...planOverrides }),
+        runtimeProofs: requiredProofIds(sourceRecipe, recipes(root)),
+        qualifiedAdapter: {
+            ...qualifiedAdapterDescriptor(
+                root,
+                sourceRecipe.platform,
+                sourceRecipe.library
+            ),
+            change_set_id: changeSet.change_set_id,
+        },
+        ...executionOverrides,
+    };
+}
+
+function verification(root = ROOT) {
+    return buildVerificationFromExecution({
+        root,
+        recipe: recipe(root),
+        recipeRegistry: recipes(root),
+        track: track(root),
+        app: 'demo-angular',
+        execution: execution({}, root),
+    });
+}
+
+function fixture(t) {
+    const root = mkdtempSync(join(tmpdir(), 'cmz-promotion-'));
+    t.after(() => removeTemporaryFixture(root, 'cmz-promotion-'));
+    cpSync(join(ROOT, 'conventions'), join(root, 'conventions'), {
+        recursive: true,
+    });
+    cpSync(join(ROOT, 'tools'), join(root, 'tools'), { recursive: true });
+    for (const path of [
+        'package.json',
+        'bun.lock',
+        'nx.json',
+        'tsconfig.base.json',
+        '.gitattributes',
+    ]) {
+        cpSync(join(ROOT, path), join(root, path));
+    }
+    for (const { platform, library } of recipes().values()) {
+        const descriptor = qualifiedAdapterDescriptor(ROOT, platform, library);
+        for (const [path, digest] of Object.entries(descriptor.inputs_sha256)) {
+            const target = join(root, path);
+            if (!existsSync(target)) {
+                mkdirSync(dirname(target), { recursive: true });
+                cpSync(join(ROOT, path), target);
+            }
+            assert.equal(sha256(readFileSync(target)), digest, path);
+        }
+    }
+    initFixtureRepo(root);
+    git(root, ['add', '.']);
+    git(root, ['commit', '--quiet', '-m', 'fixture']);
+    return root;
+}
+
+function rebindCommit(root, evidence) {
+    const rebound = structuredClone(evidence);
+    rebound.commit = git(root, ['rev-parse', 'HEAD']);
+    rebound.source_context_sha256 = qualificationSourceSha256(
+        root,
+        recipe(),
+        recipes(),
+        track()
+    );
+    const { evidence_sha256: _ignored, ...payload } = rebound;
+    rebound.evidence_sha256 = sha256(stableJson(payload));
+    return rebound;
+}
+
+test('la preuve vient d’un résultat complet dont plan et change-set sont recalculés', () => {
+    const built = verification();
+    assert.equal(built.commit, HEAD);
+    assert.equal(built.schema_version, '1.3.0');
+    assert.equal(
+        built.source_context_sha256,
+        qualificationSourceSha256(ROOT, recipe(), recipes(), track())
+    );
+    assert.equal(built.track_sha256, compatibilityTrackDigest(track()));
+    assert.deepEqual(built.proofs, requiredProofIds(recipe(), recipes()));
+    assert.deepEqual(
+        verificationFailures(ROOT, recipe(), track(), built, {
+            recipeRegistry: recipes(),
+        }),
+        []
+    );
+
+    const forgedPlan = execution();
+    forgedPlan.plan.plan_id = `library-plan:${'0'.repeat(64)}`;
+    assert.throws(
+        () =>
+            buildVerificationFromExecution({
+                root: ROOT,
+                recipe: recipe(),
+                recipeRegistry: recipes(),
+                track: track(),
+                app: 'demo-angular',
+                execution: forgedPlan,
+            }),
+        /plan_id ne correspond pas/
+    );
+
+    const forgedChangeSet = execution();
+    forgedChangeSet.changeSet.change_set_id = `changes:${'0'.repeat(64)}`;
+    assert.throws(
+        () =>
+            buildVerificationFromExecution({
+                root: ROOT,
+                recipe: recipe(),
+                recipeRegistry: recipes(),
+                track: track(),
+                app: 'demo-angular',
+                execution: forgedChangeSet,
+            }),
+        /change_set_id ne correspond pas/
+    );
+
+    const forgedAdapter = execution();
+    forgedAdapter.qualifiedAdapter.digest_sha256 = '0'.repeat(64);
+    assert.throws(
+        () =>
+            buildVerificationFromExecution({
+                root: ROOT,
+                recipe: recipe(),
+                recipeRegistry: recipes(),
+                track: track(),
+                app: 'demo-angular',
+                execution: forgedAdapter,
+            }),
+        /adaptateur qualifié absent, invalide ou différent/
+    );
+});
+
+test('l’empreinte source survit au squash et aux changements sans rapport', (t) => {
+    const source = fixture(t);
+    git(source, ['branch', '-M', 'main']);
+    const base = git(source, ['rev-parse', 'HEAD']);
+    git(source, ['switch', '-c', 'qualification']);
+    const applicationNote = 'ops33-application.txt';
+    writeFileSync(
+        join(source, applicationNote),
+        'Changement applicatif neutre.\n'
+    );
+    git(source, ['add', applicationNote]);
+    git(source, ['commit', '--quiet', '-m', 'application sur la branche']);
+    const qualifiedCommit = git(source, ['rev-parse', 'HEAD']);
+
+    // Le producteur est lié au root/HEAD de la branche, jamais au ROOT global.
+    const built = verification(source);
+    assert.equal(built.commit, qualifiedCommit);
+    assert.notEqual(built.commit, HEAD);
+    assert.equal(commitExists(source, built.commit), true);
+    const matrixPath =
+        'conventions/libraries/angular/angular-material.compat.json';
+    const matrix = JSON.parse(readFileSync(join(source, matrixPath), 'utf8'));
+    matrix.tracks[0].status = 'verified';
+    matrix.tracks[0].verification = built;
+    writeFileSync(
+        join(source, matrixPath),
+        `${JSON.stringify(matrix, null, 2)}\n`
+    );
+    const persistedMatrix = readFileSync(join(source, matrixPath));
+    git(source, ['add', matrixPath]);
+    git(source, ['commit', '--quiet', '-m', 'attestation sur la branche']);
+    const branchTip = git(source, ['rev-parse', 'HEAD']);
+    const branchTree = git(source, ['rev-parse', 'HEAD^{tree}']);
+
+    git(source, ['switch', 'main']);
+    git(source, ['merge', '--squash', 'qualification']);
+    git(source, ['commit', '--quiet', '-m', 'squash de la qualification']);
+    const squash = git(source, ['rev-parse', 'HEAD']);
+    assert.notEqual(squash, branchTip);
+    assert.deepEqual(
+        git(source, ['rev-list', '--parents', '-n', '1', 'HEAD']).split(' '),
+        [squash, base]
+    );
+    assert.equal(git(source, ['rev-parse', 'HEAD^{tree}']), branchTree);
+    git(source, ['update-ref', '-d', 'refs/heads/qualification', branchTip]);
+
+    const squashed = mkdtempSync(join(tmpdir(), 'cmz-promotion-'));
+    t.after(() => removeTemporaryFixture(squashed, 'cmz-promotion-'));
+    git(source, [
+        'clone',
+        '--quiet',
+        '--no-local',
+        '--single-branch',
+        '--branch',
+        'main',
+        '--config',
+        'gc.autoDetach=false',
+        '--config',
+        'maintenance.autoDetach=false',
+        pathToFileURL(source).href,
+        squashed,
+    ]);
+    initFixtureRepo(squashed);
+    assert.equal(git(squashed, ['config', '--get', 'gc.autoDetach']), 'false');
+    assert.equal(
+        git(squashed, ['config', '--get', 'maintenance.autoDetach']),
+        'false'
+    );
+    assert.equal(
+        git(squashed, ['rev-parse', '--is-shallow-repository']),
+        'false'
+    );
+    assert.deepEqual(git(squashed, ['rev-list', '--all']).split('\n'), [
+        squash,
+        base,
+    ]);
+    assert.deepEqual(
+        git(squashed, ['rev-list', '--parents', '-n', '1', 'HEAD']).split(' '),
+        [squash, base]
+    );
+    assert.equal(git(squashed, ['rev-parse', 'HEAD^{tree}']), branchTree);
+    assert.equal(commitExists(squashed, built.commit), false);
+    assert.throws(() =>
+        git(squashed, ['cat-file', '-e', `${built.commit}^{commit}`])
+    );
+    assert.deepEqual(readFileSync(join(squashed, matrixPath)), persistedMatrix);
+
+    const after = JSON.parse(readFileSync(join(squashed, matrixPath), 'utf8'));
+    assert.deepEqual(after.tracks[0].verification, built);
+    const registry = validateRecipes(squashed);
+    assert.deepEqual(registry.errors, []);
+    assert.deepEqual(
+        verificationFailures(
+            squashed,
+            registry.recipes.get('angular/angular-material'),
+            after.tracks[0],
+            after.tracks[0].verification,
+            { recipeRegistry: registry.recipes }
+        ),
+        []
+    );
+    assert.deepEqual(
+        validateCompatibilityMatrices(squashed, registry.recipes).errors,
+        []
+    );
+
+    const unrelatedTest = 'tools/library-setup/sandbox.test.mjs';
+    writeFileSync(
+        join(squashed, unrelatedTest),
+        `${readFileSync(join(squashed, unrelatedTest), 'utf8')}\n`
+    );
+    git(squashed, ['add', unrelatedTest]);
+    git(squashed, ['commit', '--quiet', '-m', 'dérive après qualification']);
+    assert.deepEqual(
+        validateCompatibilityMatrices(squashed, registry.recipes).errors,
+        []
+    );
+    assert.deepEqual(readFileSync(join(squashed, matrixPath)), persistedMatrix);
+});
+
+test('aucune liste déclarative ne remplace les oracles, coexistence comprise', () => {
+    assert.ok(
+        requiredProofIds(recipe(), recipes()).includes(
+            'material-tailwind-render-together'
+        )
+    );
+    assert.ok(
+        requiredProofIds(recipes().get('angular/tailwind'), recipes()).includes(
+            'material-tailwind-render-together'
+        ),
+        'la qualification Tailwind doit aussi prouver la règle possédée par Material'
+    );
+    for (const runtimeProofs of [
+        [],
+        ['material-component-compiles'],
+        [...requiredProofIds(recipe(), recipes()), 'preuve-inventee'],
+    ]) {
+        assert.throws(
+            () =>
+                buildVerificationFromExecution({
+                    root: ROOT,
+                    recipe: recipe(),
+                    recipeRegistry: recipes(),
+                    track: track(),
+                    app: 'demo-angular',
+                    execution: { ...execution(), runtimeProofs },
+                }),
+            /preuves exécutées/
+        );
+    }
+});
+
+test('app, publication, commit, runner et vecteur de versions sont liés', () => {
+    const outsideFramework = semver.inc(
+        semver.minVersion(track().requirements.framework),
+        'major'
+    );
+    assert.equal(
+        semver.satisfies(outsideFramework, track().requirements.framework),
+        false
+    );
+    assert.throws(
+        () =>
+            buildVerificationFromExecution({
+                root: ROOT,
+                recipe: recipe(),
+                recipeRegistry: recipes(),
+                track: track(),
+                app: 'app-qui-n-existe-pas',
+                execution: execution(),
+            }),
+        /concordance app/
+    );
+    assert.throws(
+        () =>
+            buildVerificationFromExecution({
+                root: ROOT,
+                recipe: recipe(),
+                recipeRegistry: recipes(),
+                track: track(),
+                app: 'demo-angular',
+                execution: execution({ published: true }),
+            }),
+        /dry-run non publié/
+    );
+    assert.throws(
+        () =>
+            buildVerificationFromExecution({
+                root: ROOT,
+                recipe: recipe(),
+                recipeRegistry: recipes(),
+                track: track(),
+                app: 'demo-angular',
+                execution: execution({
+                    plan: { framework_version: outsideFramework },
+                }),
+            }),
+        {
+            message: `library compatibility promotion: framework ${outsideFramework} hors de la piste ${track().id}`,
+        }
+    );
+});
+
+test('modifier la piste, la politique ou le runner périme la preuve', (t) => {
+    const root = fixture(t);
+    const built = rebindCommit(root, verification());
+    assert.deepEqual(
+        verificationFailures(root, recipe(), track(), built, {
+            recipeRegistry: recipes(),
+        }),
+        []
+    );
+
+    const changedTrack = structuredClone(track());
+    changedTrack.dependency_section = 'devDependencies';
+    assert.ok(
+        verificationFailures(root, recipe(), changedTrack, built, {
+            recipeRegistry: recipes(),
+        }).some((failure) => /piste a changé/.test(failure))
+    );
+
+    for (const [path, expected] of [
+        ['conventions/libraries/resolution-policy.json', /policy a changé/],
+        ['tools/library-setup/sandbox.mjs', /runner a changé/],
+    ]) {
+        const isolated = fixture(t);
+        const isolatedEvidence = rebindCommit(isolated, verification());
+        writeFileSync(
+            join(isolated, path),
+            `${readFileSync(join(isolated, path), 'utf8')}\n`
+        );
+        assert.ok(
+            verificationFailures(
+                isolated,
+                recipe(),
+                track(),
+                isolatedEvidence,
+                {
+                    recipeRegistry: recipes(),
+                }
+            ).some((failure) => expected.test(failure)),
+            path
+        );
+    }
+});
+
+test('modifier le contrat de coexistence réciproque périme aussi la preuve', (t) => {
+    const root = fixture(t);
+    const initialRegistry = validateRecipes(root).recipes;
+    const tailwind = initialRegistry.get('angular/tailwind');
+    const before = verificationInputs(root, tailwind, initialRegistry);
+
+    const materialPath = join(
+        root,
+        'conventions/libraries/angular/angular-material.setup.json'
+    );
+    const materialDocument = JSON.parse(readFileSync(materialPath, 'utf8'));
+    const reciprocal = materialDocument.coexistence.find(
+        ({ with: library }) => library === 'tailwind'
+    );
+    reciprocal.runtime_acceptance[0].description +=
+        ' Contrat modifié sans renommer la preuve.';
+    writeFileSync(
+        materialPath,
+        `${JSON.stringify(materialDocument, null, 2)}\n`
+    );
+    const changedRegistry = validateRecipes(root).recipes;
+    const after = verificationInputs(
+        root,
+        changedRegistry.get('angular/tailwind'),
+        changedRegistry
+    );
+    assert.equal(after.recipe, before.recipe);
+    assert.notEqual(after.proof_contracts, before.proof_contracts);
+});
+
+test('une bibliothèque indépendante ne périme ni la projection initiale ni la fermeture finale', (t) => {
+    const root = fixture(t);
+    const built = rebindCommit(root, verification());
+    const lock = readFileSync(join(root, 'bun.lock'), 'utf8');
+    writeFileSync(
+        join(root, 'bun.lock'),
+        lock.replace(
+            '"packages": {',
+            '"packages": {\n    "independent-proof": ["independent-proof@1.0.0", "", {}, "sha512-eA=="],'
+        )
+    );
+    assert.deepEqual(
+        verificationFailures(root, recipe(), track(), built, {
+            recipeRegistry: recipes(),
+        }),
+        []
+    );
+
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json')));
+    const materialVersion = track().packages['@angular/material'];
+    const cdkVersion = track().packages['@angular/cdk'];
+    manifest.dependencies['@angular/material'] = 'catalog:';
+    manifest.dependencies['@angular/cdk'] = 'catalog:';
+    manifest.workspaces.catalog['@angular/material'] = materialVersion;
+    manifest.workspaces.catalog['@angular/cdk'] = cdkVersion;
+    const finalLock = {
+        workspaces: {
+            '': {
+                dependencies: {
+                    '@angular/material': 'catalog:',
+                    '@angular/cdk': 'catalog:',
+                },
+            },
+        },
+        catalog: {
+            '@angular/material': materialVersion,
+            '@angular/cdk': cdkVersion,
+        },
+        packages: {
+            '@angular/material': [
+                `@angular/material@${materialVersion}`,
+                '',
+                { dependencies: { '@angular/cdk': cdkVersion } },
+                'sha512-material',
+            ],
+            '@angular/cdk': [
+                `@angular/cdk@${cdkVersion}`,
+                '',
+                {},
+                'sha512-cdk',
+            ],
+        },
+    };
+    writeFileSync(join(root, 'package.json'), `${JSON.stringify(manifest)}\n`);
+    writeFileSync(join(root, 'bun.lock'), `${JSON.stringify(finalLock)}\n`);
+    const qualified = structuredClone(built);
+    qualified.dependency_state_sha256.initial = '0'.repeat(64);
+    qualified.dependency_state_sha256.final = dependencyClosureSha256(
+        readFileSync(join(root, 'package.json')),
+        readFileSync(join(root, 'bun.lock')),
+        track()
+    );
+    const { evidence_sha256: _ignored, ...payload } = qualified;
+    qualified.evidence_sha256 = sha256(stableJson(payload));
+    assert.deepEqual(
+        verificationFailures(root, recipe(), track(), qualified, {
+            recipeRegistry: recipes(),
+        }),
+        []
+    );
+
+    finalLock.packages.independent = [
+        'independent@1.0.0',
+        '',
+        {},
+        'sha512-independent',
+    ];
+    writeFileSync(join(root, 'bun.lock'), `${JSON.stringify(finalLock)}\n`);
+    assert.deepEqual(
+        verificationFailures(root, recipe(), track(), qualified, {
+            recipeRegistry: recipes(),
+        }),
+        []
+    );
+
+    finalLock.packages['@angular/cdk'][0] =
+        `@angular/cdk@${semver.inc(cdkVersion, 'patch')}`;
+    writeFileSync(join(root, 'bun.lock'), `${JSON.stringify(finalLock)}\n`);
+    assert.ok(
+        verificationFailures(root, recipe(), track(), qualified, {
+            recipeRegistry: recipes(),
+        }).some((failure) => /projection initiale/.test(failure))
+    );
+});
+
+test('la gate refuse les empreintes source falsifiées et les états contradictoires', (t) => {
+    const root = fixture(t);
+    const sourceTampered = rebindCommit(root, verification());
+    const [firstSource] = Object.keys(
+        sourceTampered.inputs_sha256.runner_sources
+    );
+    sourceTampered.inputs_sha256.runner_sources[firstSource] = '0'.repeat(64);
+    const { evidence_sha256: _sourceEvidence, ...sourcePayload } =
+        sourceTampered;
+    sourceTampered.evidence_sha256 = sha256(stableJson(sourcePayload));
+    assert.ok(
+        verificationFailures(root, recipe(), track(), sourceTampered, {
+            recipeRegistry: recipes(),
+        }).some((failure) => /runner_sources a changé/.test(failure))
+    );
+
+    const path = join(
+        root,
+        'conventions/libraries/angular/angular-material.compat.json'
+    );
+    const matrix = JSON.parse(readFileSync(path, 'utf8'));
+    matrix.tracks[0].status = 'verified';
+    matrix.tracks[0].verification = {
+        ...rebindCommit(root, verification()),
+        commit: '0'.repeat(40),
+        source_context_sha256: '0'.repeat(64),
+    };
+    const { evidence_sha256: _evidence, ...payload } =
+        matrix.tracks[0].verification;
+    matrix.tracks[0].verification.evidence_sha256 = sha256(stableJson(payload));
+    writeFileSync(path, `${JSON.stringify(matrix, null, 2)}\n`);
+    const recipeResult = validateRecipes(root);
+    const result = validateCompatibilityMatrices(root, recipeResult.recipes);
+    assert.equal(result.ok, false);
+    assert.ok(
+        result.errors.some((error) => /contexte source a changé/.test(error))
+    );
+
+    matrix.tracks[0].status = 'candidate';
+    writeFileSync(path, `${JSON.stringify(matrix, null, 2)}\n`);
+    assert.ok(
+        validateCompatibilityMatrices(root, recipeResult.recipes).errors.some(
+            (error) => /candidate avec une vérification/.test(error)
+        )
+    );
+});

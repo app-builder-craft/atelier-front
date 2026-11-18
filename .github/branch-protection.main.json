@@ -1,0 +1,37 @@
+{
+  "$comment": "Source de vérité — appliquée par `bun run protect:main` (audit G-2 / P1-13). Les contextes = `jobs.*.name` de `.github/workflows/ci.yml` (jobs bloquants uniquement) ; égalité stricte imposée par `bun run check:branch-protection-contexts`.",
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "Garde-fous socle",
+      "Publication durability (linux-ext4)",
+      "Publication durability (macos-apfs)",
+      "Library candidate isolation (linux-docker)",
+      "Library candidate isolation (macos-sandbox)",
+      "Library integration (create-app → Material → Tailwind)",
+      "External application shells",
+      "Secret scan (gitleaks)",
+      "Oracle — lint + build + ngc + test",
+      "E2E smoke (Playwright)",
+      "Dead-code (knip)",
+      "Dependency audit (bun audit)",
+      "Third-party licenses (license-checker)",
+      "Duplicate files (MD5)"
+    ]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": true,
+    "required_approving_review_count": 1,
+    "require_last_push_approval": true
+  },
+  "restrictions": null,
+  "required_linear_history": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "block_creations": false,
+  "required_conversation_resolution": true,
+  "lock_branch": false,
+  "allow_fork_syncing": false
+}

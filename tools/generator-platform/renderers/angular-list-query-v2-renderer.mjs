@@ -1,0 +1,329 @@
+import { pascalCase } from './shared.mjs';
+import {
+    LIST_QUERY_V2_SUPPORTED_INPUT_PRIMITIVES,
+    LIST_QUERY_V2_SUPPORTED_PRIMITIVES,
+    assertListQueryV2RendererModel,
+    exactKeys,
+    listQueryV2QueryParameterValidationLines,
+    renderListQueryV2Decoder,
+    renderListQueryV2Models,
+    renderListQueryV2RequestPath,
+} from './list-query-v2-renderer-shared.mjs';
+
+function fail(message) {
+    throw new Error(`angular list-query v2 renderer: ${message}`);
+}
+
+function renderQueryParameterValidation(binding, index) {
+    const variable = `parameter${index}`;
+    const lines = listQueryV2QueryParameterValidationLines(binding, index).map(
+        (line) => `        ${line}`
+    );
+    lines.push(
+        `        params = params.set(${JSON.stringify(binding.name)}, String(${variable}));`
+    );
+    return lines.join('\n');
+}
+
+function renderRequestParams(query, inputName) {
+    const parameters = query.transport.parameters
+        .map((binding, index) => {
+            const variable = `parameter${index}`;
+            const validation = renderQueryParameterValidation(binding, index);
+            if (binding.required) {
+                return `    const ${variable} = input[${JSON.stringify(binding.source_field)}];
+    if (${variable} === undefined) invalidInput(${JSON.stringify(`$.${binding.source_field}`)}, 'required');
+${validation}`;
+            }
+            return `    const ${variable} = input[${JSON.stringify(binding.source_field)}];
+    if (${variable} !== undefined) {
+${validation}
+    }`;
+        })
+        .join('\n');
+    return `function invalidInput(path: string, expected: string): never {
+    throw new InvalidPayloadError(path, expected);
+}
+
+function requestParams(input: ${inputName}): HttpParams {
+    let params = new HttpParams();
+${parameters}
+    return params;
+}`;
+}
+
+// X5 C2 : `external` rend la source de la coque extérieure : contexte HTTP
+// propre (authentification seule, aucun jeton de cache, D-X5-4), imports du
+// module de session. Sans l'option, la sortie interne est inchangée.
+export function renderAngularListQuerySource(query, binding, external = false) {
+    const className = `${pascalCase(query.id)}Source`;
+    const decoderName = `decode${pascalCase(query.id)}Response`;
+    const readName = pascalCase(query.read_model.id);
+    const isPage = query.transport.result.kind === 'page';
+    const outputName = isPage
+        ? `${pascalCase(query.id)}Page`
+        : `readonly ${readName}[]`;
+    const hasInput = query.port.input.kind === 'object';
+    const hasPathInput = query.transport.parameters.some(
+        (parameter) => parameter.in === 'path'
+    );
+    const hasQueryInput = query.transport.parameters.some(
+        (parameter) => parameter.in === 'query'
+    );
+    const inputName = `${pascalCase(query.id)}Input`;
+    const modelImports = [
+        ...(hasInput ? [inputName] : []),
+        isPage ? outputName : readName,
+    ]
+        .sort()
+        .join(', ');
+    const inputParameter = hasInput ? `input: ${inputName}, ` : '';
+    const path = hasPathInput
+        ? 'requestPath(input)'
+        : JSON.stringify(query.transport.path);
+    const requestPath = hasPathInput
+        ? renderListQueryV2RequestPath(query, inputName)
+        : hasQueryInput
+          ? renderRequestParams(query, inputName)
+          : '';
+    const invalidPayloadImport =
+        hasInput && !external
+            ? "import { InvalidPayloadError } from '@cmz/shared-domain';\n"
+            : '';
+    const httpImports = [
+        'HttpClient',
+        ...(external ? ['HttpContext', 'HttpErrorResponse'] : []),
+        ...(hasQueryInput ? ['HttpParams'] : []),
+    ].join(', ');
+    const requestOptions = hasQueryInput
+        ? '{ context, params: requestParams(input) }'
+        : '{ context }';
+    const policy = JSON.stringify(
+        {
+            authentication: {
+                mode: query.request_policy.authentication.mode,
+            },
+            cache: query.request_policy.cache,
+        },
+        null,
+        4
+    );
+    const hostImport = external
+        ? `import { ${[...(hasInput ? ['InvalidPayloadError'] : []), 'SKIP_AUTH', binding.token].join(', ')} } from '${binding.module}';`
+        : `import { createListQueryRequestContext, ${binding.token}, type ListQueryRequestPolicy } from '${binding.module}';`;
+    const policyDeclaration = external
+        ? ''
+        : `\nconst REQUEST_POLICY: ListQueryRequestPolicy = ${policy};\n`;
+    const parameters = external
+        ? inputParameter.replace(/, $/, '')
+        : `${inputParameter}isRefresh: boolean`;
+    const context = external
+        ? `new HttpContext().set(SKIP_AUTH, ${query.request_policy.authentication.mode === 'omit'})`
+        : 'createListQueryRequestContext(REQUEST_POLICY, { isRefresh })';
+    // X4-sécurité-3 G3, profil extérieur : l'adresse de service est résolue
+    // dans le `defer`, à l'exécution. Une adresse absente devient une erreur
+    // de statut 0 sans requête ; la source, la façade et la page se
+    // construisent toujours.
+    if (external)
+        return `import { ${httpImports} } from '@angular/common/http';
+import { Injector, Service, inject } from '@angular/core';
+${hostImport}
+import { defer, map, throwError, type Observable } from 'rxjs';
+
+import { ${decoderName} } from './${query.id}.decoder';
+import type { ${modelImports} } from './models';
+
+function joinUrl(baseUrl: string, path: string): string {
+    return [baseUrl.replace(/\\/$/, ''), path.replace(/^\\//, '')].join('/');
+}
+
+${requestPath}
+
+@Service({ autoProvided: false })
+export class ${className} {
+    private readonly http = inject(HttpClient);
+    private readonly injector = inject(Injector);
+
+    readAll(${parameters}): Observable<${outputName}> {
+        return defer(() => {
+            let baseUrl: string;
+            try { baseUrl = this.injector.get(${binding.token}); }
+            catch { return throwError(() => new HttpErrorResponse({ status: 0, statusText: 'Service address unavailable' })); }
+            const context = ${context};
+            return this.http
+                .get<unknown>(joinUrl(baseUrl, ${path}), ${requestOptions})
+                .pipe(map(${decoderName}));
+        });
+    }
+}
+`;
+    return `import { ${httpImports} } from '@angular/common/http';
+import { Service, inject } from '@angular/core';
+${hostImport}
+${invalidPayloadImport}import { map, type Observable } from 'rxjs';
+
+import { ${decoderName} } from './${query.id}.decoder';
+import type { ${modelImports} } from './models';
+${policyDeclaration}
+function joinUrl(baseUrl: string, path: string): string {
+    return [baseUrl.replace(/\\/$/, ''), path.replace(/^\\//, '')].join('/');
+}
+
+${requestPath}
+
+@Service({ autoProvided: false })
+export class ${className} {
+    private readonly http = inject(HttpClient);
+    private readonly baseUrl = inject(${binding.token});
+
+    readAll(${parameters}): Observable<${outputName}> {
+        const context = ${context};
+        return this.http
+            .get<unknown>(joinUrl(this.baseUrl, ${path}), ${requestOptions})
+            .pipe(map(${decoderName}));
+    }
+}
+`;
+}
+
+function renderFacade(query) {
+    const className = `${pascalCase(query.id)}Facade`;
+    const sourceName = `${pascalCase(query.id)}Source`;
+    const readName = pascalCase(query.read_model.id);
+    const isPage = query.transport.result.kind === 'page';
+    const pageName = `${pascalCase(query.id)}Page`;
+    const outputName = isPage ? pageName : `readonly ${readName}[]`;
+    const hasInput = query.port.input.kind === 'object';
+    const inputName = `${pascalCase(query.id)}Input`;
+    const modelImports = [
+        ...(isPage ? [pageName] : [readName]),
+        ...(hasInput ? [inputName] : []),
+    ]
+        .sort()
+        .join(', ');
+    const queryInputField = hasInput
+        ? `\n    readonly input: ${inputName};`
+        : '';
+    const sourceInput = hasInput ? 'params.input, ' : '';
+    const loadInputParameter = hasInput ? `input: ${inputName}, ` : '';
+    const loadInputValue = hasInput ? ' input,' : '';
+    const lastResolved = isPage
+        ? `    private readonly lastResolvedPage = signal<${pageName} | undefined>(undefined);
+
+    readonly page = computed(() => this.value() ?? this.lastResolvedPage());
+    readonly items = computed(() => this.page()?.items ?? []);`
+        : `    private readonly lastResolvedItems = signal<readonly ${readName}[]>([]);
+
+    readonly items = computed(
+        () => this.value() ?? this.lastResolvedItems()
+    );`;
+    const rememberResolved = isPage
+        ? '                this.lastResolvedPage.set(value);'
+        : '                this.lastResolvedItems.set(value);';
+    return `import { Service, computed, effect, inject, signal } from '@angular/core';
+import { ResourceFacade, type ResourceStreamContext } from '@cmz/shared-application';
+import { type Observable } from 'rxjs';
+
+import { ${sourceName} } from './${query.id}.source';
+import type { ${modelImports} } from './models';
+
+interface LoadOptions {
+    readonly forceRefresh?: boolean;
+}
+
+interface QueryParams {
+    readonly forceRefresh: boolean;
+${queryInputField}
+}
+
+export type ${pascalCase(query.id)}State = 'idle' | 'loading' | 'success' | 'empty' | 'error' | 'reloading';
+
+@Service({ autoProvided: false })
+export class ${className} extends ResourceFacade<${outputName}, QueryParams> {
+    private readonly source = inject(${sourceName});
+${lastResolved}
+    readonly state = computed<${pascalCase(query.id)}State>(() => {
+        const status = this.status();
+        if (status === 'resolved' || status === 'local') {
+            return this.items().length === 0 ? 'empty' : 'success';
+        }
+        return status;
+    });
+
+    constructor() {
+        super();
+        effect(() => {
+            const status = this.status();
+            const value = this.value();
+            if ((status === 'resolved' || status === 'local') && value) {
+${rememberResolved}
+            }
+        });
+    }
+
+    protected stream(
+        params: QueryParams,
+        context: ResourceStreamContext
+    ): Observable<${outputName}> {
+        const isRefresh =
+            params.forceRefresh || context.previousStatus !== 'idle';
+        return this.source.readAll(${sourceInput}isRefresh);
+    }
+
+    load(${loadInputParameter}options: LoadOptions = {}): void {
+        this.setParams({${loadInputValue} forceRefresh: options.forceRefresh ?? false });
+    }
+}
+`;
+}
+
+function validateInput(model, hostBindings) {
+    const query = assertListQueryV2RendererModel(model, 'angular', {
+        page: true,
+        queryParameters: true,
+    });
+    if (!exactKeys(hostBindings, ['services'])) {
+        fail('host bindings must use the closed services shape');
+    }
+    if (
+        !hostBindings.services ||
+        typeof hostBindings.services !== 'object' ||
+        Array.isArray(hostBindings.services)
+    ) {
+        fail('host bindings services must be an object');
+    }
+    const binding = hostBindings.services[query.transport.service_id];
+    if (!binding || !exactKeys(binding, ['module', 'token'])) {
+        fail(`missing closed host binding for ${query.transport.service_id}`);
+    }
+    if (
+        !/^[@A-Za-z0-9][@A-Za-z0-9._/-]*$/.test(binding.module) ||
+        !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(binding.token)
+    ) {
+        fail(`unsafe host binding for ${query.transport.service_id}`);
+    }
+    return { query, binding };
+}
+
+export function renderAngularListQueryV2(model, hostBindings) {
+    const { query, binding } = validateInput(model, hostBindings);
+    const files = {
+        'src/models.ts': renderListQueryV2Models(query, 'angular'),
+        [`src/${query.id}.decoder.ts`]: renderListQueryV2Decoder(
+            query,
+            'angular'
+        ),
+        [`src/${query.id}.source.ts`]: renderAngularListQuerySource(
+            query,
+            binding
+        ),
+        [`src/${query.id}.facade.ts`]: renderFacade(query),
+        'src/index.ts': `export * from './models';\nexport * from './${query.id}.decoder';\nexport * from './${query.id}.source';\nexport * from './${query.id}.facade';\n`,
+    };
+    return { files, queryId: query.id };
+}
+
+export const angularListQueryV2RendererInternals = {
+    supportedInputPrimitives: LIST_QUERY_V2_SUPPORTED_INPUT_PRIMITIVES,
+    supportedPrimitives: LIST_QUERY_V2_SUPPORTED_PRIMITIVES,
+};

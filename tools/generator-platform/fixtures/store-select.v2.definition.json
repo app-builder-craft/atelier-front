@@ -1,0 +1,57 @@
+{
+  "schema_version": "2.0.0",
+  "kind": "list-query",
+  "feature": {
+    "id": "catalogue-stores",
+    "name": "Store options",
+    "description": "Options used by store selection forms."
+  },
+  "backend_contract": {
+    "uri": "tools/generator-platform/fixtures/store-select.backend-contract.json",
+    "id": "cmz-store-select",
+    "version": "1.0.0",
+    "sha256": "993cf365b1cebe79c2e9a7967efb0b205e53f65d3cbf00ac48fe96341fc3cf7b"
+  },
+  "operations": [
+    {
+      "id": "list-stores",
+      "operation_ref": {
+        "operation_id": "catalogue.list-stores"
+      },
+      "success_response_status": 200,
+      "read_model": {
+        "id": "select-option",
+        "description": "Generic option consumed by select controls.",
+        "fields": [
+          {
+            "name": "value",
+            "source_field": "id"
+          },
+          {
+            "name": "label",
+            "source_field": "name"
+          }
+        ]
+      },
+      "execution": {
+        "cache": {
+          "mode": "host",
+          "scope": "principal",
+          "refresh": "bypass"
+        },
+        "concurrency": "latest-wins",
+        "cancellation": {
+          "on_superseded": true,
+          "on_destroy": true
+        },
+        "retry": {
+          "mode": "none"
+        },
+        "stale_data": {
+          "on_reload": "preserve",
+          "on_error": "preserve"
+        }
+      }
+    }
+  ]
+}

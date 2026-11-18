@@ -1,0 +1,104 @@
+version: 2
+updates:
+  # Écosystème Bun natif — catalog centralisé (ADR-0005). Depuis 2026,
+  # Dependabot prend officiellement en charge le bun.lock texte avec
+  # `package-ecosystem: bun`. Canary OPS-26 : chaque PR doit modifier le
+  # lockfile sans altérer ses sections catalog/catalogs, vérifiées par
+  # `check:bun-lock-catalog-integrity` avant toute fusion.
+  # Les alertes et security updates du dépôt sont activées depuis le
+  # 2026-09-30, mais le Dependency Graph GitHub ne référence pas encore Bun :
+  # elles restent une défense additionnelle et non la preuve de réparation des
+  # transitives. `security-overrides-repair.yml` couvre explicitement ce gap.
+  - package-ecosystem: 'bun'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 10
+    # Les pairs Angular et les autres consommateurs refusent encore TS7.
+    # Lever quand leurs versions stables acceptent une version TS7 commune ;
+    # le garde derive le signal du verrou, le futur lot B proposera la levee.
+    # Les propositions TS6 restent permises, sous controle de compatibilite.
+    ignore:
+      - dependency-name: 'typescript'
+        versions: ['7.x']
+      # La famille est déléguée au workflow natif nx-migrations.yml.
+      - dependency-name: 'nx'
+      - dependency-name: '@nx/*'
+    groups:
+      # React publie react/react-dom comme une unité de compatibilité : leurs
+      # versions runtime doivent rester strictement identiques. Inclure aussi
+      # les types évite deux PR concurrentes qui rendent chacune le workspace
+      # non installable (incident observé sur les PR #81/#84, 2026-09-30).
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react'
+          - '@types/react-dom'
+      angular:
+        patterns:
+          - '@angular/*'
+          - '@angular-devkit/*'
+          - '@schematics/angular'
+      nx:
+        patterns:
+          - 'nx'
+          - '@nx/*'
+      # Les mises à jour patch/minor qui partagent la même surface de
+      # validation sont regroupées. Les majors restent isolées : réduire le
+      # nombre de PR ne doit pas élargir silencieusement leur blast radius.
+      code-quality:
+        patterns:
+          - 'eslint*'
+          - '@eslint/*'
+          - '@eslint-community/*'
+          - '@typescript-eslint/*'
+          - 'typescript-eslint'
+          - 'angular-eslint'
+          - 'prettier*'
+          - '@commitlint/*'
+          - 'knip'
+        update-types:
+          - 'minor'
+          - 'patch'
+      unit-testing:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+          - '@testing-library/*'
+        update-types:
+          - 'minor'
+          - 'patch'
+      browser-e2e:
+        patterns:
+          - '@playwright/*'
+        update-types:
+          - 'minor'
+          - 'patch'
+    commit-message:
+      prefix: 'build(deps)'
+
+  # Actions GitHub utilisées par les workflows CI.
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    commit-message:
+      prefix: 'ci(deps)'
+
+  # Image nginx du relais extérieur (X4-config) : seule source de son empreinte.
+  # Le suivi du digest par le robot n'est pas documenté : la CI le vérifie
+  # contre son tag (check-nginx-digest.mjs).
+  - package-ecosystem: 'docker'
+    directory: '/tools/generator-platform/nginx-harness'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    commit-message:
+      prefix: 'build(docker)'
+    groups:
+      nginx-relay:
+        patterns:
+          - 'nginx'

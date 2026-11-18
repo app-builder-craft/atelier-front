@@ -1,0 +1,52 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignore": ["**/*.spec.ts", "!apps/workspace-react-proof/e2e/*.spec.ts"],
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": [
+        "apps/workspace-react-proof/src/main.tsx",
+        "apps/workspace-react-proof/src/**/*.spec.tsx",
+        "apps/workspace-react-proof/vite.config.mts",
+        "tools/**/*.{mjs,ts,tsx}",
+        "apps/workspace-react-proof/e2e/*.spec.ts"
+      ],
+      "project": [
+        "apps/workspace-react-proof/**/*.{ts,tsx,css,scss,mjs}",
+        "tools/**/*.{mjs,ts,tsx}"
+      ]
+    },
+    "libs/*": {
+      "project": ["src/**/*.ts"]
+    },
+    "libs/*/*": {
+      "project": ["src/**/*.ts"]
+    }
+  },
+  "eslint": {
+    "config": ["eslint.config.mjs", "apps/**/eslint.config.mjs"]
+  },
+  "ignoreDependencies": [
+    "@angular/cli",
+    "@angular/language-service",
+    "@eslint/js",
+    "@nx/js",
+    "@swc/helpers",
+    "@typescript-eslint/utils",
+    "angular-eslint",
+    "typescript-eslint",
+    "@tailwindcss/postcss",
+    "@angular/forms",
+    "exceljs",
+    "eslint-plugin-import",
+    "eslint-plugin-jsx-a11y",
+    "eslint-plugin-react",
+    "@angular/aria",
+    "@tailwindcss/vite"
+  ],
+  "ignoreBinaries": ["semgrep", "mkfifo"],
+  "rules": {
+    "catalog": "off",
+    "types": "off"
+  }
+}
