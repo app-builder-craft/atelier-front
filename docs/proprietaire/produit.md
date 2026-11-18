@@ -208,7 +208,8 @@ bun run create-app --target-root <racine absolue> --design descriptions/<concept
 - `--profile` : `angular-pwa` (par défaut) ou `react-spa`.
 - `create-app` n'a pas d'option `--apply` : c'est `--expect-plan`.
 - Le `--dry-run` affiche `identity` : le préfixe du produit, scellé dans
-  l'espace. Une conception peut le répéter, jamais en déclarer un autre.
+  l'espace, sa seule source : une conception de produit qui déclare
+  `identity.prefix` est refusée.
 - Le second appel doit afficher un JSON avec `"status": "created"` et
   `"phase": "finalized"`. La coque a été compilée, construite, lintée sans
   avertissement et testée avec les outils du produit.
@@ -355,6 +356,7 @@ Les messages sont copiés du code ; `…` remplace une partie variable.
 | `explicit unique profiles required` ou `GitHub repository and review owner required`                                                                                                                                                                      | `--profiles`, `--github-repository` ou `--review-owner` absent ou mal écrit                                                 | `--profiles angular-pwa` (ou `react-spa`), `--github-repository <propriétaire>/<dépôt>`, `--review-owner <identifiant>`                |
 | `--prefix refused: …`                                                                                                                                                                                                                                     | Préfixe déclaré invalide (forme) ou réservé (portée du catalogue, nom réservé par le relais ou le serveur de développement) | Déclarer un autre `--prefix` : 2 à 6 caractères, minuscules ou chiffres, une lettre en tête                                            |
 | `proposed prefix "…" (initials of "…") refused: … ; déclarer --prefix`                                                                                                                                                                                    | Les initiales du nom du dépôt ne forment pas un préfixe valide, ou il est réservé                                           | Relancer le `--dry-run` avec `--prefix <préfixe>`                                                                                      |
+| `PRODUCT_PREFIX_IN_DESIGN: an external product design must not declare identity.prefix; …`                                                                                                                                                                | La conception du produit déclare un préfixe ; celui du produit est scellé dans son espace                                   | Retirer `identity` du bloc `design` de la conception                                                                                   |
 | `dépôt entièrement propre requis`, `… piste verified compatible`, `… a changé depuis la qualification`                                                                                                                                                    | Préconditions d'`add-library`                                                                                               | Voir le dépannage de [atelier.md](./atelier.md), § 8                                                                                   |
 
 ## 6. Exemples

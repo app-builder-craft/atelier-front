@@ -390,7 +390,7 @@ async function renderProductShell(options) {
     });
     if (errors.length) externalFailure('product application-design rejected');
     // Le préfixe scellé de l'espace vaut ; une conception qui en déclare un
-    // autre est refusée.
+    // est refusée (une seule source).
     const prefix = assertSealedPrefix(design, options.prefix);
     const inputs = await productInputClosure(productRoot, designPath, design);
     const render =

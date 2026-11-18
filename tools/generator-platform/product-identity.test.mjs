@@ -312,8 +312,21 @@ test('CLI : --prefix facultatif, unique, affiché au --dry-run', async (t) => {
     assert.equal(await pathExists(options.targetRoot), false);
 });
 
-test('produit extérieur : une conception ne change pas le préfixe scellé', async (t) => {
+test('produit extérieur : le préfixe n’a qu’une source, l’espace ; une conception qui le déclare est refusée', async (t) => {
     const fixture = await shellFixture(t);
+    // Sans déclaration : accepté, rendu au préfixe scellé, affiché au
+    // `--dry-run` avec sa provenance.
+    const sealed = await planExternalApplicationShell(fixture.shell);
+    assert.ok(
+        Object.values(sealed.files)
+            .join('\n')
+            .includes(`window.__${FIXTURE_PREFIX}AppAccessContext`)
+    );
+    assert.deepEqual(publicApplicationShellPlan(sealed).identity, {
+        prefix: FIXTURE_PREFIX,
+        provenance: 'scellé dans l’espace',
+    });
+    // Déclaration du MÊME préfixe ou d'un autre : refus nommé, rien écrit.
     const declaring = async (prefix, name) => {
         const designPath = `descriptions/${name}.application-design.json`;
         await writeFile(
@@ -323,27 +336,15 @@ test('produit extérieur : une conception ne change pas le préfixe scellé', as
         );
         return { ...fixture.shell, designPath };
     };
-    // Même préfixe que le sceau : accepté, rendu au préfixe scellé.
-    const same = await planExternalApplicationShell(
-        await declaring(FIXTURE_PREFIX, 'same-prefix')
-    );
-    assert.ok(
-        Object.values(same.files)
-            .join('\n')
-            .includes(`window.__${FIXTURE_PREFIX}AppAccessContext`)
-    );
-    // Le `--dry-run` affiche le préfixe et sa provenance.
-    assert.deepEqual(publicApplicationShellPlan(same).identity, {
-        prefix: FIXTURE_PREFIX,
-        provenance: 'scellé dans l’espace',
-    });
-    // Autre préfixe : refus nommé, rien écrit.
+    const same = await declaring(FIXTURE_PREFIX, 'same-prefix');
     const other = await declaring('qz', 'other-prefix');
     const before = await snapshotTree(fixture.root);
-    await assert.rejects(
-        planExternalApplicationShell(other),
-        /PRODUCT_PREFIX_SEALED: change it with rename-product-prefix/
-    );
+    for (const options of [same, other])
+        await assert.rejects(
+            planExternalApplicationShell(options),
+            /PRODUCT_PREFIX_IN_DESIGN: an external product design must not declare identity\.prefix; the prefix is sealed in the workspace/,
+            options.designPath
+        );
     assert.deepEqual(await snapshotTree(fixture.root), before);
 });
 
