@@ -21,6 +21,8 @@ import {
     INTERNAL,
     SIGNATURE,
     SIGNATURE_FILES,
+    signatureGlobal,
+    signatureIdentifier,
     signatureName,
     signaturePath,
     toolEnv,
@@ -76,6 +78,8 @@ test('les formes composées passent par les modules et ont les valeurs attendues
     assert.equal(signatureName('x'), `${SIGNATURE.name}-x`);
     assert.equal(toolEnv('X'), `${INTERNAL.env}X`);
     assert.equal(SIGNATURE.idAttribute, `${SIGNATURE.dataAttribute}id`);
+    assert.equal(signatureIdentifier('X'), `${SIGNATURE.name}X`);
+    assert.equal(signatureGlobal('X'), `__${SIGNATURE.name}X`);
 });
 
 test('chaque valeur réécrite en dur est refusée, nommée, avec sa ligne', async (t) => {

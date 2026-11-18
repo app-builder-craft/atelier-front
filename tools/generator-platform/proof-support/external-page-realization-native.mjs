@@ -20,7 +20,7 @@ import {
     workOrderPath,
 } from '../core/external-page-realization.mjs';
 import { sha256 } from '../core/generation-manifest.mjs';
-import { SIGNATURE, toolEnv } from '../core/atelier-signature.mjs';
+import * as atelier from '../core/atelier-signature.mjs';
 import { EXTERNAL_WORKSPACE_CMZ as CMZ } from '../renderers/application-workspace-renderer.mjs';
 import {
     hash,
@@ -42,7 +42,7 @@ import {
     proveConfinedProductOracle,
 } from './external-page-security-native.mjs';
 
-const tag = (name) => `${toolEnv(name)}=`; // ligne de sortie du script
+const tag = (name) => `${atelier.toolEnv(name)}=`; // ligne de sortie du script
 
 async function writeDraft(root, workOrder, files) {
     const draft = resolve(root, workOrder.draft_root);
@@ -197,7 +197,7 @@ export async function proveNativePageRealization(session, shell) {
         options
     );
     const manifest = JSON.parse(
-        plan.files[`${SIGNATURE.dir}/app-manifest.json`]
+        plan.files[atelier.SIGNATURE_FILES.appManifest]
     );
     assert.equal(
         plan.changes.find(({ path }) => path.endsWith('/page.component.ts'))
@@ -299,7 +299,7 @@ async function diagnose(error) {
     try {
         const counts = {};
         // repli justifié : diagnostic seul ; sans page lisible, aucun compte de violations.
-        for (const [directive] of (await currentPage?.evaluate(() => globalThis.__${SIGNATURE.name}Violations)) ?? [])
+        for (const [directive] of (await currentPage?.evaluate(() => globalThis.${atelier.signatureGlobal('Violations')})) ?? [])
             counts[directive] = (counts[directive] ?? 0) + 1;
         for (const [directive, count] of Object.entries(counts)) lines.push('csp:' + directive + '=' + count);
     } catch { lines.push('stage:page-unreadable'); }
@@ -405,7 +405,7 @@ try {
     const connectivity = (online) => {
         let state = online;
         Object.defineProperty(globalThis.Navigator.prototype, 'onLine', { configurable: true, get: () => state });
-        Object.defineProperty(globalThis, '__${SIGNATURE.name}Connectivity', {
+        Object.defineProperty(globalThis, '${atelier.signatureGlobal('Connectivity')}', {
             value: (next) => {
                 state = next;
                 globalThis.dispatchEvent(new Event(next ? 'online' : 'offline'));
@@ -423,7 +423,7 @@ try {
     await context.addInitScript(() => {
         Reflect.deleteProperty(globalThis.Navigator.prototype, 'serviceWorker');
         const violations = [];
-        Object.defineProperty(globalThis, '__${SIGNATURE.name}Violations', { value: violations });
+        Object.defineProperty(globalThis, '${atelier.signatureGlobal('Violations')}', { value: violations });
         document.addEventListener('securitypolicyviolation', (event) =>
             violations.push([event.effectiveDirective, event.blockedURI])
         );
@@ -448,14 +448,14 @@ try {
     stage = 'placeholder';
     assert.equal(await page.getByText(fixture.placeholder).count(), 0, 'La page d’attente doit être remplacée');
     stage = 'ready';
-    await page.locator('[${SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
+    await page.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
     stage = 'fill';
     for (const control of fixture.controls)
         await page.getByLabel(control.label, { exact: true }).fill('valeur-' + control.id);
     stage = 'submit';
     await page.getByRole('button', { name: fixture.actionLabel, exact: true }).click();
     stage = 'error-state';
-    await page.locator('[${SIGNATURE.idAttribute}="' + fixture.errorState + '"]').waitFor();
+    await page.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.errorState + '"]').waitFor();
     stage = 'networkidle';
     await page.waitForLoadState('networkidle');
     stage = 'realized-page-checks';
@@ -466,7 +466,7 @@ try {
     process.stdout.write('${tag('RELAY')}' + writes[0] + '\\n');
     // Page réalisée sous la politique de la coque : aucune violation, aucune
     // requête hors des fichiers du bundle (M-3).
-    assert.deepEqual(await page.evaluate(() => globalThis.__${SIGNATURE.name}Violations), [], 'Violation de la politique sur la page réalisée');
+    assert.deepEqual(await page.evaluate(() => globalThis.${atelier.signatureGlobal('Violations')}), [], 'Violation de la politique sur la page réalisée');
     const outside = served.filter((path) => path !== '/' && path !== fixture.entryPath && !bundle.has(path) && !path.startsWith('/api/'));
     assert.deepEqual(outside, [], 'Requête hors bundle');
     // Hors ligne émulé : l'état hors ligne du contrat est affiché, l'état
@@ -479,8 +479,8 @@ try {
     currentPage = offlinePage;
     await offlinePage.goto(origin + fixture.entryPath);
     await offlinePage.getByRole('heading', { name: fixture.entryTitle, exact: true }).waitFor();
-    await offlinePage.locator('[${SIGNATURE.idAttribute}="' + fixture.offlineState + '"]').waitFor();
-    assert.equal(await offlinePage.locator('[${SIGNATURE.idAttribute}="' + fixture.readyState + '"]').count(), 0, 'État prêt affiché hors ligne');
+    await offlinePage.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.offlineState + '"]').waitFor();
+    assert.equal(await offlinePage.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.readyState + '"]').count(), 0, 'État prêt affiché hors ligne');
     const offlineAction = offlinePage.getByRole('button', { name: fixture.actionLabel, exact: true });
     assert.equal(await offlineAction.isDisabled(), true, 'Envoi possible hors ligne');
     await offlineAction.click({ force: true });
@@ -510,7 +510,7 @@ try {
         const foreignBefore = foreignHits.length;
         await scenarioPage.goto(origin + fixture.entryPath);
         await scenarioPage.getByRole('heading', { name: fixture.entryTitle, exact: true }).waitFor();
-        await scenarioPage.locator('[${SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
+        await scenarioPage.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
         const markers = fixture.controls.map((control) => 'n2' + label.replace(/[^a-z0-9]/g, '') + control.id.replace(/[^a-z0-9]/g, ''));
         await act(scenarioPage, scenarioContext, markers);
         await scenarioPage.waitForTimeout(700);
@@ -531,7 +531,7 @@ try {
             await target.getByLabel(control.label, { exact: true }).fill(markers[index]);
         await target.getByRole('button', { name: fixture.actionLabel, exact: true }).click();
     };
-    const failed = (target) => target.locator('[${SIGNATURE.idAttribute}="' + fixture.errorState + '"]').waitFor();
+    const failed = (target) => target.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.errorState + '"]').waitFor();
     await scenario('chargement', 502, async () => undefined);
     // setOffline fait échouer les requêtes réelles ; l'état vu par la page
     // vient de l'émulation, jamais du réseau de l'hôte. Chaque attente a son
@@ -539,12 +539,12 @@ try {
     await scenario('hors-ligne-puis-en-ligne', 502, async (target, scenarioContext) => {
         stage = 'n2-hors-ligne-attente';
         await scenarioContext.setOffline(true);
-        await target.evaluate(() => globalThis.__${SIGNATURE.name}Connectivity(false));
-        await target.locator('[${SIGNATURE.idAttribute}="' + fixture.offlineState + '"]').waitFor();
+        await target.evaluate(() => globalThis.${atelier.signatureGlobal('Connectivity')}(false));
+        await target.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.offlineState + '"]').waitFor();
         stage = 'n2-hors-ligne-retour';
         await scenarioContext.setOffline(false);
-        await target.evaluate(() => globalThis.__${SIGNATURE.name}Connectivity(true));
-        await target.locator('[${SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
+        await target.evaluate(() => globalThis.${atelier.signatureGlobal('Connectivity')}(true));
+        await target.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
         stage = 'n2-hors-ligne-puis-en-ligne';
     });
     for (const [label, mode] of [['4xx', 400], ['5xx', 500], ['reponse-invalide', 'invalid'], ['serveur-injoignable', 'unreachable']])
@@ -566,24 +566,24 @@ try {
     const head = index.slice(0, index.indexOf('</head>'));
     const sub = (text) => text.replaceAll('__FOREIGN__', other);
     const { probes, traps, scripted, navigation } = fixture.csp;
-    extra.set('/${SIGNATURE.name}-csp-trap.js', ['text/javascript', [
+    extra.set('/${atelier.signatureName('csp-trap')}.js', ['text/javascript', [
         ...scripted.map(({ code }) => 'try { ' + sub(code) + ' } catch {}'),
         ...probes.filter((probe) => probe.script).map((probe) => sub(probe.script)),
     ].join('\\n')]);
-    extra.set('/${SIGNATURE.name}-csp-trap.html', ['text/html', head
+    extra.set('/${atelier.signatureName('csp-trap')}.html', ['text/html', head
         + probes.map((probe) => '<style>' + sub(probe.css) + '</style>').join('')
         + '</head><body>'
         + traps.map((trap) => sub(trap.html)).join('')
         + probes.map((probe) => sub(probe.html)).join('')
-        + '<script src="/${SIGNATURE.name}-csp-trap.js"></script></body></html>']);
+        + '<script src="/${atelier.signatureName('csp-trap')}.js"></script></body></html>']);
     const trapPage = await context.newPage();
     currentPage = trapPage;
-    await trapPage.goto(origin + '/${SIGNATURE.name}-csp-trap.html');
+    await trapPage.goto(origin + '/${atelier.signatureName('csp-trap')}.html');
     await trapPage.waitForTimeout(2000);
     await trapPage.evaluate(() => document.getElementById('trap-form').submit()).catch(() => undefined);
     await trapPage.waitForTimeout(1500);
-    const violations = await trapPage.evaluate(() => globalThis.__${SIGNATURE.name}Violations);
-    assert.equal(await trapPage.evaluate(() => globalThis.${SIGNATURE.name}Inline ?? false), false, 'Script en ligne exécuté');
+    const violations = await trapPage.evaluate(() => globalThis.${atelier.signatureGlobal('Violations')});
+    assert.equal(await trapPage.evaluate(() => globalThis.${atelier.signatureIdentifier('Inline')} ?? false), false, 'Script en ligne exécuté');
     // Un cadre ou un objet bloqué n'est rapporté qu'avec son origine : une
     // seule source par directive le rend attribuable.
     const blocked = (id, directive) => violations.some(([effective, uri]) =>
@@ -624,12 +624,12 @@ try {
     // Navigation de premier niveau : la politique ne la gouverne pas
     // (navigate-to n'existe pas). On compte ce qui arrive sur la seconde
     // origine ; la page qui l'écrit est refusée par les règles.
-    extra.set('/${SIGNATURE.name}-csp-navigation.js', ['text/javascript', sub(navigation)]);
-    extra.set('/${SIGNATURE.name}-csp-navigation.html', ['text/html', head + '</head><body><script src="/${SIGNATURE.name}-csp-navigation.js"></script></body></html>']);
+    extra.set('/${atelier.signatureName('csp-navigation')}.js', ['text/javascript', sub(navigation)]);
+    extra.set('/${atelier.signatureName('csp-navigation')}.html', ['text/html', head + '</head><body><script src="/${atelier.signatureName('csp-navigation')}.js"></script></body></html>']);
     stage = 'navigation-trap';
     const navigationPage = await context.newPage();
     currentPage = navigationPage;
-    await navigationPage.goto(origin + '/${SIGNATURE.name}-csp-navigation.html');
+    await navigationPage.goto(origin + '/${atelier.signatureName('csp-navigation')}.html');
     await navigationPage.waitForTimeout(2000);
     result.navigation = {
         arrived: foreignHits.filter((hit) => hit.includes('/trap-navigation/')).length,

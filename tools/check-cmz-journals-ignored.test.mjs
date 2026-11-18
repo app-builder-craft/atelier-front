@@ -45,6 +45,16 @@ test('un vrai répertoire reste détecté, quelle que soit la mise en forme', ()
     );
 });
 
+test('le gabarit du dossier de signature est aussi une source de journaux', () => {
+    const template = (rest) => '`$' + '{SIGNATURE.dir}/' + rest + '`';
+    assert.deepEqual(cmzDirectoryNames(template('journal-x')), ['journal-x']);
+    assert.deepEqual(cmzDirectoryNames(template('journal-x/${id}.json')), [
+        'journal-x',
+    ]);
+    assert.deepEqual(cmzDirectoryNames(template('escape.txt')), []);
+    assert.deepEqual(cmzDirectoryNames(template('${name}/probe')), []);
+});
+
 test('un chemin écrit en dur n’est plus une source de journaux', () => {
     assert.deepEqual(cmzDirectoryNames(`'${SIGNATURE.dir}/escape'`), []);
 });

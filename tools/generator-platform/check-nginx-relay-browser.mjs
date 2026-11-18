@@ -31,8 +31,8 @@ import {
     withRelay,
 } from './check-nginx-relay.mjs';
 import {
-    SIGNATURE,
     SIGNATURE_FILES,
+    signatureGlobal,
     signatureName,
 } from './core/atelier-signature.mjs';
 import { LEGACY_PREFIX, productForms } from './core/product-identity.mjs';
@@ -41,7 +41,7 @@ import { EXTERNAL_CSP_HEADER } from './renderers/external-content-security-polic
 const READY_TIMEOUT_MS = 15_000;
 const forms = productForms(LEGACY_PREFIX);
 // Globale d'instrumentation du harnais et marqueur de redéploiement.
-const VIOLATIONS = `__${SIGNATURE.name}Violations`;
+const VIOLATIONS = signatureGlobal('Violations');
 const DEPLOY = signatureName('deploy');
 // Composant routé : le premier enfant d'app-root est le router-outlet, caché.
 const ROUTED = 'app-root router-outlet + *';

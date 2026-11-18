@@ -35,6 +35,9 @@ const forms = productForms(LEGACY_PREFIX);
 const ENVSH = RELAY_ENVSH.slice(RELAY_ENVSH.lastIndexOf('/') + 1);
 const FILTER = `^${forms.env}`;
 const SECRET = signatureName('harness-secret');
+// Dossier de l'hôte qui porte les fichiers montés dans le dossier nginx du
+// produit : un nom neutre, sans lien avec la signature ni le préfixe.
+const HOST_CONF = 'nginx-conf';
 const BUNDLE = '/main-ABC123.js';
 
 function docker(args, { timeout = 60_000 } = {}) {
@@ -122,7 +125,7 @@ const FAKE_SERVICE = `server {
 
 export async function stage(root, files, { envshMode = 0o755 } = {}) {
     await mkdir(join(root, 'templates'), { recursive: true });
-    await mkdir(join(root, 'cmz'), { recursive: true });
+    await mkdir(join(root, HOST_CONF), { recursive: true });
     await mkdir(join(root, 'html'), { recursive: true });
     await mkdir(join(root, 'svc'), { recursive: true });
     await writeFile(
@@ -130,10 +133,13 @@ export async function stage(root, files, { envshMode = 0o755 } = {}) {
         files.template
     );
     await writeFile(
-        join(root, 'cmz', 'content-security-policy.conf'),
+        join(root, HOST_CONF, 'content-security-policy.conf'),
         files.csp
     );
-    await writeFile(join(root, 'cmz', 'security-headers.conf'), files.headers);
+    await writeFile(
+        join(root, HOST_CONF, 'security-headers.conf'),
+        files.headers
+    );
     await writeFile(join(root, ENVSH), files.envsh);
     await chmod(join(root, ENVSH), envshMode);
     await writeFile(join(root, 'svc', 'default.conf'), FAKE_SERVICE);
@@ -156,9 +162,9 @@ function relayArgs(root, env, { mountEnvsh = true } = {}) {
         '-v',
         `${root}/templates:/etc/nginx/templates:ro`,
         '-v',
-        `${root}/cmz/content-security-policy.conf:${forms.nginxDir}content-security-policy.conf:ro`,
+        `${root}/${HOST_CONF}/content-security-policy.conf:${forms.nginxDir}content-security-policy.conf:ro`,
         '-v',
-        `${root}/cmz/security-headers.conf:${forms.nginxDir}security-headers.conf:ro`,
+        `${root}/${HOST_CONF}/security-headers.conf:${forms.nginxDir}security-headers.conf:ro`,
         ...(mountEnvsh
             ? ['-v', `${root}/${ENVSH}:/docker-entrypoint.d/${ENVSH}:ro`]
             : []),
@@ -495,7 +501,7 @@ export async function runChecks(files, table) {
         await chmod(join(root, ENVSH), 0o644);
         await failure('envsh-not-executable', resolvable, guard);
         await chmod(join(root, ENVSH), 0o755);
-        await rm(join(root, 'cmz', 'security-headers.conf'));
+        await rm(join(root, HOST_CONF, 'security-headers.conf'));
         await failure(
             '11-headers-file-absent',
             resolvable,

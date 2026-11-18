@@ -11,6 +11,12 @@
  * ignoré, sauf ceux qui sont relatifs à une app ou au produit, donc gouvernés.
  * Un nouveau journal non ignoré échoue sans que personne ait à y penser ; un
  * balayage vide échoue aussi (fermé par défaut).
+ *
+ * Couplage avec `check:identity-sources` : un chemin LITTÉRAL sous le dossier
+ * de signature n'est plus lu ici comme un journal ; c'est l'autre contrôle
+ * qui le refuse. Les deux formes non littérales sont lues ici : l'appel
+ * `signaturePath('<nom>'…)` et le gabarit `` `${SIGNATURE.dir}/<nom>…` ``,
+ * pour qu'aucune voie n'échappe aux deux contrôles.
  */
 import { execFileSync } from 'node:child_process';
 import {
@@ -50,9 +56,16 @@ const PRODUCT_SCOPED = new Set(
 // littéral : la quote fermante suit immédiatement, sinon `escape.txt`
 // donnerait `escape`.
 const JOURNAL_CALL = /\bsignaturePath\(\s*(['"`])([a-z][a-z0-9-]*)\1\s*[,)]/g;
+// Gabarit `${SIGNATURE.dir}/<nom>` : le nom doit être complet (ni `.`, ni
+// caractère de nom ensuite), comme pour l'ancien littéral.
+const JOURNAL_TEMPLATE =
+    /\$\{\s*SIGNATURE\.dir\s*\}\/([a-z][a-z0-9-]*)(?![\w.-])/g;
 
 export function cmzDirectoryNames(source) {
-    return [...source.matchAll(JOURNAL_CALL)].map(([, , name]) => name);
+    return [
+        ...[...source.matchAll(JOURNAL_CALL)].map(([, , name]) => name),
+        ...[...source.matchAll(JOURNAL_TEMPLATE)].map(([, name]) => name),
+    ];
 }
 
 export function scanCmzDirectories(root = ROOT) {

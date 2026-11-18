@@ -12,7 +12,7 @@ import { networkInterfaces } from 'node:os';
 import { resolve } from 'node:path';
 
 import {
-    SIGNATURE,
+    signatureIdentifier,
     signatureName,
     toolEnv,
 } from '../core/atelier-signature.mjs';
@@ -216,7 +216,7 @@ export function cspTrapFixture() {
         [
             'trap-inline',
             'script-src',
-            `<script>window.${SIGNATURE.name}Inline = true;</script>`,
+            `<script>window.${signatureIdentifier('Inline')} = true;</script>`,
         ],
         [
             'trap-form',

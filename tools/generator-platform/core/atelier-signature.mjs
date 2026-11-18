@@ -37,6 +37,16 @@ export function signatureName(suffix) {
     return `${NAME}-${suffix}`;
 }
 
+/** Identifiant JavaScript signé d'un harnais : `<nom><Suffixe>`. */
+export function signatureIdentifier(suffix) {
+    return `${NAME}${suffix}`;
+}
+
+/** Propriété globale signée d'un harnais : `__<nom><Suffixe>`. */
+export function signatureGlobal(suffix) {
+    return `__${NAME}${suffix}`;
+}
+
 // Fichiers et dossiers de signature rangés dans un produit ou un banc.
 export const SIGNATURE_FILES = Object.freeze({
     appManifest: signaturePath('app-manifest.json'),
