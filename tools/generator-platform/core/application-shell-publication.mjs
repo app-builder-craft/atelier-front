@@ -16,6 +16,8 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { renderAngularPwaShell } from '../renderers/angular-pwa-shell-renderer.mjs';
 import { renderReactSpaShell } from '../renderers/react-spa-shell-renderer.mjs';
 import { validateApplicationDesignWithDependencies } from './application-design.mjs';
+import { repositoryRoot } from '../validate-ir.mjs';
+import { assertDesignPrefix } from './product-prefix.mjs';
 import {
     planExternalApplicationShell,
     publishExternalApplicationShell,
@@ -312,6 +314,13 @@ export async function planApplicationShell({
         workspaceRoot: root,
     });
     if (errors.length > 0) fail(`design rejected:\n${errors.join('\n')}`);
+    // Banc interne : le préfixe est porté par la conception, obligatoire. Les
+    // portées réservées sont celles du catalogue de l'atelier qui génère.
+    const prefix = await assertDesignPrefix({
+        toolsRoot: repositoryRoot,
+        design: source.design,
+        fail,
+    });
     const designSha256 = sha256(source.content);
     const rendered = await profileConfig.render({
         design: source.design,
@@ -319,6 +328,7 @@ export async function planApplicationShell({
         appName,
         designPath: source.relative,
         designSha256,
+        prefix,
     });
     const treeSha256 = shellTreeSha256(rendered.files);
     const planId = sha256(
@@ -342,6 +352,8 @@ export async function planApplicationShell({
         compiler: profileConfig.compiler,
         compiler_validation: profileConfig.compilerValidation,
         tree_sha256: treeSha256,
+        // Préfixe du produit et sa provenance, affichés au `--dry-run`.
+        identity: { prefix, provenance: 'déclaré dans la conception' },
         files: rendered.files,
         outputAbsolute: resolve(root, `apps/${appName}`),
         candidate: resolve(
@@ -413,6 +425,7 @@ export function publicApplicationShellPlan(plan) {
         experience_id: plan.experience_id,
         profile: plan.profile,
         tree_sha256: plan.tree_sha256,
+        identity: plan.identity,
         ...(plan.external_workspace
             ? {
                   external_workspace: plan.external_workspace,

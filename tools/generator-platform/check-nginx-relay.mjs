@@ -16,11 +16,11 @@ import { fileURLToPath } from 'node:url';
 
 import { sessionRenderConfiguration } from './core/application-design-session.mjs';
 import { escapeRegExp, signatureName } from './core/atelier-signature.mjs';
-import { RELAY_ENVSH } from './core/external-application-paths.mjs';
-import { LEGACY_PREFIX, productForms } from './core/product-identity.mjs';
+import { relayEnvshPath } from './core/external-application-paths.mjs';
+import { prefixInitials, productForms } from './core/product-identity.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import {
-    EXTERNAL_CSP_HEADER,
+    externalCspHeader,
     renderCspHeaderTemplate,
 } from './renderers/external-content-security-policy.mjs';
 import {
@@ -30,10 +30,20 @@ import {
 } from './renderers/external-relay-renderer.mjs';
 import { createApplicationSessionFixture } from './test-support/application-session-fixture.mjs';
 
-const forms = productForms(LEGACY_PREFIX);
+// Préfixe du produit fictif du harnais : les initiales de son appli, comme le
+// préfixe proposé par défaut. Les fonctions exportées prennent le préfixe du
+// produit servi (harnais du navigateur) ; par défaut, celui-ci.
+const APP = 'relay-harness';
+export const HARNESS_PREFIX = prefixInitials(APP);
+const forms = productForms(HARNESS_PREFIX);
 // Script d'entrée du relais : source unique, `core/external-application-paths.mjs`.
-const ENVSH = RELAY_ENVSH.slice(RELAY_ENVSH.lastIndexOf('/') + 1);
-const FILTER = `^${forms.env}`;
+const envshName = (prefix) => {
+    const path = relayEnvshPath(prefix);
+    return path.slice(path.lastIndexOf('/') + 1);
+};
+const ENVSH = envshName(HARNESS_PREFIX);
+const filterOf = (prefix) => `^${productForms(prefix).env}`;
+const FILTER = filterOf(HARNESS_PREFIX);
 const SECRET = signatureName('harness-secret');
 // Dossier de l'hôte qui porte les fichiers montés dans le dossier nginx du
 // produit : un nom neutre, sans lien avec la signature ni le préfixe.
@@ -79,7 +89,7 @@ export function get(port, path, headers = {}) {
 }
 
 // Fichiers du relais et site statique fictif.
-export async function relayFixture() {
+export async function relayFixture({ prefix = HARNESS_PREFIX } = {}) {
     const data = await createApplicationSessionFixture({
         domain: 'observatory',
     });
@@ -88,21 +98,24 @@ export async function relayFixture() {
         const shell = await renderAngularPwaShell({
             design: data.design,
             experienceId: experience.id,
-            appName: 'relay-harness',
+            appName: APP,
             designPath: 'design/observatory.json',
             designSha256: 'a'.repeat(64),
             externalWorkspace: true,
+            prefix,
         });
         const table = relayServiceTable(
-            sessionRenderConfiguration(data.design, experience)
+            sessionRenderConfiguration(data.design, experience),
+            prefix
         );
         return {
             table,
+            prefix,
             files: {
                 template: shell.files[RELAY_FILES.template],
                 headers: shell.files[RELAY_FILES.headers],
-                envsh: shell.files[RELAY_FILES.envsh],
-                csp: renderCspHeaderTemplate(),
+                envsh: shell.files[relayEnvshPath(prefix)],
+                csp: renderCspHeaderTemplate(prefix),
             },
         };
     } finally {
@@ -123,7 +136,12 @@ const FAKE_SERVICE = `server {
 }
 `;
 
-export async function stage(root, files, { envshMode = 0o755 } = {}) {
+export async function stage(
+    root,
+    files,
+    { envshMode = 0o755, prefix = HARNESS_PREFIX } = {}
+) {
+    const ENVSH = envshName(prefix);
     await mkdir(join(root, 'templates'), { recursive: true });
     await mkdir(join(root, HOST_CONF), { recursive: true });
     await mkdir(join(root, 'html'), { recursive: true });
@@ -153,7 +171,13 @@ export async function stage(root, files, { envshMode = 0o755 } = {}) {
 }
 
 // Arguments de la commande de référence (README), sans -p ni nom.
-function relayArgs(root, env, { mountEnvsh = true } = {}) {
+function relayArgs(
+    root,
+    env,
+    { mountEnvsh = true, prefix = HARNESS_PREFIX } = {}
+) {
+    const ENVSH = envshName(prefix);
+    const forms = productForms(prefix);
     return [
         ...Object.entries(env).flatMap(([key, value]) => [
             '--env',
@@ -192,7 +216,13 @@ export function stopRelay(relay) {
 }
 
 // Une session : réseau, service fictif, relais ; fermeture garantie.
-export async function withRelay(root, variable, upstream, action) {
+export async function withRelay(
+    root,
+    variable,
+    upstream,
+    action,
+    { prefix = HARNESS_PREFIX } = {}
+) {
     const id = randomBytes(4).toString('hex');
     const network = signatureName(`relay-${id}`);
     const svc = signatureName(`svc-${id}`);
@@ -221,10 +251,14 @@ export async function withRelay(root, variable, upstream, action) {
             network,
             '-p',
             '127.0.0.1::8080',
-            ...relayArgs(root, {
-                NGINX_ENVSUBST_FILTER: FILTER,
-                [variable]: upstream,
-            }),
+            ...relayArgs(
+                root,
+                {
+                    NGINX_ENVSUBST_FILTER: filterOf(prefix),
+                    [variable]: upstream,
+                },
+                { prefix }
+            ),
             nginxImage(),
         ]);
         const port = Number(
@@ -309,7 +343,7 @@ export async function runChecks(files, table) {
                         // prend la sienne dans les en-têtes de /sw.js.
                         assert.deepEqual(
                             headers['content-security-policy'],
-                            [EXTERNAL_CSP_HEADER],
+                            [externalCspHeader(HARNESS_PREFIX)],
                             path
                         );
                         assert.equal(

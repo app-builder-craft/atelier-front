@@ -33,6 +33,7 @@ import {
     verifyGeneratedTree,
 } from './core/external-application-paths.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import {
     fixtureParent,
     shellFixture,
@@ -691,6 +692,7 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
         designSha256: data.pages.values().next().value.pageContract.design_ref
             .sha256,
         externalWorkspace: true,
+        prefix: FIXTURE_PREFIX,
     });
     const source = Object.entries(rendered.files).filter(([path]) =>
         path.endsWith('.ts')

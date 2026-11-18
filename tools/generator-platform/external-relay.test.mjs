@@ -30,16 +30,28 @@ import { sessionRenderConfiguration } from './core/application-design-session.mj
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import {
     RELAY_FILES,
+    relayEnvshPath,
     UPSTREAM_PATTERN,
     nginxImage,
     relayServiceTable,
 } from './renderers/external-relay-renderer.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import {
     createApplicationSessionFixture,
     SESSION_FIXTURE_DOMAINS,
 } from './test-support/application-session-fixture.mjs';
 import { TOOLS_ROOT } from './test-support/external-application-fixture.mjs';
 import { sessionApp } from './test-support/external-publication-fixture.mjs';
+
+// Formes du préfixe du produit fictif, écrites ici (oracle du test) :
+// variables de l'opérateur `<P>_*`, variables nginx et fonctions `<p>_*`.
+const ENV = `${FIXTURE_PREFIX.toUpperCase()}_`;
+const SNAKE = `${FIXTURE_PREFIX}_`;
+const ENVSH = relayEnvshPath(FIXTURE_PREFIX);
+const ENVSH_NAME = ENVSH.slice(ENVSH.lastIndexOf('/') + 1);
+// Fichiers possédés du relais : la table fixe, plus le script d'entrée nommé
+// au préfixe du produit.
+const RELAY_PATHS = [...Object.values(RELAY_FILES), ENVSH];
 
 async function scratch(t, prefix) {
     const root = await realpath(await mkdtemp(join(tmpdir(), prefix)));
@@ -59,6 +71,7 @@ async function renderShells(t, domain) {
                 designPath: `design/${domain}.json`,
                 designSha256: 'a'.repeat(64),
                 externalWorkspace,
+                prefix: FIXTURE_PREFIX,
             })
         ).files;
     const config = sessionRenderConfiguration(
@@ -68,7 +81,7 @@ async function renderShells(t, domain) {
     return {
         atelier: await render(false),
         external: await render(true),
-        table: relayServiceTable(config),
+        table: relayServiceTable(config, FIXTURE_PREFIX),
     };
 }
 
@@ -106,16 +119,18 @@ test('X4-config : une seule table de chemins, lue à l’identique par tous ses 
             paths
         );
         assert.deepEqual(
-            [...template.matchAll(/proxy_pass \$\{(CMZ_[A-Z0-9_]+)\};/g)].map(
-                (m) => m[1]
-            ),
+            [
+                ...template.matchAll(
+                    new RegExp(`proxy_pass \\$\\{(${ENV}[A-Z0-9_]+)\\};`, 'g')
+                ),
+            ].map((m) => m[1]),
             table.map((entry) => entry.variable)
         );
         // Validation au démarrage.
         assert.deepEqual(
             [
-                ...external[RELAY_FILES.envsh].matchAll(
-                    /^cmz_check (CMZ_[A-Z0-9_]+)$/gm
+                ...external[ENVSH].matchAll(
+                    new RegExp(`^${SNAKE}check (${ENV}[A-Z0-9_]+)$`, 'gm')
                 ),
             ].map((m) => m[1]),
             table.map((entry) => entry.variable)
@@ -157,7 +172,7 @@ test('X4-config : une seule table de chemins, lue à l’identique par tous ses 
             'apps/relay-app/proxy.conf.mjs'
         );
         // Mode atelier inchangé.
-        for (const path of Object.values(RELAY_FILES))
+        for (const path of RELAY_PATHS)
             assert.equal(atelier[path], undefined, path);
         assert.equal(atelier['src/app/app.config.ts'].includes('RELAY'), false);
         assert.equal(
@@ -166,7 +181,7 @@ test('X4-config : une seule table de chemins, lue à l’identique par tous ses 
             undefined
         );
         // Aucune adresse dans les fichiers possédés du relais.
-        for (const path of Object.values(RELAY_FILES)) {
+        for (const path of RELAY_PATHS) {
             const text = external[path]
                 .replaceAll(UPSTREAM_PATTERN, '')
                 .replaceAll('http://hôte[:port]/', '');
@@ -185,13 +200,13 @@ test('X4-config : gabarit nginx, ordre de la map et invariant d’échappement',
     const template = external[RELAY_FILES.template];
     // Seules les variables de l'opérateur sont écrites ${…}, en majuscules.
     for (const [variable] of template.matchAll(/\$\{[^}]*\}/g))
-        assert.match(variable, /^\$\{CMZ_[A-Z0-9_]+\}$/);
+        assert.match(variable, new RegExp(`^\\$\\{${ENV}[A-Z0-9_]+\\}$`));
     // Toute autre variable est une variable nginx en minuscules.
     for (const [, name] of template.matchAll(
         /\$(?!\{)([A-Za-z_][A-Za-z0-9_]*)/g
     ))
         assert.match(name, /^[a-z_][a-z0-9_]*$/, name);
-    for (const name of ['$host', '$scheme', '$uri', '$cmz_cache_control'])
+    for (const name of ['$host', '$scheme', '$uri', `$${SNAKE}cache_control`])
         assert.ok(template.includes(name), name);
     // nginx ignore la casse des noms de variables : aucune variable nginx ne
     // porte le nom, en minuscules, d'une variable de l'opérateur (sinon la
@@ -201,7 +216,9 @@ test('X4-config : gabarit nginx, ordre de la map et invariant d’échappement',
             (found) => found[1]
         )
     );
-    for (const [, operator] of template.matchAll(/\$\{(CMZ_[A-Z0-9_]+)\}/g))
+    for (const [, operator] of template.matchAll(
+        new RegExp(`\\$\\{(${ENV}[A-Z0-9_]+)\\}`, 'g')
+    ))
         assert.equal(declared.has(operator.toLowerCase()), false, operator);
     // Map : /api/ avant la regex d'assets (entre regex, l'ordre compte).
     const api = template.indexOf('"~^/api/" "";');
@@ -211,8 +228,12 @@ test('X4-config : gabarit nginx, ordre de la map et invariant d’échappement',
     const locations = template.slice(template.indexOf('    location ^~'));
     assert.equal(locations.includes('add_header'), false);
     assert.equal(
-        template.match(/add_header Cache-Control \$cmz_cache_control always;/g)
-            ?.length,
+        template.match(
+            new RegExp(
+                `add_header Cache-Control \\$${SNAKE}cache_control always;`,
+                'g'
+            )
+        )?.length,
         1
     );
     for (const directive of [
@@ -221,7 +242,7 @@ test('X4-config : gabarit nginx, ordre de la map et invariant d’échappement',
         'client_max_body_size 10m;',
         'location ^~ /api/ {',
         'try_files $uri /index.html;',
-        'set $cmz_relay_guard "${CMZ_UPSTREAMS_VALIDATED}";',
+        `set $${SNAKE}relay_guard "\${${ENV}UPSTREAMS_VALIDATED}";`,
         'proxy_http_version 1.1;',
         'proxy_set_header Connection "";',
     ])
@@ -258,7 +279,7 @@ function runEnvsh(file, env) {
         '/bin/sh',
         [
             '-c',
-            '. "$1"; printf "VALIDATED=%s" "$CMZ_UPSTREAMS_VALIDATED"',
+            `. "$1"; printf "VALIDATED=%s" "$${ENV}UPSTREAMS_VALIDATED"`,
             'sh',
             file,
         ],
@@ -272,13 +293,13 @@ test('X4-config : le script de validation refuse sans jamais écrire une valeur'
         SESSION_FIXTURE_DOMAINS[0]
     );
     const root = await scratch(t, 'cmz-relay-envsh-');
-    const file = join(root, '15-cmz-upstreams.envsh');
-    await writeFile(file, external[RELAY_FILES.envsh]);
+    const file = join(root, ENVSH_NAME);
+    await writeFile(file, external[ENVSH]);
     const [first, ...others] = table.map((entry) => entry.variable);
     const valid = Object.fromEntries(
         others.map((variable) => [variable, 'http://svc:8000/'])
     );
-    const base = { NGINX_ENVSUBST_FILTER: '^CMZ_', ...valid };
+    const base = { NGINX_ENVSUBST_FILTER: `^${ENV}`, ...valid };
     for (const value of ['http://svc:8000/', 'http://svc:8000/base/v1/']) {
         const result = runEnvsh(file, { ...base, [first]: value });
         assert.equal(result.status, 0, value);
@@ -301,7 +322,7 @@ test('X4-config : le script de validation refuse sans jamais écrire une valeur'
         assert.equal(result.stderr, message + '\n', message);
         assert.equal(result.stderr.includes(secret), false, message);
     }
-    for (const filter of [undefined, '^cmz_', '.*'])
+    for (const filter of [undefined, `^${SNAKE}`, '.*'])
         assert.equal(
             runEnvsh(file, {
                 ...valid,
@@ -310,7 +331,7 @@ test('X4-config : le script de validation refuse sans jamais écrire une valeur'
                     ? {}
                     : { NGINX_ENVSUBST_FILTER: filter }),
             }).stderr,
-            'CMZ_ENVSUBST_FILTER_INVALID\n'
+            `${ENV}ENVSUBST_FILTER_INVALID\n`
         );
 });
 
@@ -336,7 +357,7 @@ test('X4-config : proxy de développement, cibles hors du produit sur chemins r�
     }
     // Sans fichier : un avertissement, aucun service relayé, pas de blocage.
     assert.deepEqual(warnings, [
-        'CMZ_DEV_PROXY aucun service relayé : définir CMZ_DEV_PROXY_FILE (voir proxy.local.example.json)\n',
+        `${ENV}DEV_PROXY aucun service relayé : définir ${ENV}DEV_PROXY_FILE (voir proxy.local.example.json)\n`,
     ]);
     const { devProxyConfig } = module;
     assert.deepEqual(module.default, {});
@@ -357,7 +378,7 @@ test('X4-config : proxy de développement, cibles hors du produit sur chemins r�
     const refused = (file) =>
         assert.throws(
             () => devProxyConfig(file, product),
-            /CMZ_DEV_PROXY FILE_INSIDE_PRODUCT/
+            new RegExp(`${ENV}DEV_PROXY FILE_INSIDE_PRODUCT`)
         );
     refused(inside);
     // `..` qui retombe dans le produit, puis lien hors du produit vers dedans.
@@ -386,20 +407,26 @@ test('X4-config : proxy de développement, cibles hors du produit sur chemins r�
     );
     assert.throws(
         () => devProxyConfig(outside, product),
-        /CMZ_DEV_PROXY INVALID /
+        new RegExp(`${ENV}DEV_PROXY INVALID `)
     );
 });
 
 test('X4-config : seul le script de validation est exécutable', async (t) => {
-    const envsh = `apps/relay-app/${RELAY_FILES.envsh}`;
+    const envsh = `apps/relay-app/${ENVSH}`;
     assert.equal(ownedFileMode(envsh), 0o755);
-    assert.equal(ownedFileMode(RELAY_FILES.envsh), 0o755);
+    assert.equal(ownedFileMode(ENVSH), 0o755);
+    // Le mode n'est pas couvert par les empreintes : 0755 pour tout préfixe,
+    // dont `cmz`, préfixe implicite des produits créés avant le lot MARQUE.
+    for (const prefix of ['cmz', 'qz', 'abcdef'])
+        assert.equal(
+            ownedFileMode(`apps/relay-app/${relayEnvshPath(prefix)}`),
+            0o755,
+            prefix
+        );
     for (const path of [
-        ...Object.values(RELAY_FILES)
-            .filter((entry) => entry !== RELAY_FILES.envsh)
-            .map((entry) => `apps/relay-app/${entry}`),
-        'apps/relay-app/deploy/nginx/docker-entrypoint.d/15-cmz-upstreams.sh',
-        'apps/relay-app/deploy/15-cmz-upstreams.envsh',
+        ...Object.values(RELAY_FILES).map((entry) => `apps/relay-app/${entry}`),
+        `apps/relay-app/${ENVSH.replace(/\.envsh$/, '.sh')}`,
+        `apps/relay-app/deploy/${ENVSH_NAME}`,
         'package.json',
     ])
         assert.equal(ownedFileMode(path), 0o644, path);
@@ -453,7 +480,7 @@ test('X4-config : fichiers de configuration locale refusés sous la racine, avec
         workspaceRoot: TOOLS_ROOT,
         targetRoot: created.root,
     });
-    await writeFile(join(created.root, '.env'), 'CMZ_UPSTREAM_X=http://a/\n');
+    await writeFile(join(created.root, '.env'), `${ENV}UPSTREAM_X=http://a/\n`);
     await assert.rejects(
         ownedProductContext({
             workspaceRoot: TOOLS_ROOT,
@@ -463,7 +490,7 @@ test('X4-config : fichiers de configuration locale refusés sous la racine, avec
     );
     assert.equal(
         await readFile(join(created.root, '.env'), 'utf8'),
-        'CMZ_UPSTREAM_X=http://a/\n'
+        `${ENV}UPSTREAM_X=http://a/\n`
     );
 });
 

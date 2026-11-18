@@ -6,7 +6,8 @@
  * `tools/generator-platform/core/product-identity.mjs`.
  *
  * Tout est dérivé, rien n'est déclaré à la main :
- * - les VALEURS refusées sont celles qu'exportent les deux modules ;
+ * - les VALEURS refusées sont celles qu'exporte la signature de l'atelier
+ *   (le préfixe du produit, déclaré par produit, n'a pas de valeur fixe) ;
  * - le PÉRIMÈTRE est l'ensemble des fichiers suivis `tools/**` et
  *   `examples/**` en `.mjs`, hors tests (`*.test.mjs`) et hors les deux
  *   modules eux-mêmes.
@@ -19,7 +20,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { SIGNATURE_VALUES } from './generator-platform/core/atelier-signature.mjs';
-import { LEGACY_PRODUCT_VALUES } from './generator-platform/core/product-identity.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -28,8 +28,13 @@ export const IDENTITY_SOURCES = Object.freeze([
     'tools/generator-platform/core/product-identity.mjs',
 ]);
 
+// Le préfixe du produit n'a plus de valeur par défaut : il est déclaré et
+// scellé par produit. Ses formes ne sont donc plus des valeurs à refuser ici.
+// Une forme écrite en dur dans une SORTIE est refusée par le test « un seul
+// préfixe » de `generator-platform/product-identity.test.mjs`, qui relève
+// chaque famille de noms possédés par le produit dans le rendu.
 export const IDENTITY_VALUES = Object.freeze(
-    [...new Set([...SIGNATURE_VALUES, ...LEGACY_PRODUCT_VALUES])].sort()
+    [...new Set(SIGNATURE_VALUES)].sort()
 );
 
 export function identityScope(paths) {

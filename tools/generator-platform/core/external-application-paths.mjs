@@ -20,7 +20,7 @@ import {
 import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { syncTreeDirectories } from './generation-transaction.mjs';
-import { LEGACY_PREFIX, productForms } from './product-identity.mjs';
+import { PREFIX_PATTERN, productForms } from './product-identity.mjs';
 
 export function externalFailure(code) {
     throw new Error(`external application: ${code}`);
@@ -77,6 +77,10 @@ export async function assertPhysicalPath(path, { missing = false } = {}) {
     return absolute;
 }
 
+// Version du manifeste d'espace : 1.1.0 depuis que le préfixe du produit
+// (`identity.prefix`) y est un champ déclaré, requis par un schéma fermé.
+export const WORKSPACE_MANIFEST_VERSION = '1.1.0';
+
 async function ownedGitRoot(root) {
     try {
         const path = resolve(root, SIGNATURE_FILES.workspaceManifest);
@@ -85,7 +89,7 @@ async function ownedGitRoot(root) {
         const { workspace_id: workspaceId, ...identity } = manifest;
         return (
             manifest.kind === 'application-workspace-manifest' &&
-            manifest.schema_version === '1.0.0' &&
+            manifest.schema_version === WORKSPACE_MANIFEST_VERSION &&
             /^[a-f0-9]{64}$/.test(workspaceId ?? '') &&
             workspaceId === sha256(stableStringify(identity))
         );
@@ -276,9 +280,18 @@ export async function verifyGeneratedTree(
 
 // X4-config : seul le script de validation du relais est exécutable (l'image
 // nginx ignore un .envsh non exécutable) ; tout autre fichier possédé est écrit
-// en 0644.
-export const RELAY_ENVSH = `deploy/nginx/docker-entrypoint.d/15-${productForms(LEGACY_PREFIX).kebab}upstreams.envsh`;
-const EXECUTABLE_OWNED = new RegExp(`(?:^|/)${escapeRegExp(RELAY_ENVSH)}$`);
+// en 0644. Son nom dérive du préfixe du produit : une seule forme, écrite ici.
+const relayEnvshFor = (stem) =>
+    `deploy/nginx/docker-entrypoint.d/15-${stem}-upstreams.envsh`;
+export const relayEnvshPath = (prefix) =>
+    relayEnvshFor(productForms(prefix).prefix);
+const STEM = '\u0000';
+const EXECUTABLE_OWNED = new RegExp(
+    `(?:^|/)${escapeRegExp(relayEnvshFor(STEM)).replace(
+        STEM,
+        PREFIX_PATTERN.source.slice(1, -1)
+    )}$`
+);
 export const ownedFileMode = (path) =>
     EXECUTABLE_OWNED.test(path) ? 0o755 : 0o644;
 

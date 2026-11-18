@@ -21,7 +21,10 @@ import {
     planApplicationShell,
     publishApplicationShell,
 } from './core/application-shell-publication.mjs';
-import { writeApplicationDesignFixture } from './test-support/application-design-fixture.mjs';
+import {
+    withProductPrefix,
+    writeApplicationDesignFixture,
+} from './test-support/application-design-fixture.mjs';
 
 const applicationDesignSchema = JSON.parse(
     await readFile(
@@ -54,9 +57,10 @@ async function fixture() {
         root,
         backendContractSchema
     );
+    // Banc interne : la conception porte le préfixe du produit (1.2.0).
     await writeFile(
         join(root, 'designs/sample-app.application-design.json'),
-        `${JSON.stringify(data.design, null, 2)}\n`
+        `${JSON.stringify(withProductPrefix(data.design), null, 2)}\n`
     );
     const shellOptions = {
         workspaceRoot: root,

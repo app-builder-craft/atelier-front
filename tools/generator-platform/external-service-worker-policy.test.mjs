@@ -1,5 +1,5 @@
 // Coque extérieure : enregistrement du service worker sous Trusted Types par la
-// politique `cmz-sw` du main.ts généré. Lecture statique du rendu, puis
+// politique `<préfixe>-sw` du main.ts généré. Lecture statique du rendu, puis
 // exécution du main.ts compilé dans un contexte isolé, navigateur simulé :
 // avec Trusted Types, sans Trusted Types, et création de politique en échec.
 // Le navigateur réel est mesuré par check:nginx-relay-browser.
@@ -13,13 +13,19 @@ import ts from 'typescript';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import { adaptExternalShellFiles } from './renderers/application-workspace-renderer.mjs';
 import {
-    EXTERNAL_CSP_HEADER,
-    EXTERNAL_CSP_META,
+    externalCspHeader,
+    externalCspMeta,
 } from './renderers/external-content-security-policy.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import { createApplicationSessionFixture } from './test-support/application-session-fixture.mjs';
 import { applicationDesign } from './test-support/application-design-fixture.mjs';
 import { hash } from './test-support/external-application-fixture.mjs';
 import { SESSION_FIXTURE_DOMAINS } from './test-support/external-session-fixture.mjs';
+
+// Politique Trusted Types du service worker, au préfixe du produit fictif.
+const SW_POLICY = `${FIXTURE_PREFIX}-sw`;
+const EXTERNAL_CSP_META = externalCspMeta(FIXTURE_PREFIX);
+const EXTERNAL_CSP_HEADER = externalCspHeader(FIXTURE_PREFIX);
 
 async function renderMains(t) {
     const data = await createApplicationSessionFixture({
@@ -35,6 +41,7 @@ async function renderMains(t) {
                 designPath: 'design/sw.json',
                 designSha256: hash('sw'),
                 externalWorkspace,
+                prefix: FIXTURE_PREFIX,
             })
         ).files;
     return { atelier: await render(false), external: await render(true) };
@@ -119,17 +126,20 @@ function fakeTrustedTypes() {
     };
 }
 
-test('cmz-sw : politique de la coque, sans allow-duplicates, en meta comme en en-tête', () => {
+test(`${SW_POLICY} : politique de la coque, sans allow-duplicates, en meta comme en en-tête`, () => {
     for (const policy of [EXTERNAL_CSP_META, EXTERNAL_CSP_HEADER]) {
         const directive = policy
             .split('; ')
             .find((entry) => entry.startsWith('trusted-types '));
-        assert.equal(directive, 'trusted-types angular angular#bundler cmz-sw');
+        assert.equal(
+            directive,
+            `trusted-types angular angular#bundler ${SW_POLICY}`
+        );
         assert.doesNotMatch(policy, /allow-duplicates/);
     }
 });
 
-test('cmz-sw : créée une fois, avant l’amorçage, locale au module ; mode atelier inchangé', async (t) => {
+test(`${SW_POLICY} : créée une fois, avant l’amorçage, locale au module ; mode atelier inchangé`, async (t) => {
     const { atelier, external } = await renderMains(t);
     const main = external['src/main.ts'];
     const policies = calls(main, 'createPolicy');
@@ -160,7 +170,10 @@ test('cmz-sw : créée une fois, avant l’amorçage, locale au module ; mode at
             statement.getText(policies.file)
         );
     }
-    assert.match(main, /trustedTypes\?\.createPolicy\('cmz-sw', \{/);
+    assert.match(
+        main,
+        new RegExp(`trustedTypes\\?\\.createPolicy\\('${SW_POLICY}', \\{`)
+    );
     assert.doesNotMatch(main, /^\s*export\b/m);
     // Code seul, commentaires retirés : rien n'est attaché au global.
     const code = ts.transpileModule(main, {
@@ -177,7 +190,7 @@ test('cmz-sw : créée une fois, avant l’amorçage, locale au module ; mode at
     );
 });
 
-test('cmz-sw : URL exacte acceptée, toute autre refusée ; enregistrement par la valeur de confiance', async (t) => {
+test(`${SW_POLICY} : URL exacte acceptée, toute autre refusée ; enregistrement par la valeur de confiance`, async (t) => {
     const { external } = await renderMains(t);
     const trustedTypes = fakeTrustedTypes();
     const { seen, error } = await execute(external['src/main.ts'], {
@@ -186,7 +199,7 @@ test('cmz-sw : URL exacte acceptée, toute autre refusée ; enregistrement par l
     assert.equal(error, undefined);
     assert.deepEqual(
         trustedTypes.created.map((entry) => entry.name),
-        ['cmz-sw']
+        [SW_POLICY]
     );
     assert.equal(seen.bootstrap, 1);
     assert.deepEqual(seen.register, [{ trusted: '/sw.js' }]);
@@ -212,13 +225,13 @@ test('cmz-sw : URL exacte acceptée, toute autre refusée ; enregistrement par l
             () => rules.createScriptURL(refused),
             {
                 name: 'TypeError',
-                message: 'cmz-sw: service worker URL refused',
+                message: `${SW_POLICY}: service worker URL refused`,
             },
             JSON.stringify(refused)
         );
 });
 
-test('cmz-sw : sans Trusted Types, chaîne littérale ; création en échec, erreur remontée sans repli', async (t) => {
+test(`${SW_POLICY} : sans Trusted Types, chaîne littérale ; création en échec, erreur remontée sans repli`, async (t) => {
     const { external } = await renderMains(t);
     const main = external['src/main.ts'];
     const absent = await execute(main);
@@ -230,11 +243,11 @@ test('cmz-sw : sans Trusted Types, chaîne littérale ; création en échec, err
     const failing = await execute(main, {
         trustedTypes: {
             createPolicy() {
-                throw new TypeError('Policy "cmz-sw" disallowed.');
+                throw new TypeError(`Policy "${SW_POLICY}" disallowed.`);
             },
         },
     });
-    assert.equal(failing.error?.message, 'Policy "cmz-sw" disallowed.');
+    assert.equal(failing.error?.message, `Policy "${SW_POLICY}" disallowed.`);
     assert.equal(failing.seen.bootstrap, 0);
     assert.deepEqual(failing.seen.register, []);
     // Rien n'est attaché au global.
@@ -250,7 +263,7 @@ test('cmz-sw : sans Trusted Types, chaîne littérale ; création en échec, err
     ]);
 });
 
-test('cmz-sw : un main.ts d’atelier qui a dérivé arrête la coque extérieure', async (t) => {
+test(`${SW_POLICY} : un main.ts d’atelier qui a dérivé arrête la coque extérieure`, async (t) => {
     const { atelier } = await renderMains(t);
     const files = {
         ...atelier,
@@ -264,6 +277,7 @@ test('cmz-sw : un main.ts d’atelier qui a dérivé arrête la coque extérieur
             adaptExternalShellFiles(files, {
                 profile: 'angular-pwa',
                 appName: 'session-sw',
+                prefix: FIXTURE_PREFIX,
             }),
         /application shell: main\.ts is not the shell main/
     );
@@ -327,6 +341,7 @@ test('sw.js extérieur : jamais /api/ pris en charge, quelle que soit la destina
                 designPath: 'design/shell.json',
                 designSha256: hash('shell'),
                 externalWorkspace,
+                prefix: FIXTURE_PREFIX,
             })
         ).files['public/sw.js'];
     const atelier = await render(false);
@@ -359,6 +374,7 @@ test('sw.js extérieur : jamais /api/ pris en charge, quelle que soit la destina
                 designPath: 'design/shell.json',
                 designSha256: hash('shell'),
                 externalWorkspace: false,
+                prefix: FIXTURE_PREFIX,
             })
         ).files,
     };
@@ -371,6 +387,7 @@ test('sw.js extérieur : jamais /api/ pris en charge, quelle que soit la destina
             adaptExternalShellFiles(files, {
                 profile: 'angular-pwa',
                 appName: 'shell-sw',
+                prefix: FIXTURE_PREFIX,
             }),
         /application shell: sw\.js is not the shell worker/
     );
@@ -379,7 +396,7 @@ test('sw.js extérieur : jamais /api/ pris en charge, quelle que soit la destina
 test('sw.js de session extérieur : jamais /api/, seulement document, manifeste et icône', async (t) => {
     const { external } = await renderMains(t);
     const worker = external['public/sw.js'];
-    assert.match(worker, /cmz-session-static-v1/);
+    assert.ok(worker.includes(`${FIXTURE_PREFIX}-session-static-v1`));
     assert.deepEqual(handled(worker, API_REQUESTS), []);
     assert.deepEqual(
         handled(worker, [

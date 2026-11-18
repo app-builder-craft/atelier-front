@@ -28,6 +28,9 @@ export function parseArgs(argv) {
         ['--profiles', 'profiles'],
         ['--github-repository', 'githubRepository'],
         ['--review-owner', 'reviewOwner'],
+        // Préfixe du produit, facultatif : sans lui, le plan propose les
+        // initiales du nom du dépôt ; il est scellé dans l'espace.
+        ['--prefix', 'prefix'],
         ['--apply', 'expectedPlanId'],
     ]);
     const seen = new Set();

@@ -27,6 +27,7 @@ import {
     hash,
     shellFixture,
 } from './external-application-fixture.mjs';
+import { FIXTURE_PREFIX } from './application-design-fixture.mjs';
 import { nx24ShellDelta } from './nx24-shell-delta.mjs';
 
 test('T13 : configurations strictes et compilation/test/lint natifs locaux des deux cibles', async (t) => {
@@ -155,6 +156,20 @@ test('T16 : référence historique exhaustive et seul delta Nx24 qualifié', asy
             ),
         };
         const historical = (await reference[fn](options)).files;
+        // Le renderer historique a un préfixe implicite, lu dans sa sortie :
+        // rendu au même préfixe, le renderer actuel n'en diffère que du delta
+        // Nx24.
+        const access =
+            historical[
+                profile === 'angular-pwa'
+                    ? 'src/app/access.guard.ts'
+                    : 'src/app/access-policy.tsx'
+            ];
+        const implicit = /window\.__([a-z][a-z0-9]{1,5})AppAccessContext/.exec(
+            access ?? ''
+        );
+        assert.ok(implicit, `${profile} : préfixe historique introuvable`);
+        options.prefix = implicit[1];
         const actual = (await render(options)).files;
         // Red witness: unmodified historical bytes must reject the migrated renderer.
         assert.throws(() => assert.deepEqual(actual, historical), {
@@ -288,6 +303,8 @@ test(
             designPath: input.designPath,
             designSha256: hash(await readFile(join(root, input.designPath))),
             externalWorkspace: true,
+            // Préfixe que la préparation propose pour ce dépôt fictif.
+            prefix: FIXTURE_PREFIX,
         });
         const files = {
             ...workspace,

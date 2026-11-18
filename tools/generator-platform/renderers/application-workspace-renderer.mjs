@@ -1,6 +1,6 @@
 import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
-import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
+import { productForms } from '../core/product-identity.mjs';
 import {
     EXTERNAL_CSP_HEADER_PATH,
     renderCspHeaderTemplate,
@@ -13,9 +13,6 @@ export const EXTERNAL_WORKSPACE_CMZ = Object.freeze({
     support: SIGNATURE_FILES.support,
     proof: SIGNATURE_FILES.proof,
 });
-
-// Formes du préfixe du produit (politique Trusted Types du service worker).
-const forms = productForms(LEGACY_PREFIX);
 
 export const SHELL_PACKAGES = Object.freeze({
     common: {
@@ -450,7 +447,9 @@ bootstrapApplication(App, appConfig)
     .catch((error: unknown) => console.error(error));
 `;
 
-function externalMain(workshop) {
+function externalMain(workshop, prefix) {
+    // Politique Trusted Types du service worker, au préfixe du produit.
+    const forms = productForms(prefix);
     if (workshop !== WORKSHOP_MAIN)
         throw new Error('application shell: main.ts is not the shell main');
     return `import { bootstrapApplication } from '@angular/platform-browser';
@@ -520,7 +519,7 @@ function externalWorker(worker) {
     );
 }
 
-export function adaptExternalShellFiles(files, { profile, appName }) {
+export function adaptExternalShellFiles(files, { profile, appName, prefix }) {
     const root = `apps/${appName}`;
     const project = JSON.parse(files['project.json']);
     const angular = profile === 'angular-pwa';
@@ -568,8 +567,8 @@ export default ts.config(
 );
 `;
         // X4-sécurité : politique de sécurité de contenu générée, scellée.
-        files['src/index.html'] = withCspMeta(files['src/index.html']);
-        files[EXTERNAL_CSP_HEADER_PATH] = renderCspHeaderTemplate();
+        files['src/index.html'] = withCspMeta(files['src/index.html'], prefix);
+        files[EXTERNAL_CSP_HEADER_PATH] = renderCspHeaderTemplate(prefix);
         // L'inlining du CSS critique ajoute un gestionnaire `onload` en ligne,
         // refusé par `script-src 'self'` ; l'inlining des polices joindrait le
         // réseau au build. Les deux sont coupés explicitement.
@@ -578,7 +577,7 @@ export default ts.config(
             styles: { minify: true, inlineCritical: false },
             fonts: false,
         };
-        files['src/main.ts'] = externalMain(files['src/main.ts']);
+        files['src/main.ts'] = externalMain(files['src/main.ts'], prefix);
         files['public/sw.js'] = externalWorker(files['public/sw.js']);
     } else {
         project.targets.build = {

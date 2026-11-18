@@ -18,11 +18,15 @@ import {
 import { EXTERNAL_WORKSPACE_CMZ as CMZ } from './renderers/application-workspace-renderer.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import {
-    EXTERNAL_CSP_HEADER,
+    externalCspHeader,
     EXTERNAL_CSP_HEADER_PATH,
-    EXTERNAL_CSP_META,
+    externalCspMeta,
 } from './renderers/external-content-security-policy.mjs';
-import { RELAY_FILES } from './renderers/external-relay-renderer.mjs';
+import {
+    RELAY_FILES,
+    relayEnvshPath,
+} from './renderers/external-relay-renderer.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import { createApplicationSessionFixture } from './test-support/application-session-fixture.mjs';
 import {
     hash,
@@ -46,6 +50,10 @@ async function sessionProduct(t, domain) {
     await installMetadataOnly(fixture.plan);
     return { ...fixture, input, shell: sessionShellOptions(input) };
 }
+
+// Politique de la coque au préfixe des produits fictifs.
+const EXTERNAL_CSP_META = externalCspMeta(FIXTURE_PREFIX);
+const EXTERNAL_CSP_HEADER = externalCspHeader(FIXTURE_PREFIX);
 
 const typescript = (plan) =>
     Object.entries(plan.files).filter(([path]) => path.endsWith('.ts'));
@@ -296,6 +304,7 @@ test('X0 : la coque extérieure avec session porte son test de garde ; le mode a
                     designPath: `design/${domain}.json`,
                     designSha256: hash('mode'),
                     externalWorkspace,
+                    prefix: FIXTURE_PREFIX,
                 })
             ).files;
         const atelier = await render(false);
@@ -324,6 +333,7 @@ test('X0 : la coque extérieure avec session porte son test de garde ; le mode a
                 navigationSpec,
                 EXTERNAL_CSP_HEADER_PATH,
                 ...Object.values(RELAY_FILES),
+                relayEnvshPath(FIXTURE_PREFIX),
             ].sort()
         );
         assert.match(
@@ -357,6 +367,7 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
                 designPath: 'design/csp.json',
                 designSha256: hash('csp'),
                 externalWorkspace,
+                prefix: FIXTURE_PREFIX,
             })
         ).files;
     const atelier = await render(false);

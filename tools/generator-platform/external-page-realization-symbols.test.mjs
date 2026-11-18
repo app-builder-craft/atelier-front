@@ -27,10 +27,11 @@ import {
     ES_INTERFACES,
 } from './core/external-page-realization-symbols.mjs';
 import {
-    EXTERNAL_CSP_HEADER,
-    EXTERNAL_CSP_META,
+    externalCspHeader,
+    externalCspMeta,
     renderCspHeaderTemplate,
 } from './renderers/external-content-security-policy.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import {
     composedProduct,
     realizationChecker,
@@ -508,17 +509,18 @@ test('X4-sécurité 2 : gabarit réduit, une entrée de liste par cas, politique
             { ...good, [TS]: good[TS].replace(anchor, anchor + text) },
             '@Component metadata must use plain named properties'
         );
-    // Politique de la coque, chaîne exacte.
+    // Politique de la coque, chaîne exacte, au préfixe du produit fictif.
+    const meta = externalCspMeta(FIXTURE_PREFIX);
     assert.equal(
-        EXTERNAL_CSP_META,
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'none'; object-src 'none'; form-action 'self'; base-uri 'self'; require-trusted-types-for 'script'; trusted-types angular angular#bundler cmz-sw"
+        meta,
+        `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'none'; object-src 'none'; form-action 'self'; base-uri 'self'; require-trusted-types-for 'script'; trusted-types angular angular#bundler ${FIXTURE_PREFIX}-sw`
     );
     assert.equal(
-        EXTERNAL_CSP_HEADER,
-        `${EXTERNAL_CSP_META}; frame-ancestors 'none'`
+        externalCspHeader(FIXTURE_PREFIX),
+        `${meta}; frame-ancestors 'none'`
     );
     assert.match(
-        renderCspHeaderTemplate(),
+        renderCspHeaderTemplate(FIXTURE_PREFIX),
         /^add_header Cross-Origin-Opener-Policy "same-origin" always;$/m
     );
 });

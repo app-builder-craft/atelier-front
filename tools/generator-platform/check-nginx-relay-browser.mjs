@@ -35,11 +35,11 @@ import {
     signatureGlobal,
     signatureName,
 } from './core/atelier-signature.mjs';
-import { LEGACY_PREFIX, productForms } from './core/product-identity.mjs';
-import { EXTERNAL_CSP_HEADER } from './renderers/external-content-security-policy.mjs';
+import { sealedProductPrefix } from './core/application-workspace-root.mjs';
+import { productForms } from './core/product-identity.mjs';
+import { externalCspHeader } from './renderers/external-content-security-policy.mjs';
 
 const READY_TIMEOUT_MS = 15_000;
-const forms = productForms(LEGACY_PREFIX);
 // Globale d'instrumentation du harnais et marqueur de redéploiement.
 const VIOLATIONS = signatureGlobal('Violations');
 const DEPLOY = signatureName('deploy');
@@ -68,7 +68,7 @@ export const EXPECTATIONS = {
     // Avec session : offline_policy none (X0) ; document, manifeste et icône
     // seulement, version installée ; aucun démarrage hors ligne revendiqué.
     'session:none': {
-        cache: (cached) =>
+        cache: (cached, files, forms) =>
             assert.deepEqual(cached, [
                 [`${forms.kebab}session-static-v1`, SHELL_ENTRIES],
             ]),
@@ -78,7 +78,7 @@ export const EXPECTATIONS = {
     // Sans session : service worker de la coque, réseau d'abord ; le cache
     // garde la coque et ses ressources de même origine, jamais /api/.
     'shell:none': {
-        cache: (cached, files) => {
+        cache: (cached, files, forms) => {
             assert.equal(cached.length, 1);
             assert.equal(cached[0][0], `${forms.kebab}shell-v1`);
             const entries = cached[0][1];
@@ -110,8 +110,10 @@ export async function runShellBrowserChecks(
     launched,
     origin,
     server,
-    { expectation, files, api }
+    { expectation, files, api, prefix }
 ) {
+    // Noms au préfixe du produit servi : caches, politique, CSP.
+    const forms = productForms(prefix);
     const results = {};
     const check = async (name, run) => {
         try {
@@ -140,7 +142,7 @@ export async function runShellBrowserChecks(
             assert.equal(response.status(), 200);
             assert.equal(
                 response.headers()['content-security-policy'],
-                EXTERNAL_CSP_HEADER
+                externalCspHeader(prefix)
             );
             assert.equal(
                 await page
@@ -294,7 +296,7 @@ export async function runShellBrowserChecks(
                     ])
                 )
             );
-            expectation.cache(cached, files);
+            expectation.cache(cached, files, forms);
             await server.stop();
             const response = await page.goto(origin + '/');
             assert.equal(response?.status(), 200);
@@ -361,7 +363,12 @@ export async function fromProofRoot(root) {
             if (!files.includes('sw.js')) continue;
             const variant = await shellVariant(join(root, product), app);
             if (variant)
-                shells.push({ app: `${product}/${app}`, build, variant });
+                shells.push({
+                    app: `${product}/${app}`,
+                    build,
+                    variant,
+                    prefix: await sealedProductPrefix(join(root, product)),
+                });
         }
     }
     const browsers = (await readdir(join(root, 'browser'), { recursive: true }))
@@ -391,12 +398,15 @@ export async function runRelayBrowserChecks({
     build,
     browser,
     variant,
+    prefix,
     mutateServiceWorker = false,
 }) {
-    const { files, table } = await relayFixture();
+    // Le relais est rendu au préfixe du produit servi : sa CSP, son dossier
+    // nginx et son filtre doivent être ceux du build.
+    const { files, table } = await relayFixture({ prefix });
     const root = await mkdtemp(join(tmpdir(), signatureName('nginx-browser-')));
     try {
-        await stage(root, files);
+        await stage(root, files, { prefix });
         await rm(join(root, 'html'), { recursive: true, force: true });
         await cp(build, join(root, 'html'), { recursive: true });
         const index = join(root, 'html', 'index.html');
@@ -436,12 +446,14 @@ export async function runRelayBrowserChecks({
                             expectation: EXPECTATIONS[variant],
                             files: builtFiles,
                             api: table[0].path,
+                            prefix,
                         }
                     );
                 } finally {
                     await launched.close();
                 }
-            }
+            },
+            { prefix }
         );
     } finally {
         await rm(root, { recursive: true, force: true });

@@ -2,11 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
-import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
+import { productForms } from '../core/product-identity.mjs';
 import { adaptExternalShellFiles } from './application-workspace-renderer.mjs';
-
-// Formes du préfixe du produit (globale du navigateur).
-const forms = productForms(LEGACY_PREFIX);
 
 function sha256(content) {
     return createHash('sha256').update(content).digest('hex');
@@ -67,7 +64,7 @@ ${routes}
 `;
 }
 
-function accessPolicy() {
+function accessPolicy(forms) {
     return `import type { ReactNode } from 'react';
 
 export interface AppAccessDecisionPort {
@@ -280,9 +277,12 @@ export async function renderReactSpaShell({
     designPath,
     designSha256,
     externalWorkspace = false,
+    prefix,
 }) {
     if (design.experiences?.find((entry) => entry.id === experienceId)?.session)
         throw new Error('APP_SESSION_REACT_UNSUPPORTED');
+    // Formes du préfixe du produit (globale du navigateur).
+    const forms = productForms(prefix);
     if (!/^[a-z][a-z0-9-]*$/.test(appName ?? ''))
         throw new Error('application shell: app name must be kebab-case');
     if (design.design?.status !== 'approved')
@@ -484,7 +484,7 @@ export function App() {
 }
 `,
         'src/app/app.routes.tsx': renderRoutes(pages, entryPage),
-        'src/app/access-policy.tsx': accessPolicy(),
+        'src/app/access-policy.tsx': accessPolicy(forms),
         'src/app/access-policy.spec.ts': accessPolicySpec(),
         'src/styles.scss': `:root {
     color-scheme: light;
@@ -508,7 +508,11 @@ body {
         );
     }
     if (externalWorkspace) {
-        adaptExternalShellFiles(files, { profile: 'react-spa', appName });
+        adaptExternalShellFiles(files, {
+            profile: 'react-spa',
+            appName,
+            prefix,
+        });
     }
     const canonicalFiles = await canonicalizeGeneratedFiles(
         Object.fromEntries(

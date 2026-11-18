@@ -35,6 +35,9 @@
       }
     ],
     "id": "library-qualification-bench",
+    "identity": {
+      "prefix": "lqb"
+    },
     "primary_outcome": "A visitor submits one note through a contract-bound page.",
     "problem": "The generic conception pipeline needs one durable end-to-end proof.",
     "status": "approved",
@@ -181,7 +184,7 @@
       "title": "Submit a note"
     }
   ],
-  "schema_version": "1.0.0",
+  "schema_version": "1.2.0",
   "sources": [
     {
       "id": "conception-proof-brief",

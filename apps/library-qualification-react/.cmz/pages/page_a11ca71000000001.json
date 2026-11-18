@@ -3,7 +3,7 @@
   "kind": "page-realization-contract",
   "design_ref": {
     "path": "designs/library-qualification-bench.application-design.json",
-    "sha256": "2a6c864ced30f62c9a3f2cff643dc5206ca8164a18d1585983b57b4d03cd67c6"
+    "sha256": "a46b917cc4327dca189e8efeda9fbee65258df5cb1cfc2b3299c9dc39848bff3"
   },
   "design": {
     "id": "library-qualification-bench",

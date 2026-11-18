@@ -112,8 +112,9 @@ jobs:
       - name: check:cmz-journals-ignored (journaux d'outil hors index)
         run: bun run check:cmz-journals-ignored
 
-      # Lot MARQUE : signature de l'atelier et formes du préfixe du produit
-      # n'existent qu'à un endroit ; une valeur réécrite en dur est refusée.
+      # Lot MARQUE : la signature de l'atelier n'existe qu'à un endroit ; une
+      # valeur réécrite en dur est refusée. Les formes du préfixe du produit
+      # dérivent d'une seule source (`core/product-identity.mjs`).
       - name: check:identity-sources (sources uniques de signature et d'identité)
         run: bun run check:identity-sources
 

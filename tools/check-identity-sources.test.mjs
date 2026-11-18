@@ -27,10 +27,6 @@ import {
     signaturePath,
     toolEnv,
 } from './generator-platform/core/atelier-signature.mjs';
-import {
-    LEGACY_PREFIX,
-    productForms,
-} from './generator-platform/core/product-identity.mjs';
 
 async function repository(t, files) {
     const root = await mkdtemp(join(tmpdir(), 'identity-sources-'));
@@ -44,8 +40,7 @@ async function repository(t, files) {
     return root;
 }
 
-test('les valeurs refusées couvrent chaque famille des deux sources', () => {
-    const forms = productForms(LEGACY_PREFIX);
+test('les valeurs refusées couvrent chaque famille de la signature', () => {
     for (const value of [
         SIGNATURE.dir,
         SIGNATURE.dataAttribute,
@@ -55,17 +50,11 @@ test('les valeurs refusées couvrent chaque famille des deux sources', () => {
         SIGNATURE.gitRefs,
         INTERNAL.scope,
         INTERNAL.env,
-        forms.scope,
-        forms.kebab,
-        forms.snake,
-        forms.env,
-        forms.global,
-        forms.nginxDir,
     ])
         assert.ok(IDENTITY_VALUES.includes(value), value);
-    assert.ok(!IDENTITY_VALUES.includes(LEGACY_PREFIX), 'préfixe nu exclu');
+    assert.ok(!IDENTITY_VALUES.includes(SIGNATURE.name), 'nom nu exclu');
     assert.ok(
-        IDENTITY_VALUES.every((value) => value.length > LEGACY_PREFIX.length)
+        IDENTITY_VALUES.every((value) => value.length > SIGNATURE.name.length)
     );
 });
 

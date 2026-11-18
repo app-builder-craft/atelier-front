@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:cmz:application-workspace-manifest:1.0.0",
+  "$id": "urn:cmz:application-workspace-manifest:1.1.0",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,6 +9,7 @@
     "profiles",
     "github_repository",
     "review_owner",
+    "identity",
     "quality_profile",
     "qualification",
     "packages",
@@ -21,7 +22,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "1.0.0"
+      "const": "1.1.0"
     },
     "kind": {
       "const": "application-workspace-manifest"
@@ -51,6 +52,17 @@
     "review_owner": {
       "type": "string",
       "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prefix"],
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]{1,5}$"
+        }
+      }
     },
     "quality_profile": {
       "const": "production"

@@ -165,8 +165,8 @@ explanations['prepare:application-workspace'] = {
         'Prépare un workspace Nx/Bun séparé, possédé et lié à un plan explicite, sans installer ni créer une application.',
     runbook: RUNBOOK,
     invocations: [
-        'bun run prepare:application-workspace --target-root <absolu> --profiles angular-pwa,react-spa --github-repository <owner/repo> --review-owner <login> --dry-run',
-        'bun run prepare:application-workspace --target-root <absolu> --profiles angular-pwa,react-spa --github-repository <owner/repo> --review-owner <login> --apply <plan_id>',
+        'bun run prepare:application-workspace --target-root <absolu> --profiles angular-pwa,react-spa --github-repository <owner/repo> --review-owner <login> [--prefix <préfixe>] --dry-run',
+        'bun run prepare:application-workspace --target-root <absolu> --profiles angular-pwa,react-spa --github-repository <owner/repo> --review-owner <login> [--prefix <préfixe>] --apply <plan_id>',
     ],
     ownership: {
         creates: [

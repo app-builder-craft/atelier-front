@@ -17,6 +17,7 @@ import {
     createApplicationSessionFixture,
     SESSION_FIXTURE_DOMAINS,
 } from './test-support/application-session-fixture.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import { renderAngularActionRequestV2 } from './renderers/angular-action-request-v2-renderer.mjs';
 import { sessionEndpointToken } from './renderers/angular-application-session-renderer.mjs';
@@ -259,6 +260,8 @@ if (target === 'angular') {
                 designSha256: data.pages.values().next().value.pageContract
                     .design_ref.sha256,
                 externalWorkspace: true,
+                // Produit fictif de la pile : le préfixe neutre des tests.
+                prefix: FIXTURE_PREFIX,
             });
             // Product configuration belongs to a real product workspace, not
             // to Vite's nearest-tsconfig lookup in the session test target.

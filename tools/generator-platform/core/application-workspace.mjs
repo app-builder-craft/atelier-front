@@ -14,6 +14,10 @@ import { SIGNATURE_FILES } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import { runConfinedProductCommand } from './external-product-confinement.mjs';
 import {
+    assertSealedPrefix,
+    resolveWorkspacePrefix,
+} from './product-prefix.mjs';
+import {
     assertPhysicalPath,
     assertSourceWeight,
     externalApplicationContext,
@@ -24,6 +28,7 @@ import {
     stageGeneratedTree,
     verifyGeneratedTree,
     workspaceCandidate,
+    WORKSPACE_MANIFEST_VERSION,
 } from './external-application-paths.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { sealShellManifest } from './application-ownership.mjs';
@@ -101,6 +106,14 @@ async function workspaceSnapshot(context, options, profiles) {
         options.reviewOwner !== manifest.review_owner
     )
         externalFailure('workspace ownership drift');
+    // Préfixe scellé : une préparation qui en déclare un autre est refusée.
+    if (
+        options.prefix !== undefined &&
+        options.prefix !== manifest.identity.prefix
+    )
+        externalFailure(
+            'PRODUCT_PREFIX_SEALED: change it with rename-product-prefix'
+        );
     const files = await ownedFiles(context.productRoot, manifest.files);
     files[MANIFEST] = bytes.toString('utf8');
     files['bun.lock'] = (
@@ -154,9 +167,21 @@ async function planWorkspace(options, documentSources, internal = {}) {
     });
     const provenance = await sourceProvenance(context.toolsRoot);
     let snapshot;
-    if (await pathExists(context.productRoot))
+    let identity;
+    if (await pathExists(context.productRoot)) {
         snapshot = await workspaceSnapshot(context, options, profiles);
-    else {
+        identity = {
+            prefix: snapshot.manifest.identity.prefix,
+            provenance: 'scellé dans l’espace',
+        };
+    } else {
+        // Préfixe du produit : déclaré par `--prefix`, ou proposé par les
+        // initiales du nom du dépôt ; refus nommé sinon.
+        identity = await resolveWorkspacePrefix({
+            toolsRoot: context.toolsRoot,
+            declared: options.prefix,
+            githubRepository: options.githubRepository,
+        });
         const toolchain = await sourceToolchain(context.toolsRoot, profiles);
         const files = await renderApplicationWorkspace({
             ...options,
@@ -164,11 +189,12 @@ async function planWorkspace(options, documentSources, internal = {}) {
             profiles,
         });
         const fields = {
-            schema_version: '1.0.0',
+            schema_version: WORKSPACE_MANIFEST_VERSION,
             kind: 'application-workspace-manifest',
             profiles,
             github_repository: options.githubRepository,
             review_owner: options.reviewOwner,
+            identity: { prefix: identity.prefix },
             quality_profile: 'production',
             qualification: 'pending',
             packages: toolchain.packages,
@@ -213,6 +239,7 @@ async function planWorkspace(options, documentSources, internal = {}) {
         ...snapshot,
         profiles,
         provenance,
+        identity,
         plan_id: planId,
         inputPaths: options.inputPaths ?? [],
         output: context.productRoot,
@@ -238,6 +265,9 @@ export function publicApplicationWorkspacePlan(plan) {
         dependency_deviations: plan.manifest.dependency_deviations,
         github_repository: plan.manifest.github_repository,
         review_owner: plan.manifest.review_owner,
+        // Préfixe effectif du produit et sa provenance (déclaré, proposé par
+        // les initiales du nom du dépôt, ou scellé) ; il entre dans le plan_id.
+        identity: plan.identity,
         files: fileArtifacts(plan.files),
         qualification: 'pending',
         directories: plan.manifest.directories,
@@ -316,6 +346,7 @@ export async function readOwnedWorkspace(options, internal = {}) {
             profiles: manifest.profiles,
             githubRepository: manifest.github_repository,
             reviewOwner: manifest.review_owner,
+            prefix: manifest.identity.prefix,
             inputPaths,
         },
         internal
@@ -358,6 +389,9 @@ async function renderProductShell(options) {
             (await loadSchema('backend-contract')),
     });
     if (errors.length) externalFailure('product application-design rejected');
+    // Le préfixe scellé de l'espace vaut ; une conception qui en déclare un
+    // autre est refusée.
+    const prefix = assertSealedPrefix(design, options.prefix);
     const inputs = await productInputClosure(productRoot, designPath, design);
     const render =
         profile === 'angular-pwa' ? renderAngularPwaShell : renderReactSpaShell;
@@ -368,6 +402,7 @@ async function renderProductShell(options) {
         designPath,
         designSha256: sha256(designBytes),
         externalWorkspace: true,
+        prefix,
     });
     return { ...rendered, inputs, designSha256: sha256(designBytes) };
 }
@@ -382,6 +417,7 @@ export async function planExternalApplicationShell(options) {
         ...workspace,
         ...options,
         profile,
+        prefix: workspace.manifest.identity.prefix,
     });
     // ADR-0103 : le manifeste de la coque extérieure naît scellé au produit.
     const manifestPath = `apps/${options.appName}/${SIGNATURE_FILES.appManifest}`;
@@ -428,6 +464,11 @@ export async function planExternalApplicationShell(options) {
         root: workspace.productRoot,
         toolsRoot: workspace.toolsRoot,
         tree_sha256: treeSha,
+        // Préfixe du produit, lu dans l'espace : affiché au `--dry-run`.
+        identity: {
+            prefix: workspace.manifest.identity.prefix,
+            provenance: 'scellé dans l’espace',
+        },
         files: rendered.files,
         external_workspace: binding,
         compiler: profile === 'angular-pwa' ? 'ngc' : 'tsc',

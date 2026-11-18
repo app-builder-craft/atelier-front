@@ -5,7 +5,7 @@
   "profile": "react-spa",
   "design_ref": {
     "path": "designs/library-qualification-bench.application-design.json",
-    "sha256": "2a6c864ced30f62c9a3f2cff643dc5206ca8164a18d1585983b57b4d03cd67c6"
+    "sha256": "a46b917cc4327dca189e8efeda9fbee65258df5cb1cfc2b3299c9dc39848bff3"
   },
   "experience_id": "visitor-web",
   "generated_files": [
@@ -17,7 +17,7 @@
     {
       "path": ".cmz/pages/page_a11ca71000000001.json",
       "bytes": 3885,
-      "sha256": "2bec69dce5fe62bc1a801274d30c67a9b04c6fac7fcbbaac23cdf5b7ccf5fbc2"
+      "sha256": "9aebe8432d4e631f25c5199cf4598ed4ccfe5a94c6300424c798b5ccab47f5f7"
     },
     {
       "path": "eslint.config.mjs",
@@ -47,7 +47,7 @@
     {
       "path": "src/app/access-policy.tsx",
       "bytes": 2699,
-      "sha256": "284308d25546cd321c166ef4819cce2fe9c355bc480746544d7092a718871f96"
+      "sha256": "654cc85195db86938cae88e586f2ee759a0ef565a5a9c140ee2401c678047952"
     },
     {
       "path": "src/app/app.routes.tsx",
@@ -95,5 +95,5 @@
       "sha256": "e7a376999e27cc4c42733879913117e3b5c092a289921f1d123b94ad7ff5341a"
     }
   ],
-  "tree_sha256": "8125a0ed19c41daf1eaac766171019ac097e1e04d1cfb24c8d186163a0e8db0c"
+  "tree_sha256": "f73818bb944717d78f962d2612c01c49c76dae8ef6a329761a988a8b5543b516"
 }

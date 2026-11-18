@@ -22,6 +22,7 @@ import {
     verifyGeneratedTree,
 } from './external-application-paths.mjs';
 import { sha256 } from './generation-manifest.mjs';
+import { prefixRefusals } from './product-identity.mjs';
 
 const MANIFEST = EXTERNAL_WORKSPACE_CMZ.manifest;
 // Espaces de noms réservés à la racine du produit.
@@ -37,6 +38,18 @@ export async function ownedProductContext(options) {
         externalFailure('workspace ownership marker missing');
     await assertNoLocalConfiguration(context.productRoot);
     return context;
+}
+
+// Préfixe du produit scellé dans son espace (`identity.prefix`, couvert par
+// `workspace_id`) ; validé avant tout usage.
+export async function sealedProductPrefix(productRoot) {
+    const manifest = JSON.parse(
+        (await readProductFile(productRoot, MANIFEST)).toString('utf8')
+    );
+    const prefix = manifest.identity?.prefix;
+    if (prefixRefusals(prefix).length > 0)
+        externalFailure('workspace identity prefix is missing or invalid');
+    return prefix;
 }
 
 export async function verifyWorkspaceRoot(plan, documentSources = false) {

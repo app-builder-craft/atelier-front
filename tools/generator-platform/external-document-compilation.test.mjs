@@ -42,6 +42,7 @@ import {
     proveNativeDocumentCell,
     runDocumentCli,
 } from './test-support/external-document-fixture.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 
 const backendOptions = (fixture, request = fixture.backendRequests.at(-1)) => ({
     workspaceRoot: TOOLS_ROOT,
@@ -291,6 +292,7 @@ if (nativeCell !== undefined) {
                     designPath: fixture.designPath,
                     designSha256: sha256(json(fixture.design)),
                     externalWorkspace: true,
+                    prefix: FIXTURE_PREFIX,
                 }),
                 /offline/i
             );

@@ -1,11 +1,8 @@
 // X4-sécurité-3, O-A : table `api` de la composition extérieure, source unique
 // de ses membres publiés (G-A1), et assertion de type générée (G-A5).
 // Profil extérieur seulement : le profil interne n'a ni table ni assertion.
-import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
+import { productForms } from '../core/product-identity.mjs';
 import { camelCase } from './shared.mjs';
-
-// Formes du préfixe du produit (valeurs d'exemple de la spec générée).
-const forms = productForms(LEGACY_PREFIX);
 
 // Genres publiés. `read` reste réservé et non ajouté (X5, D-X5-3, R1) : une
 // lecture se publie avec les genres existants, `signal` et `command`.
@@ -226,7 +223,9 @@ ${assertions.map((assertion) => `    PageCompositionAssert<${assertion}>,`).join
 
 // Entrée d'exemple valide d'une commande : chaînes non vides, format courriel
 // et bornes de longueur déclarées (seules contraintes du validateur rendu).
-export function sampleCommandInput(model) {
+export function sampleCommandInput(model, prefix) {
+    // Formes du préfixe du produit (valeurs d'exemple de la spec générée).
+    const forms = productForms(prefix);
     const [action] = model.actions;
     if (action.port.input.kind === 'none') return {};
     return Object.fromEntries(
@@ -236,14 +235,20 @@ export function sampleCommandInput(model) {
                     validation.kind === 'format' &&
                     validation.format === 'email'
             );
+            const domain = '@exemple.test';
             let value = email
-                ? `${forms.prefix}@exemple.test`
+                ? `${forms.prefix}${domain}`
                 : `${forms.kebab}contrat`;
             const min = field.constraints?.min_length ?? 0;
             const max = field.constraints?.max_length;
             while (value.length < min) value += 'x';
+            // Un courriel trop long est tronqué sur sa PARTIE LOCALE (au moins
+            // un caractère), jamais sur son domaine : avec un préfixe long,
+            // l'exemple reste un courriel valide sous `max_length`.
             if (max !== undefined && value.length > max)
-                value = email ? value : value.slice(0, Math.max(1, max));
+                value = email
+                    ? `${value.slice(0, Math.max(1, max - domain.length))}${domain}`
+                    : value.slice(0, Math.max(1, max));
             return [field.name, value];
         })
     );

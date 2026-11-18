@@ -7,23 +7,71 @@
 // développement.
 import { readFileSync } from 'node:fs';
 
-import { RELAY_ENVSH } from '../core/external-application-paths.mjs';
-import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
+import { relayEnvshPath } from '../core/external-application-paths.mjs';
+import { productForms } from '../core/product-identity.mjs';
 import { sessionServices } from './angular-application-session-renderer.mjs';
 
-// Formes du préfixe du produit : variables de l'opérateur (`<P>_`), variables
-// nginx et fonctions shell (`<p>_`), dossier nginx ; script d'entrée, source
-// unique dans `core/external-application-paths.mjs`.
-const forms = productForms(LEGACY_PREFIX);
-const ENV = forms.env;
-const SNAKE = forms.snake;
-const NGINX_DIR = forms.nginxDir;
-const ENVSH = RELAY_ENVSH.slice(RELAY_ENVSH.lastIndexOf('/') + 1);
+export { relayEnvshPath };
+
+// Noms du relais dérivés du préfixe du produit : variables de l'opérateur
+// (`<P>_`), variables nginx et fonctions shell (`<p>_`), dossier nginx, script
+// d'entrée (source unique : `core/external-application-paths.mjs`).
+function relayNames(prefix) {
+    const forms = productForms(prefix);
+    const envsh = relayEnvshPath(prefix);
+    return {
+        ENV: forms.env,
+        SNAKE: forms.snake,
+        NGINX_DIR: forms.nginxDir,
+        ENVSH: envsh.slice(envsh.lastIndexOf('/') + 1),
+    };
+}
+
+// Préfixes réservés par le relais et son mandataire de développement : chacun
+// nomme le mécanisme qui crée la collision et la variable concernée (règle :
+// espace de noms vivant du processus lecteur, ou famille dynamique de nginx).
+export const RELAY_RESERVED_PREFIXES = Object.freeze([
+    Object.freeze({
+        prefix: 'nginx',
+        mechanism:
+            "l'entrypoint de l'image nginx lit et possède l'espace NGINX_* ; le relais y exporterait <P>_UPSTREAMS_VALIDATED et l'opérateur y poserait <P>_UPSTREAM_*",
+        variable: 'NGINX_ENVSUBST_FILTER',
+    }),
+    Object.freeze({
+        prefix: 'http',
+        mechanism:
+            'famille dynamique $http_<en-tête> de nginx : $<p>_cache_control deviendrait un en-tête de requête',
+        variable: '$http_cache_control',
+    }),
+    Object.freeze({
+        prefix: 'arg',
+        mechanism:
+            'famille dynamique $arg_<nom> de nginx : $<p>_cache_control deviendrait un paramètre de requête',
+        variable: '$arg_cache_control',
+    }),
+    Object.freeze({
+        prefix: 'cookie',
+        mechanism:
+            'famille dynamique $cookie_<nom> de nginx : $<p>_relay_guard deviendrait un cookie',
+        variable: '$cookie_relay_guard',
+    }),
+    Object.freeze({
+        prefix: 'ng',
+        mechanism:
+            "le processus du CLI Angular, qui lit <P>_DEV_PROXY_FILE, possède l'espace NG_*",
+        variable: 'NG_PERSISTENT_BUILD_CACHE',
+    }),
+    Object.freeze({
+        prefix: 'node',
+        mechanism:
+            "le même processus Node, qui lit <P>_DEV_PROXY_FILE, possède l'espace NODE_*",
+        variable: 'NODE_OPTIONS',
+    }),
+]);
 
 export const RELAY_FILES = Object.freeze({
     template: 'deploy/nginx/templates/default.conf.template',
     headers: 'deploy/security-headers.conf',
-    envsh: RELAY_ENVSH,
     readme: 'deploy/README.md',
     endpoints: 'src/app/session/relay-endpoints.ts',
     devProxy: 'proxy.conf.mjs',
@@ -48,11 +96,12 @@ export function nginxImage() {
     return found[1];
 }
 
-const variableOf = (serviceId) =>
+const variableOf = (serviceId, ENV) =>
     `${ENV}UPSTREAM_${serviceId.toUpperCase().replaceAll('-', '_')}`;
 
 // Table des chemins, ordonnée, depuis les services de la session.
-export function relayServiceTable(config) {
+export function relayServiceTable(config, prefix) {
+    const { ENV } = relayNames(prefix);
     const table = [...sessionServices(config)]
         .map(([serviceId, contractId]) => {
             if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(serviceId))
@@ -63,7 +112,7 @@ export function relayServiceTable(config) {
                 service_id: serviceId,
                 contract_id: contractId,
                 path: `/api/${serviceId}/`,
-                variable: variableOf(serviceId),
+                variable: variableOf(serviceId, ENV),
             };
         })
         .sort((left, right) => left.service_id.localeCompare(right.service_id));
@@ -75,7 +124,7 @@ export function relayServiceTable(config) {
 // Invariant d'échappement (§ 3.5) : seules les variables de l'opérateur, en
 // majuscules `<P>_*`, sont écrites `${…}` ; nginx garde ses variables en
 // minuscules, jamais entre accolades.
-function serviceBlock(entry) {
+function serviceBlock(entry, SNAKE) {
     const prefix = entry.path.slice(0, -1);
     return `    location ^~ ${entry.path} {
         proxy_pass \${${entry.variable}};
@@ -92,7 +141,8 @@ function serviceBlock(entry) {
 `;
 }
 
-export function renderNginxTemplate(table) {
+export function renderNginxTemplate(table, prefix) {
+    const { ENV, SNAKE, NGINX_DIR } = relayNames(prefix);
     return `# Généré par la coque extérieure (X4-config), possédé et scellé.
 # Rendu au démarrage par l'image officielle (/etc/nginx/templates, filtre
 # NGINX_ENVSUBST_FILTER=^${ENV}) : seules les variables ${ENV}* de l'opérateur
@@ -126,7 +176,7 @@ server {
     include ${NGINX_DIR}security-headers.conf;
     add_header Cache-Control $${SNAKE}cache_control always;
 
-${table.map(serviceBlock).join('\n')}
+${table.map((entry) => serviceBlock(entry, SNAKE)).join('\n')}
     location ^~ /api/ {
         return 404;
     }
@@ -156,7 +206,8 @@ add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyro
 // Sourcé par l'entrypoint officiel avant 20-envsubst-on-templates.sh. Il
 // n'écrit jamais une valeur, seulement le nom de la variable en défaut, et
 // n'exporte `<P>_UPSTREAMS_VALIDATED` qu'en cas de succès.
-export function renderUpstreamsEnvsh(table) {
+export function renderUpstreamsEnvsh(table, prefix) {
+    const { ENV, SNAKE } = relayNames(prefix);
     return `# Généré par la coque extérieure (X4-config), possédé et scellé.
 # Sourcé par l'entrypoint officiel de nginx avant le rendu des gabarits.
 # N'écrit jamais une valeur : seulement le nom de la variable en défaut.
@@ -209,7 +260,8 @@ export const RELAY_ENDPOINTS: Provider = { provide: SESSION_ENDPOINTS, useFactor
 `;
 }
 
-export function renderRelayReadme({ appName, table }) {
+export function renderRelayReadme({ appName, table, prefix }) {
+    const { ENV, NGINX_DIR, ENVSH } = relayNames(prefix);
     const variables = table
         .map((entry) => `    --env ${entry.variable} \\\n`)
         .join('');
@@ -257,7 +309,8 @@ de développement ne réécrit pas un \`Location\` absolu renvoyé par un servic
 `;
 }
 
-export function renderDevProxy(table) {
+export function renderDevProxy(table, prefix) {
+    const { ENV } = relayNames(prefix);
     const services = table.map(({ service_id, path }) => ({
         service_id,
         path,
@@ -333,17 +386,17 @@ export function renderDevProxyExample(table) {
 }
 
 // Fichiers du relais pour une coque extérieure avec session.
-export function renderExternalRelayFiles({ appName, config }) {
-    const table = relayServiceTable(config);
+export function renderExternalRelayFiles({ appName, config, prefix }) {
+    const table = relayServiceTable(config, prefix);
     return {
         table,
         files: {
-            [RELAY_FILES.template]: renderNginxTemplate(table),
+            [RELAY_FILES.template]: renderNginxTemplate(table, prefix),
             [RELAY_FILES.headers]: renderSecurityHeaders(),
-            [RELAY_FILES.envsh]: renderUpstreamsEnvsh(table),
-            [RELAY_FILES.readme]: renderRelayReadme({ appName, table }),
+            [relayEnvshPath(prefix)]: renderUpstreamsEnvsh(table, prefix),
+            [RELAY_FILES.readme]: renderRelayReadme({ appName, table, prefix }),
             [RELAY_FILES.endpoints]: renderRelayEndpoints(table),
-            [RELAY_FILES.devProxy]: renderDevProxy(table),
+            [RELAY_FILES.devProxy]: renderDevProxy(table, prefix),
             [RELAY_FILES.devExample]: renderDevProxyExample(table),
         },
     };

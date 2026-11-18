@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
-import { LEGACY_PREFIX, productForms } from '../core/product-identity.mjs';
+import { productForms } from '../core/product-identity.mjs';
 import { adaptExternalShellFiles } from './application-workspace-renderer.mjs';
 import {
     renderAngularApplicationSession,
@@ -16,9 +16,6 @@ import {
 import { sessionRenderConfiguration } from '../core/application-design-session.mjs';
 import { applicationRoutePattern } from '../core/application-route-pattern.mjs';
 import { renderExternalRelayFiles } from './external-relay-renderer.mjs';
-
-// Formes du préfixe du produit (caches, globale du navigateur).
-const forms = productForms(LEGACY_PREFIX);
 
 function sha256(content) {
     return createHash('sha256').update(content).digest('hex');
@@ -71,7 +68,7 @@ ${routes}
 `;
 }
 
-function accessGuard() {
+function accessGuard(forms) {
     return `import { inject, InjectionToken } from '@angular/core';
 import { CanActivateFn } from '@angular/router';
 
@@ -287,10 +284,11 @@ export class PageComponent {}
 
 // Relais de même origine : fichiers possédés, liaisons de même origine
 // fournies à SESSION_ENDPOINTS, proxy du serveur de développement.
-function addExternalRelay(files, appName, design, experience) {
+function addExternalRelay(files, appName, design, experience, prefix) {
     const relay = renderExternalRelayFiles({
         appName,
         config: sessionRenderConfiguration(design, experience),
+        prefix,
     });
     Object.assign(files, relay.files);
     const config = files['src/app/app.config.ts'];
@@ -329,9 +327,13 @@ export async function renderAngularPwaShell({
     designPath,
     designSha256,
     externalWorkspace = false,
+    prefix,
 }) {
     if (!/^[a-z][a-z0-9-]*$/.test(appName ?? ''))
         throw new Error('application shell: app name must be kebab-case');
+    // Formes du préfixe du produit : globale du navigateur, cache du service
+    // worker, politique et relais.
+    const forms = productForms(prefix);
     if (design.design?.status !== 'approved')
         throw new Error('application shell: design must be approved');
     const experience = design.experiences.find(
@@ -564,7 +566,7 @@ export const appConfig: ApplicationConfig = {
     ],
 };
 `,
-        'src/app/access.guard.ts': accessGuard(),
+        'src/app/access.guard.ts': accessGuard(forms),
         'src/app/access.guard.spec.ts': accessGuardSpec(),
         'src/app/app.routes.ts': renderRoutes(pages),
         'src/styles.scss': `:root {
@@ -656,12 +658,20 @@ self.addEventListener('fetch', (event) => {
         libraries: [],
     });
     if (externalWorkspace) {
-        adaptExternalShellFiles(files, { profile: 'angular-pwa', appName });
+        adaptExternalShellFiles(files, {
+            profile: 'angular-pwa',
+            appName,
+            prefix,
+        });
     }
     if (experience.session) {
         Object.assign(
             files,
-            await renderAngularApplicationSession({ design, experience })
+            await renderAngularApplicationSession({
+                design,
+                experience,
+                prefix,
+            })
         );
         delete files['src/app/access.guard.ts'];
         delete files['src/app/access.guard.spec.ts'];
@@ -671,7 +681,7 @@ self.addEventListener('fetch', (event) => {
                 renderExternalSessionGuardSpec();
         // X4-config : relais de même origine (topologie A), extérieur seulement.
         if (externalWorkspace)
-            addExternalRelay(files, appName, design, experience);
+            addExternalRelay(files, appName, design, experience, prefix);
         // X4-sécurité-3, G1 : connectivité détenue par la coque, extérieur
         // seulement. La coque n'est pas republiable : seuls les produits créés
         // après ce changement la reçoivent.
