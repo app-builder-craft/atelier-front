@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -106,6 +106,28 @@ describe('impact CI des preuves bibliothèque', () => {
     });
 });
 
+// Détection de la base d'un push, lue telle quelle dans `ci.yml` (une seule
+// forme, aux quatre endroits), puis exécutée par `/bin/sh -e`.
+const PARENT_FORM = (() => {
+    const lines = readFileSync(
+        new URL('../.github/workflows/ci.yml', import.meta.url),
+        'utf8'
+    )
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('if git cat-file -p HEAD'));
+    // Deux sélecteurs d'impact bibliothèque et deux `NX_BASE`.
+    assert.equal(lines.length, 4, 'détection du parent aux quatre endroits');
+    assert.equal(new Set(lines).size, 1, 'une seule forme de détection');
+    return lines[0];
+})();
+const ciBase = (cwd) =>
+    execFileSync('/bin/sh', ['-ec', `${PARENT_FORM}\nprintf %s "$base"`], {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
 // Dépôt jetable : commit racine, puis une branche qui avance pendant que
 // `main` avance aussi.
 function repository(t) {
@@ -143,14 +165,8 @@ describe('base du diff de la CI', () => {
         // Commit racine : même arbre, sans parent, comme un `main` réécrit.
         git('commit', '-q', '-m', 'orphelin');
         assert.throws(() => git('rev-parse', '--verify', '-q', 'HEAD~1'));
-        const base = execFileSync(
-            '/bin/sh',
-            [
-                '-c',
-                'git rev-parse --verify -q HEAD~1 || git hash-object -t tree /dev/null',
-            ],
-            { cwd: root, encoding: 'utf8' }
-        ).trim();
+        const base = ciBase(root);
+        assert.equal(base, git('hash-object', '-t', 'tree', '/dev/null'));
         assert.equal(git('cat-file', '-t', base), 'tree');
         assert.deepEqual(changedPathsSince(base, { cwd: root }), [
             'a.txt',
@@ -182,6 +198,49 @@ describe('base du diff de la CI', () => {
                 'branche.txt',
             ]);
         }
+    });
+
+    it('commit avec parent : la forme de la CI rend le parent', (t) => {
+        const { root, git, commit } = repository(t);
+        commit('a.txt', 'racine');
+        commit('b.txt', 'second');
+        assert.equal(ciBase(root), git('rev-parse', 'HEAD~1'));
+    });
+
+    it('clone peu profond d’un commit qui a un parent : la forme de la CI échoue bruyamment', (t) => {
+        const { root, commit } = repository(t);
+        commit('a.txt', 'racine');
+        commit('b.txt', 'second');
+        const shallow = join(root, 'peu-profond');
+        execFileSync('git', [
+            'clone',
+            '-q',
+            '--depth',
+            '1',
+            `file://${root}`,
+            shallow,
+        ]);
+        // Le parent est dans l'objet commit, mais absent du clone.
+        assert.match(
+            execFileSync('git', ['cat-file', '-p', 'HEAD'], {
+                cwd: shallow,
+                encoding: 'utf8',
+            }),
+            /^parent [0-9a-f]{40}$/m
+        );
+        assert.throws(() => ciBase(shallow), { status: 128 });
+        // Témoin : l'ancienne forme y retombait en silence sur l'arbre vide.
+        assert.equal(
+            execFileSync(
+                '/bin/sh',
+                [
+                    '-c',
+                    'git rev-parse --verify -q HEAD~1 || git hash-object -t tree /dev/null',
+                ],
+                { cwd: shallow, encoding: 'utf8' }
+            ).trim(),
+            '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+        );
     });
 
     it('révision invalide : échec, sans repli', (t) => {
