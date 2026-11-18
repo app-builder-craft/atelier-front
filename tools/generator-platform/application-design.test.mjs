@@ -75,9 +75,9 @@ test('accepte une conception approuvée multi-page, neutre et entièrement traç
 
 test('interdit qu’un backend analogue reference pilote une réalisation', async () => {
     const data = await fixture();
-    const entry = data.contracts.get('clean-street-api');
+    const entry = data.contracts.get('sample-app-api');
     const contracts = new Map([
-        ['clean-street-api', { ...entry, role: 'reference' }],
+        ['sample-app-api', { ...entry, role: 'reference' }],
     ]);
     assert.ok(
         validate(data.design, contracts).some((error) =>
@@ -125,7 +125,7 @@ test('borne et trace l’autorisation fine d’une action sans renforcer l’acc
         denied_behavior: 'disable',
         evidence: [
             {
-                source_id: 'clean-street-brief',
+                source_id: 'sample-app-brief',
                 locator: 'validated-project-sheet',
             },
         ],
@@ -162,7 +162,7 @@ test('refuse une permission de navigation tant qu’aucun oracle ne l’exécute
         denied_behavior: 'hide',
         evidence: [
             {
-                source_id: 'clean-street-brief',
+                source_id: 'sample-app-brief',
                 locator: 'validated-project-sheet',
             },
         ],
@@ -226,7 +226,7 @@ test('lie chaque donnée visible à un statut, modèle et champ backend exacts',
     data.design.pages[1].data_bindings.push({
         id: 'created-report',
         operation_ref: {
-            contract_id: 'clean-street-api',
+            contract_id: 'sample-app-api',
             operation_id: 'create-report',
         },
         response_status: 201,
@@ -248,7 +248,7 @@ test('vérifie les snapshots et refuse hash périmé ou lien symbolique', async 
     const stale = await fixture();
     await writeFile(
         join(stale.root, 'design/project-brief.md'),
-        '# Clean Street\nchanged\n'
+        '# Sample App\nchanged\n'
     );
     assert.ok(
         (
@@ -337,7 +337,7 @@ test('une cible adoptée explicitement est consommable, la référence reste ref
             status: 'planned',
             version: '1.0.1',
         },
-        source: { id: 'clean-street-adoption', authority: 'declared' },
+        source: { id: 'sample-app-adoption', authority: 'declared' },
         basis: { snapshot_uri: referencePath, sha256: sha256(referenceBytes) },
         decision: { snapshot_uri: decisionPath, sha256: sha256(decisionBytes) },
     };

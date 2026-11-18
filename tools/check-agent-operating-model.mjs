@@ -15,13 +15,10 @@ export const AGENT_MODEL_FILES = Object.freeze({
     authority: 'PROJECT_AUTHORITY.md',
     readme: 'README.md',
     model: 'docs/agents/operating-model.md',
-    userGuide: 'docs/agents/guide-utilisateur.md',
+    userGuide: 'docs/proprietaire/agents.md',
     agentsIndex: 'docs/agents/README.md',
     contract: 'conventions/agents/operating-model.json',
     contractSchema: 'conventions/agents/operating-model.schema.json',
-    adr95: 'docs/adr/0095-modele-operatoire-agents-bornes.md',
-    adr96: 'docs/adr/0096-separer-execution-et-revue-agent.md',
-    reviewChain: 'docs/architecture/chaine-agent-execution-revue-2026-10-08.md',
     steward: '.agents/skills/cmz-steward/SKILL.md',
     stewardUi: '.agents/skills/cmz-steward/agents/openai.yaml',
     executor: '.agents/skills/cmz-step-executor/SKILL.md',
@@ -128,7 +125,7 @@ function validateStructuredContract(documents, violations) {
         contract.authority?.product !== 'PROJECT_AUTHORITY.md' ||
         contract.authority?.operating_model !==
             'docs/agents/operating-model.md' ||
-        contract.authority?.owner_guide !== 'docs/agents/guide-utilisateur.md'
+        contract.authority?.owner_guide !== 'docs/proprietaire/agents.md'
     ) {
         violations.push(
             "le contrat structuré doit conserver les quatre sources d'autorité"
@@ -387,38 +384,13 @@ export function collectAgentModelViolations(documents) {
     );
     requireText(
         'agentsIndex',
-        'guide-utilisateur.md',
+        'proprietaire/agents.md',
         "l'index agents doit exposer le guide du propriétaire"
     );
     requireText(
-        'adr95',
-        '**Statut :** Accepted',
-        'ADR-0095 doit rester la décision acceptée du modèle opératoire'
-    );
-    requireText(
-        'adr95',
-        'ne prouve pas',
-        'ADR-0095 doit conserver la limite de la preuve automatisée'
-    );
-    requireText(
-        'adr96',
-        '**Statut :** Accepted',
-        'ADR-0096 doit rester la décision acceptée de séparation entre exécution et revue'
-    );
-    requireText(
-        'adr96',
-        "n'active aucun appel de modèle externe",
-        "ADR-0096 doit conserver la frontière d'activation externe"
-    );
-    requireText(
-        'reviewChain',
+        'model',
         "Le reviewer agent et l'executor doivent être deux identités",
-        "la chaîne détaillée doit imposer l'indépendance de l'executor et du reviewer"
-    );
-    requireText(
-        'reviewChain',
-        'Soumaila — fusion',
-        'la chaîne détaillée doit conserver la fusion humaine par Soumaila'
+        "le modèle opératoire doit imposer l'indépendance de l'executor et du reviewer"
     );
 
     for (const role of ROLES) {

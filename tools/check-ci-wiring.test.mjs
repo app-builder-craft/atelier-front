@@ -17,7 +17,6 @@ import { ESLint } from 'eslint';
 import { parse } from 'yaml';
 import test from 'node:test';
 import { nxWorkflowErrors } from './nx-migration-plan.mjs';
-import { bundleProductionSteps } from './runtime-version-workflow.mjs';
 
 import {
     commandInvokes,
@@ -26,7 +25,7 @@ import {
     workflowRunCommands,
 } from './check-ci-wiring.mjs';
 
-test('Nx : mesure du bundle sur l’image de l’Oracle et artefact Linux du même run', () => {
+test('Nx : calcul Linux sur l’image de l’Oracle et artefact Linux du même run', () => {
     const workflow = parse(
         readFileSync(
             new URL('../.github/workflows/nx-migrations.yml', import.meta.url),
@@ -365,35 +364,6 @@ test('extrait toutes les commandes Node feuilles d’un script package', () => {
     );
 });
 
-test('bloque la dérive bundle après un build frais, projection sans écriture seulement après son échec', () => {
-    const ci = parse(
-        readFileSync(
-            new URL('../.github/workflows/ci.yml', import.meta.url),
-            'utf8'
-        )
-    );
-    const ids = [
-        'nx-bundle-production',
-        'nx-bundle-freshness',
-        'bundle-proposal',
-        'bundle-proposal-upload',
-    ];
-    const steps = ci.jobs.oracle.steps,
-        actual = steps.filter((step) => ids.includes(step.id));
-    assert.deepEqual(actual, bundleProductionSteps());
-    const start = steps.indexOf(actual[0]);
-    assert.deepEqual(steps.slice(start, start + 4), actual);
-    assert.deepEqual(ci.jobs.oracle.permissions, {
-        contents: 'read',
-        actions: 'read',
-        'pull-requests': 'read',
-    });
-    assert.equal(actual[1]['continue-on-error'], undefined);
-    assert.match(actual[0].run, /--skip-nx-cache/);
-    assert.match(actual[2].if, /nx-bundle-production.outcome == 'success'/);
-    assert.match(actual[2].if, /nx-bundle-freshness.outcome == 'failure'/);
-});
-
 test('borne le miroir APT avant l’installation officielle Playwright', () => {
     const ci = readFileSync(
         new URL('../.github/workflows/ci.yml', import.meta.url),
@@ -426,60 +396,6 @@ test('borne le miroir APT avant l’installation officielle Playwright', () => {
         aptPolicy,
         /\|\|\s*(?:true|echo)/,
         'une panne APT ne doit jamais être masquée'
-    );
-});
-
-test('exécute la preuve navigateur C5 React dans la CI de PR', () => {
-    const ci = readFileSync(
-        new URL('../.github/workflows/ci.yml', import.meta.url),
-        'utf8'
-    );
-    const commands = workflowRunCommands(ci, '.github/workflows/ci.yml');
-    assert.ok(
-        commands.some((command) =>
-            commandInvokes(
-                command,
-                'bunx playwright test -c apps/users-management-react-proof/playwright.config.mjs'
-            )
-        ),
-        'la preuve Chromium C5 React doit rester bloquante quand le projet est affecté'
-    );
-    assert.match(
-        ci,
-        /test-results\/users-management-react-proof\/\*\*\/\*\.actual\.png/
-    );
-});
-
-test('profile la mémoire C5 React sur un build production frais au nightly', () => {
-    const nightly = readFileSync(
-        new URL(
-            '../.github/workflows/nightly-integration.yml',
-            import.meta.url
-        ),
-        'utf8'
-    );
-    const commands = workflowRunCommands(
-        nightly,
-        '.github/workflows/nightly-integration.yml'
-    );
-    const build = 'bunx nx run users-management-react-proof:build';
-    const profile =
-        'bunx playwright test -c apps/users-management-react-proof/playwright.memory.config.mjs';
-    const buildIndex = commands.findIndex((command) =>
-        commandInvokes(command, build)
-    );
-    const profileIndex = commands.findIndex((command) =>
-        commandInvokes(command, profile)
-    );
-    assert.notEqual(buildIndex, -1, 'le build React C5 doit exister');
-    assert.notEqual(profileIndex, -1, 'le profil mémoire C5 doit exister');
-    assert.ok(
-        buildIndex < profileIndex,
-        'le build production C5 doit précéder son profil mémoire'
-    );
-    assert.match(
-        nightly,
-        /test-results\/\*\*\/users-management-react-memory-profile\.json/
     );
 });
 

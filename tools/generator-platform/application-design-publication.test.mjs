@@ -39,7 +39,7 @@ async function fixture() {
     return {
         workspaceRoot: root,
         sourcePath: 'draft/design.yaml',
-        outputPath: 'designs/clean-street.application-design.json',
+        outputPath: 'designs/sample-app.application-design.json',
         applicationDesignSchema,
         backendContractSchema,
     };

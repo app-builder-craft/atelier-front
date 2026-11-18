@@ -8,7 +8,7 @@ test('parse le chemin nominal et les options reproductibles sans shell', () => {
     assert.deepEqual(
         parseArgs([
             '--app',
-            'clean-street',
+            'sample-app',
             '--library',
             'angular-material',
             '--dry-run',
@@ -16,7 +16,7 @@ test('parse le chemin nominal et les options reproductibles sans shell', () => {
             `library-plan:${'a'.repeat(64)}`,
         ]),
         {
-            app: 'clean-street',
+            app: 'sample-app',
             library: 'angular-material',
             dryRun: true,
             expectPlan: `library-plan:${'a'.repeat(64)}`,

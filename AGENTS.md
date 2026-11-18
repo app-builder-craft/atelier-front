@@ -107,7 +107,7 @@ Avant de remettre le travail, rapporter au minimum :
 Le format complet est défini dans
 [`docs/agents/operating-model.md`](./docs/agents/operating-model.md). Le guide
 simple destiné au propriétaire est
-[`docs/agents/guide-utilisateur.md`](./docs/agents/guide-utilisateur.md).
+[`docs/proprietaire/agents.md`](./docs/proprietaire/agents.md).
 
 Le garde CI vérifie la présence, la validité des manifests et les invariants du
 contrat structuré. Il ne prouve pas qu'un agent a effectivement respecté ces

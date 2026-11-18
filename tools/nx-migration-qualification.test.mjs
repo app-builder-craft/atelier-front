@@ -73,8 +73,8 @@ test('qualification : la désactivation du graphe est bornée aux deux inspectio
         },
         (m) => {
             controls(m).run = controls(m).run.replace(
-                'bun run bundle:metrics',
-                'NX_CACHE_PROJECT_GRAPH=false bun run bundle:metrics'
+                'bun run check:library-setup',
+                'NX_CACHE_PROJECT_GRAPH=false bun run check:library-setup'
             );
         },
         (m) => {
@@ -257,7 +257,7 @@ function promotionCommands(job) {
 function assertPromotionParity(w) {
     const automatic = promotionCommands(w.jobs.calculate);
     const manual = promotionCommands(w.jobs.qualification);
-    assert.ok(automatic.length >= 10, 'la vraie séquence doit être extraite');
+    assert.ok(automatic.length >= 8, 'la vraie séquence doit être extraite');
     assert.deepEqual(
         manual,
         automatic,
@@ -268,7 +268,7 @@ function assertPromotionParity(w) {
     const sharedScripts = (job) =>
         job.steps
             .filter((s) =>
-                /bun run (?:promote-library-compatibility|bundle:metrics)\b/.test(
+                /bun run (?:promote-library-compatibility|check:library-setup)\b/.test(
                     s.run ?? ''
                 )
             )
@@ -294,11 +294,11 @@ test('qualification : toute gate ajoutée à un seul mode est une dérive, même
     }
     const changed = workflow();
     changed.jobs.calculate.steps.find((s) =>
-        s.run?.includes('bun audit --audit-level=high')
+        s.run?.includes('node tools/audit-exceptions.mjs')
     ).run += '\nbun run check:engines\n';
     assert.throws(() => assertPromotionParity(changed), /dérive/);
     changed.jobs.qualification.steps.find((s) =>
-        s.run?.includes('bun audit --audit-level=high')
+        s.run?.includes('node tools/audit-exceptions.mjs')
     ).run += '\nbun run check:engines\n';
     assert.doesNotThrow(
         () => assertPromotionParity(changed),
@@ -312,7 +312,7 @@ test('qualification : toute gate ajoutée à un seul mode est une dérive, même
     assert.throws(() => assertPromotionParity(reordered), /dérive/);
     const shell = workflow();
     shell.jobs.calculate.steps.find((s) =>
-        s.run?.includes('bun audit --audit-level=high')
+        s.run?.includes('node tools/audit-exceptions.mjs')
     ).run += '\nsh tools/future-check.sh\n';
     assert.throws(() => assertPromotionParity(shell), /dérive/);
 });

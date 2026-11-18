@@ -18,9 +18,9 @@
  * échapperait à Q-6 (qui ne scanne que le texte source de la lib elle-même)
  * mais serait détectée ici (la compilation échouerait réellement).
  *
- * Test de significativité intégré : deux libs connues pour dépendre
- * réellement d'Angular (`@cmz/core`, `@cmz/shared-application`) sont
- * compilées dans les mêmes conditions et **doivent échouer** — sans quoi
+ * Test de significativité intégré : une lib connue pour dépendre
+ * réellement d'Angular (`@cmz/core`) est
+ * compilée dans les mêmes conditions et **doit échouer** — sans quoi
  * le test ne prouverait rien (un test destructif qui ne peut jamais
  * détecter la régression qu'il prétend détecter est un test mort).
  *
@@ -48,8 +48,7 @@
  * Volontairement PAS branché en CI bloquant à chaque commit (Q-6/Q-7 déjà
  * bloquant couvre le cas courant) : ce test manipule `node_modules` et est
  * plus lent (~20 compilations `tsc` complètes). Recommandé en job
- * périodique / avant release, pas sur chaque PR — cf. note dans
- * taches-restantes.md.
+ * périodique / avant release, pas sur chaque PR.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -70,7 +69,7 @@ const BUN_STORE = join(NODE_MODULES, '.bun');
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'out-tsc', '.git']);
 const TARGET_TAGS = new Set(['type:domain', 'type:constants']);
 /** Doivent échouer sans Angular — preuve que le test est significatif. */
-const CONTROL_LIBS = ['libs/core', 'libs/shared/application'];
+const CONTROL_LIBS = ['libs/core'];
 
 function findProjectJsons(dir, results = []) {
     for (const entry of readdirSync(dir)) {
@@ -252,7 +251,7 @@ if (stillCompilingControls.length > 0) {
         `FAIL  test non significatif : ${stillCompilingControls
             .map((c) => c.lib)
             .join(', ')} compile(nt) encore sans Angular alors qu'` +
-            `elles en dépendent réellement (@cmz/core, @cmz/shared-application). ` +
+            `elle en dépend réellement (@cmz/core). ` +
             `Le retrait physique n'a pas fonctionné — ne pas faire confiance au ` +
             `résultat ci-dessus tant que ce point n'est pas corrigé.`
     );

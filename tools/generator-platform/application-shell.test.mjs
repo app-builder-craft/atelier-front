@@ -50,14 +50,14 @@ async function fixture() {
         `${JSON.stringify(data.design, null, 2)}\n`
     );
     await writeFile(
-        join(root, 'designs/clean-street.application-design.json'),
+        join(root, 'designs/sample-app.application-design.json'),
         designContent
     );
     return {
         workspaceRoot: root,
-        designPath: 'designs/clean-street.application-design.json',
+        designPath: 'designs/sample-app.application-design.json',
         experienceId: 'citizen-web',
-        appName: 'clean-street',
+        appName: 'sample-app',
         profile: 'angular-pwa',
         applicationDesignSchema,
         backendContractSchema,
@@ -87,35 +87,35 @@ test('la CLI create-app applique directement, avec dry-run et plan attendu facul
         '--experience',
         'citizen-web',
         '--app',
-        'clean-street',
+        'sample-app',
     ];
     assert.deepEqual(parseArgs(nominal), {
         dryRun: false,
         profile: 'angular-pwa',
         designPath: 'design.json',
         experienceId: 'citizen-web',
-        appName: 'clean-street',
+        appName: 'sample-app',
     });
     assert.deepEqual(parseArgs([...nominal, '--dry-run']), {
         dryRun: true,
         profile: 'angular-pwa',
         designPath: 'design.json',
         experienceId: 'citizen-web',
-        appName: 'clean-street',
+        appName: 'sample-app',
     });
     assert.deepEqual(parseArgs([...nominal, '--profile', 'react-spa']), {
         dryRun: false,
         profile: 'react-spa',
         designPath: 'design.json',
         experienceId: 'citizen-web',
-        appName: 'clean-street',
+        appName: 'sample-app',
     });
     assert.deepEqual(parseArgs([...nominal, '--expect-plan', 'a'.repeat(64)]), {
         dryRun: false,
         profile: 'angular-pwa',
         designPath: 'design.json',
         experienceId: 'citizen-web',
-        appName: 'clean-street',
+        appName: 'sample-app',
         expectedPlanId: 'a'.repeat(64),
     });
     assert.throws(
@@ -511,7 +511,7 @@ test('dry-run n’écrit rien puis la publication directe vérifie compilation, 
                 'utf8'
             )
         ).name,
-        'clean-street'
+        'sample-app'
     );
     assert.deepEqual(publicApplicationShellResult(result), {
         schema_version: '1.0.0',
@@ -589,7 +589,7 @@ test('un échec de build retire la sortie et conserve un candidat reprenable', a
     assert.equal(
         JSON.parse(await readFile(join(plan.candidate, 'project.json'), 'utf8'))
             .name,
-        'clean-street'
+        'sample-app'
     );
 });
 

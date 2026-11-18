@@ -11,10 +11,6 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import {
-    alignmentWorkflow,
-    runtimeWorkflowErrors,
-} from './runtime-version-workflow.mjs';
 
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
@@ -32,67 +28,6 @@ import {
 
 const TRUSTED = "github.ref == 'refs/heads/main'";
 
-test('B309 : privilèges et étapes réellement fermés, aucun checkout candidat dans publish-bundle', () => {
-    const alignment = alignmentWorkflow();
-    const ci = parseYaml(
-        readFileSync(
-            new URL('../.github/workflows/ci.yml', import.meta.url),
-            'utf8'
-        )
-    );
-    const errors = (value) =>
-        runtimeWorkflowErrors([
-            { file: 'runtime-version-alignment.yml', workflow: value },
-            { file: 'ci.yml', workflow: ci },
-        ]);
-    assert.deepEqual(errors(alignment), []);
-    assert.deepEqual(alignment.jobs['prepare-bundle'].permissions, {
-        contents: 'read',
-        actions: 'read',
-        'pull-requests': 'read',
-    });
-    assert.deepEqual(alignment.jobs['publish-bundle'].permissions, {
-        contents: 'write',
-        actions: 'write',
-        'pull-requests': 'read',
-    });
-    for (const mutate of [
-        (w) => {
-            w.jobs['prepare-bundle'].permissions.contents = 'write';
-        },
-        (w) => {
-            w.jobs['publish-bundle'].permissions.issues = 'write';
-        },
-        (w) => {
-            w.jobs['publish-bundle'].if = '${{ true }}';
-        },
-        (w) => {
-            w.jobs['publish-bundle'].steps[0].with.ref =
-                '${{ github.event.workflow_run.head_sha }}';
-        },
-        (w) => {
-            w.jobs['publish-bundle'].steps.at(-1).run =
-                'node candidate/tools/bundle-metrics-proposal.mjs publish';
-        },
-        (w) => {
-            w.jobs['publish-bundle'].steps.at(-2).run = 'bun install';
-        },
-        (w) => {
-            w.jobs['prepare-bundle'].if =
-                "${{ github.ref == 'refs/heads/main' }}";
-        },
-    ]) {
-        const bad = structuredClone(alignment);
-        mutate(bad);
-        assert.ok(errors(bad).length > 0);
-    }
-    assert.deepEqual(
-        ALLOWED_JOB_WRITES['runtime-version-alignment.yml'].jobs[
-            'publish-bundle'
-        ],
-        ['actions', 'contents']
-    );
-});
 const HANDOVER = (name) => `\${{ ${TRUSTED} && secrets.${name} || '' }}`;
 const DISPATCH = '  schedule:\n    - cron: "0 0 * * *"\n  workflow_dispatch:';
 const REVIEWED = {
@@ -154,16 +89,12 @@ test('refuse un événement non relu et un `on` absent', () => {
     );
 });
 
-test('workflow_run reste local au workflow alignement relu', () => {
+test('workflow_run reste refusé dans tout workflow', () => {
     const on = {
         schedule: [],
         workflow_dispatch: null,
         workflow_run: { workflows: ['CI'], types: ['completed'] },
     };
-    assert.deepEqual(
-        eventViolations('runtime-version-alignment.yml', { on }),
-        []
-    );
     for (const file of [
         'f.yml',
         'ci.yml',
@@ -511,18 +442,16 @@ test('refuse deux étapes de même id qui reçoivent la même remise', () => {
 // Les vrais workflows, pas des gabarits : la liste fermée doit décrire le
 // dépôt tel qu'il est, et refuser qu'un jeton y change d'étape.
 function repositoryWorkflows(transform = {}) {
-    return ['ci.yml', 'corpus-full.yml', 'nightly-integration.yml'].map(
-        (file) => {
-            const content = readFileSync(
-                new URL(`../.github/workflows/${file}`, import.meta.url),
-                'utf8'
-            );
-            return {
-                file,
-                content: transform[file] ? transform[file](content) : content,
-            };
-        }
-    );
+    return ['ci.yml', 'nightly-integration.yml'].map((file) => {
+        const content = readFileSync(
+            new URL(`../.github/workflows/${file}`, import.meta.url),
+            'utf8'
+        );
+        return {
+            file,
+            content: transform[file] ? transform[file](content) : content,
+        };
+    });
 }
 
 test('les remises du dépôt sont exactement celles de la liste fermée', () => {
@@ -617,6 +546,29 @@ test('checkWorkflows refuse un YAML illisible et un fichier cité mais absent', 
             'lost.yml : cité par ce garde mais introuvable.',
         ]
     );
+});
+
+test('checkWorkflows refuse un audit hors de son point d’entrée (règle 6)', () => {
+    const audit = (run) =>
+        checkWorkflows(
+            [
+                {
+                    file: 'f.yml',
+                    content: readOnly(
+                        '  push:',
+                        `jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ${run}\n`
+                    ),
+                },
+            ],
+            { writes: {}, handovers: {} }
+        );
+    assert.deepEqual(audit('node tools/audit-exceptions.mjs'), []);
+    assert.deepEqual(audit('bun audit --audit-level=high --ignore=GHSA-x'), [
+        "f.yml : job a : --ignore d'audit écrit à la main, refusé (exceptions : AUDIT_IGNORES)",
+    ]);
+    assert.deepEqual(audit('bun audit --audit-level=high'), [
+        'f.yml : job a : audit lancé hors de node tools/audit-exceptions.mjs',
+    ]);
 });
 
 test('secretViolations parcourt aussi les matrices et les tableaux', () => {

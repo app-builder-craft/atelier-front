@@ -33,6 +33,9 @@
  *      d'environnement et le secret. Une remise absente de la liste, une
  *      étape sans `id`, un `id` porté par deux étapes ou une entrée que le
  *      workflow ne remet plus échouent : la forme correcte ne suffit pas.
+ *   6. audit : `bun audit` ne se lance que par `node tools/audit-exceptions.mjs`,
+ *      sans argument ; un `--ignore` d'audit écrit dans un workflow est
+ *      refusé (les exceptions vivent dans `AUDIT_IGNORES`, validées).
  *
  * Limites assumées :
  *   - un workflow modifié sur une branche peut retirer ces protections pour
@@ -54,6 +57,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parse as parseYaml } from 'yaml';
+import { AUDIT_ENTRY, workflowAuditViolations } from './audit-exceptions.mjs';
 import { runtimeAssertion } from './runtime-version-workflow.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -69,13 +73,6 @@ export const REVIEWED_EVENTS = [
 // Écritures de job acceptées. Toute autre écriture échoue : l'ajouter ici est
 // une décision relue, pas un effet de bord.
 export const ALLOWED_JOB_WRITES = {
-    'runtime-version-alignment.yml': {
-        events: ['schedule', 'workflow_dispatch', 'workflow_run'],
-        jobs: {
-            publish: ['actions', 'contents'],
-            'publish-bundle': ['actions', 'contents'],
-        },
-    },
     'nx-migrations.yml': {
         events: ['pull_request', 'schedule', 'workflow_dispatch'],
         jobs: {
@@ -98,20 +95,13 @@ export const ALLOWED_SECRET_HANDOVERS = {
         oracle: {
             'nx-lint': NX_CLOUD,
             'nx-build': NX_CLOUD,
-            'nx-bundle-production': NX_CLOUD,
             'nx-typecheck': NX_CLOUD,
             'nx-test': NX_CLOUD,
         },
     },
-    'corpus-full.yml': {
-        'corpus-full': { 'corpus-full': NX_CLOUD },
-    },
     'nightly-integration.yml': {
         integration: {
-            'nx-build-development': NX_CLOUD,
-            'nx-build-production': NX_CLOUD,
             'nx-build-react-workspace': NX_CLOUD,
-            'nx-build-react-c5': NX_CLOUD,
         },
     },
 };
@@ -230,14 +220,7 @@ export function eventViolations(file, workflow) {
     if (events === null || events.length === 0)
         return [`${file} : déclencheurs \`on\` absents ou illisibles.`];
     return events
-        .filter(
-            (event) =>
-                !REVIEWED_EVENTS.includes(event) &&
-                !(
-                    file === 'runtime-version-alignment.yml' &&
-                    event === 'workflow_run'
-                )
-        )
+        .filter((event) => !REVIEWED_EVENTS.includes(event))
         .map(
             (event) =>
                 `${file} : événement \`${event}\` non relu ; ce garde ne vaut que pour ${REVIEWED_EVENTS.join(', ')}.`
@@ -454,6 +437,7 @@ export function checkWorkflows(
                 ...eventViolations(file, workflow),
                 ...permissionViolations(file, workflow, writes),
                 ...secretViolations(file, workflow, handovers),
+                ...workflowAuditViolations(file, workflow),
             ];
         }),
         ...cited
@@ -488,7 +472,7 @@ async function main() {
         process.exit(1);
     }
     console.log(
-        `✅ check:workflow-privileges — ${workflows.length} workflows : événements relus, jetons en lecture par défaut, écritures liées à main, secrets remis sur main aux seules étapes relues.`
+        `✅ check:workflow-privileges — ${workflows.length} workflows : événements relus, jetons en lecture par défaut, écritures liées à main, secrets remis sur main aux seules étapes relues, audit par son seul point d'entrée.`
     );
 }
 
@@ -708,7 +692,7 @@ export function nxQualificationErrors(workflow) {
             'node tools/nx-migration-plan.mjs candidates "$TARGET"',
         ],
         'qualification-material': [
-            'bun run promote-library-compatibility --app backoffice-angular --library angular-material',
+            'bun run promote-library-compatibility --app library-qualification-angular-tailwind --library angular-material',
         ],
         'qualification-tailwind-angular': [
             'bun run promote-library-compatibility --app library-qualification-angular --library tailwind',
@@ -717,18 +701,15 @@ export function nxQualificationErrors(workflow) {
             'bun run promote-library-compatibility --app library-qualification-react --library tailwind',
         ],
         'qualification-controls': [
-            'if test "$RUNNER_OS" = Linux; then',
-            'bun run bundle:metrics',
-            'bun run check:bundle-metrics-freshness',
             'bun run check:bun-lock-catalog-integrity',
             'bun run check:dependabot-policy',
             'bun run check:library-setup',
-            'bun audit --audit-level=high',
+            AUDIT_ENTRY,
         ],
         'qualification-bundle': [
             'git merge-base --is-ancestor "$SOURCE_SHA" HEAD',
             'git diff-tree --no-commit-id -r --name-only -z "$commit"',
-            'conventions/libraries/angular/angular-material.compat.json|conventions/libraries/angular/tailwind.compat.json|conventions/libraries/react/tailwind.compat.json|apps/backoffice-angular/bundle-metrics.json) ;;',
+            'conventions/libraries/angular/angular-material.compat.json|conventions/libraries/angular/tailwind.compat.json|conventions/libraries/react/tailwind.compat.json) ;;',
             'git bundle create "$RUNNER_TEMP/nx-qualification/candidate.bundle" "$SOURCE_SHA..qualification/nx-$TARGET"',
             'git bundle verify "$RUNNER_TEMP/nx-qualification/candidate.bundle"',
             'printf \'%s\\n\' "$SOURCE_SHA" > "$RUNNER_TEMP/nx-qualification/base-sha.txt"',
