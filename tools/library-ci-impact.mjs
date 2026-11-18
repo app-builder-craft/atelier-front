@@ -159,6 +159,28 @@ export function classifyLibraryCiImpact(changedPaths) {
     };
 }
 
+/**
+ * Chemins changés depuis `base`, au sens de `git diff base...HEAD` : depuis la
+ * base de fusion de `base` et de HEAD. Quand `base` est un ARBRE (commit sans
+ * parent : la CI passe l'arbre vide), il n'y a pas de base de fusion ; le diff
+ * part alors de cet arbre, comme `nx affected` (base de fusion, sinon la base
+ * elle-même). Une révision invalide fait échouer, sans repli.
+ */
+export function changedPathsSince(base, { cwd = ROOT } = {}) {
+    if (typeof base !== 'string' || base === '' || base.startsWith('-'))
+        throw new Error(
+            `library:impact : base Git invalide ${JSON.stringify(base)}`
+        );
+    const git = (args) => execFileSync('git', args, { cwd, encoding: 'utf8' });
+    const from =
+        git(['cat-file', '-t', base]).trim() === 'tree'
+            ? base
+            : git(['merge-base', base, 'HEAD']).trim();
+    return git(['diff', '--name-only', '--no-renames', '-z', from, 'HEAD'])
+        .split('\0')
+        .filter(Boolean);
+}
+
 function main() {
     const args = process.argv.slice(2);
     const baseIndex = args.indexOf('--base');
@@ -170,13 +192,7 @@ function main() {
         process.exit(2);
     }
 
-    const changedPaths = execFileSync(
-        'git',
-        ['diff', '--name-only', '--no-renames', '-z', `${base}...HEAD`],
-        { cwd: ROOT, encoding: 'utf8' }
-    )
-        .split('\0')
-        .filter(Boolean);
+    const changedPaths = changedPathsSince(base);
     const result = classifyLibraryCiImpact(changedPaths);
 
     for (const proof of ['isolation', 'integration']) {

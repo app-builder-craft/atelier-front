@@ -106,7 +106,13 @@ function assertConditionalDeepJob(job, output, command) {
     assert.match(impact.run, /tools\/library-ci-impact\.mjs/);
     assert.match(impact.run, />> "\$GITHUB_OUTPUT"/);
     assert.match(impact.env.LIBRARY_DIFF_BASE, /origin\/\{0\}/);
-    assert.match(impact.env.LIBRARY_DIFF_BASE, /HEAD~1/);
+    // Sur un push : le parent, ou l'arbre vide pour un commit sans parent
+    // (un `HEAD~1` nu n'existe pas pour un commit racine).
+    assert.doesNotMatch(impact.env.LIBRARY_DIFF_BASE, /HEAD~1/);
+    assert.match(
+        impact.run,
+        /\$\{LIBRARY_DIFF_BASE:-\$\(git rev-parse --verify -q HEAD~1 \|\| git hash-object -t tree \/dev\/null\)\}/
+    );
 
     const deep = step(
         job,
