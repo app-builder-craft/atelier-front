@@ -5,6 +5,7 @@ import {
     mkdtemp,
     mkdir,
     readFile,
+    readdir,
     rename,
     rm,
     writeFile,
@@ -25,6 +26,7 @@ import {
     GENERATION_PROCESS_HOSTNAME,
     recoverInterruptedTransactions,
     withGenerationLock,
+    withProductWriterLocks,
 } from './core/generation-transaction.mjs';
 import { loadJson } from './validate-ir.mjs';
 
@@ -610,6 +612,75 @@ test('a failed rollback preserves the previous tree at an explicit recovery path
             'previous\n'
         );
     } finally {
+        await rm(temporaryRoot, { recursive: true, force: true });
+    }
+});
+
+// Lot MARQUE, commit 3 (B) : point d'entrée unique des écrivains d'un produit
+// extérieur. Le verrou du produit est pris d'abord : un second écrivain du
+// même produit est refusé avant de prendre le verrou de sa propre sortie.
+test('withProductWriterLocks : produit puis sorties ; un second écrivain du produit est refusé', async () => {
+    const temporaryRoot = await mkdtemp(resolve(tmpdir(), 'product-locks-'));
+    const product = resolve(temporaryRoot, 'product');
+    const apps = resolve(product, 'apps');
+    const locks = async (directory) =>
+        (await readdir(directory))
+            .filter((name) => name.endsWith('.generation-lock'))
+            .sort();
+    let release = () => undefined;
+    try {
+        await mkdir(apps, { recursive: true });
+        const barrier = new Promise((done) => {
+            release = done;
+        });
+        let entered;
+        const started = new Promise((done) => {
+            entered = done;
+        });
+        const held = [];
+        const first = withProductWriterLocks(
+            product,
+            [resolve(apps, 'b'), resolve(apps, 'a'), resolve(apps, 'b')],
+            async () => {
+                held.push(
+                    ...(await locks(temporaryRoot)),
+                    ...(await locks(apps))
+                );
+                entered();
+                await barrier;
+                return 'first';
+            }
+        );
+        await started;
+        assert.deepEqual(held, [
+            '.product.generation-lock',
+            '.a.generation-lock',
+            '.b.generation-lock',
+        ]);
+        await assert.rejects(
+            withProductWriterLocks(product, [resolve(apps, 'c')], async () =>
+                assert.fail('second writer entered')
+            ),
+            /another generation owns/
+        );
+        assert.deepEqual(await locks(apps), [
+            '.a.generation-lock',
+            '.b.generation-lock',
+        ]);
+        release();
+        assert.equal(await first, 'first');
+        assert.equal(
+            await withProductWriterLocks(
+                product,
+                [resolve(apps, 'c')],
+                async () => 'second'
+            ),
+            'second'
+        );
+        assert.deepEqual(await locks(temporaryRoot), []);
+        assert.deepEqual(await locks(apps), []);
+    } finally {
+        release();
         await rm(temporaryRoot, { recursive: true, force: true });
     }
 });

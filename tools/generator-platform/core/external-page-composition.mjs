@@ -219,18 +219,25 @@ async function consumedCommand(app, node, modelPath, prefix) {
     };
 }
 
-async function renderExternalPageComposition(options) {
-    const context = await ownedProductContext({
-        workspaceRoot: options.workspaceRoot ?? repositoryRoot,
-        targetRoot: options.targetRoot,
-    });
+// `internal` (renommage du préfixe seulement, jamais en ligne de commande) :
+// `prefix` rend avec ce préfixe au lieu du préfixe scellé ; `renaming` tolère
+// le journal du renommage en cours.
+async function renderExternalPageComposition(options, internal = {}) {
+    const context = await ownedProductContext(
+        {
+            workspaceRoot: options.workspaceRoot ?? repositoryRoot,
+            targetRoot: options.targetRoot,
+        },
+        internal
+    );
     const app = await sessionApplication(
         context.productRoot,
         options.appName,
         'external page composition'
     );
     // Préfixe scellé de l'espace : valeurs d'exemple de la spec générée.
-    const prefix = await sealedProductPrefix(context.productRoot);
+    const prefix =
+        internal.prefix ?? (await sealedProductPrefix(context.productRoot));
     const planPath = pagePlanPath(options.pageId);
     const owned = new Set(app.manifest.generated_files.map(({ path }) => path));
     if (
@@ -390,8 +397,12 @@ async function renderExternalPageComposition(options) {
 // X4-sécurité-3 (Π2) : fichiers que le générateur courant publierait pour la
 // composition de cette page. Un bon de travail n'est préparé que si la
 // composition publiée leur est identique, octet pour octet.
-export async function expectedExternalPageCompositionFiles(options) {
-    return (await renderExternalPageComposition(options)).publication.files;
+export async function expectedExternalPageCompositionFiles(
+    options,
+    internal = {}
+) {
+    return (await renderExternalPageComposition(options, internal)).publication
+        .files;
 }
 
 export async function planExternalPageComposition(options) {

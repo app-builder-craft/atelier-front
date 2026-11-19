@@ -135,8 +135,8 @@ convention sous `descriptions/`).
 1. avec `--dry-run` : elle affiche un plan en JSON, avec un champ `plan_id` (64
    caractères hexadécimaux), et n'écrit rien ;
 2. après relecture, avec `--apply <plan_id>` (`--expect-plan <plan_id>` pour
-   `create-app`) : elle publie exactement ce plan, ou refuse si quelque chose a
-   changé depuis.
+   `create-app` et `rename-product-prefix`) : elle publie exactement ce plan, ou
+   refuse si quelque chose a changé depuis.
 
 Une option inconnue, répétée ou manquante est refusée. Aucune option ne force
 une publication.
@@ -156,7 +156,8 @@ bun run prepare:application-workspace --target-root <racine absolue> --profiles 
   worker). Sans lui, le `--dry-run` propose les initiales du nom du dépôt
   (`<propriétaire>/<nom>`) et affiche sa provenance ; le `--apply` confirme ce
   même plan. Un préfixe réservé ou invalide fait refuser le plan : déclarer
-  alors `--prefix`. Le préfixe est scellé dans l'espace.
+  alors `--prefix`. Le préfixe est scellé dans l'espace ; il ne change ensuite
+  que par `rename-product-prefix` (§ 3.9).
 - Le dossier parent de la racine doit exister. La racine ne doit être ni dans
   l'atelier, ni dans un dépôt Git. L'outil ne crée ni Git ni dépôt distant : le
   `git init` du produit se fait après.
@@ -286,6 +287,23 @@ bun run verify:page-realization --target-root <racine absolue> --app <nom-app> -
   `violations` : l'IA corrige seulement cette page et relance.
 - `--apply <plan_id>` publie la page à la place de la page d'attente.
 
+### 3.9 Renommer le préfixe : `rename-product-prefix`
+
+```sh
+bun run rename-product-prefix --target-root <racine absolue> --to <préfixe> --dry-run
+bun run rename-product-prefix --target-root <racine absolue> --to <préfixe> --expect-plan <plan_id>
+```
+
+- Une seule transaction pour l'espace et chaque application : au repos, le
+  produit est entièrement à l'ancien préfixe ou entièrement au nouveau.
+- Le `--dry-run` liste les fichiers régénérés, le script d'entrée nginx renommé
+  et, pour l'opérateur, les variables à renommer service par service, le filtre
+  et le dossier nginx. Les caches du service worker de l'ancien préfixe restent
+  chez les utilisateurs : leur nettoyage est un lot séparé.
+- Le second appel affiche `"status": "renamed"` après compilation, build, lint
+  et tests de chaque application, dont l'historique gagne un enregistrement
+  `rename-product-prefix` ; aucune publication n'est réécrite.
+
 ## 4. Reprendre après un échec
 
 **Règle d'or : ne jamais supprimer un journal, un verrou ou un dossier de
@@ -318,14 +336,21 @@ application relue.
     dans la section « Ownership et reprise » du
     [protocole extérieur](../etape-b/external-application-creation.md).
 
+- Un renommage du préfixe interrompu bloque toutes les autres commandes.
+  `bun run recover:product-prefix --target-root <racine absolue>` répond
+  `"status": "recovered"`, avec `"direction": "back"` (ancien préfixe) ou
+  `"forward"` (renommage déjà confirmé, terminé). S'il répond
+  `ambiguous interrupted prefix rename`, rien n'a été déplacé : fais rétablir le
+  fichier changé, puis relance.
 - `add-library` : avant sa publication, le dépôt est inchangé ; après, son
   commit est complet. Il n'existe pas d'état à moitié publié.
 
 Les dossiers et fichiers de travail à ne jamais toucher :
 `apps/.<app>.external-candidate-<plan_id>/`,
-`apps/.<app>.publication-candidate-<plan_id>/`,
-`apps/.<app>.previous-candidate-<plan_id>/`, `apps/.<app>.generation-lock/`, les
-dossiers `.<…>.generation-transaction-…`, et dans `.git/` : `cmz-library.lock`,
+`apps/.<app>.publication-candidate-<plan_id>/`, `apps/.<app>.generation-lock/`,
+`apps/.<app>.previous-candidate-<plan_id>/`, `apps/.<app>.rename-…-<plan_id>/`,
+à côté du produit `.<produit>.rename-<plan_id>/`, les dossiers
+`.<…>.generation-transaction-…`, et dans `.git/` : `cmz-library.lock`,
 `cmz-library-transaction.json`, `cmz-library-promotion.lock`.
 
 Seule exception à la règle « ni `--resume` ni `--abort` » : `retire-app`, qui
@@ -357,6 +382,11 @@ Les messages sont copiés du code ; `…` remplace une partie variable.
 | `--prefix refused: …`                                                                                                                                                                                                                                     | Préfixe déclaré invalide (forme) ou réservé (portée du catalogue, nom réservé par le relais ou le serveur de développement) | Déclarer un autre `--prefix` : 2 à 6 caractères, minuscules ou chiffres, une lettre en tête                                            |
 | `proposed prefix "…" (initials of "…") refused: … ; déclarer --prefix`                                                                                                                                                                                    | Les initiales du nom du dépôt ne forment pas un préfixe valide, ou il est réservé                                           | Relancer le `--dry-run` avec `--prefix <préfixe>`                                                                                      |
 | `PRODUCT_PREFIX_IN_DESIGN: an external product design must not declare identity.prefix; …`                                                                                                                                                                | La conception du produit déclare un préfixe ; celui du produit est scellé dans son espace                                   | Retirer `identity` du bloc `design` de la conception                                                                                   |
+| `PRODUCT_PREFIX_SEALED: change it with rename-product-prefix`                                                                                                                                                                                             | Le préfixe est scellé dans l'espace ; la commande ou la conception en déclare un autre                                      | Retirer l'autre préfixe ; pour le changer, passer par `rename-product-prefix` (§ 3.9)                                                  |
+| `--to refused: …`, `rename without change` ou `reviewed rename plan is stale`                                                                                                                                                                             | Préfixe invalide, réservé ou inchangé ; ou le produit a changé depuis le `--dry-run`                                        | Corriger `--to` (règle de `--prefix`, § 3.1) ou refaire le `--dry-run`                                                                 |
+| `interrupted prefix rename pending; …` ou `ambiguous interrupted prefix rename: …`                                                                                                                                                                        | Un renommage du préfixe a été interrompu                                                                                    | `recover:product-prefix` (§ 4)                                                                                                         |
+| `PRODUCT_SHELL_NOT_REPRODUCIBLE: …` ou `PRODUCT_COMPOSITION_NOT_REPRODUCIBLE: …`                                                                                                                                                                          | La coque ou la composition vient d'une autre version du générateur                                                          | Régénérer le socle, ou republier la composition (§ 3.7)                                                                                |
+| `PRODUCT_PREFIX_IN_PUBLICATION: …` ou `PRODUCT_PREFIX_REMAINS: …`                                                                                                                                                                                         | Une autre publication porte une forme du préfixe                                                                            | Republier ce fichier sans forme du préfixe                                                                                             |
 | `dépôt entièrement propre requis`, `… piste verified compatible`, `… a changé depuis la qualification`                                                                                                                                                    | Préconditions d'`add-library`                                                                                               | Voir le dépannage de [atelier.md](./atelier.md), § 8                                                                                   |
 
 ## 6. Exemples

@@ -27,6 +27,8 @@ import { pathExists } from './core/external-application-paths.mjs';
 import {
     assertReservedDeclarations,
     prefixInitials,
+    PRODUCT_NAME_FAMILIES,
+    productNameForms,
     prefixRefusals,
     productForms,
 } from './core/product-identity.mjs';
@@ -517,31 +519,9 @@ test('valeurs d’exemple : un courriel trop long est tronqué sur sa partie loc
     assert.equal(sample('abc', { max_length: 5 }).courriel, 'a@exemple.test');
 });
 
-// Familles de noms que le produit possède, relevées dans le rendu QUEL QUE
-// SOIT le préfixe qu'elles portent : une forme écrite en dur (un ancien
-// préfixe, par exemple) y apparaît sous un autre préfixe que celui déclaré.
-const P = '([a-z][a-z0-9]{1,5})';
-const FAMILIES = Object.freeze({
-    'politique du service worker': new RegExp(`\\b${P}-sw\\b`, 'g'),
-    'caches du service worker': new RegExp(
-        `\\b${P}-(?:shell|session-static)-v1\\b`,
-        'g'
-    ),
-    'contexte d’accès du navigateur': new RegExp(
-        `\\b__${P}AppAccessContext\\b`,
-        'g'
-    ),
-    "variables de l'opérateur": new RegExp(
-        `\\b([A-Z][A-Z0-9]{1,5})_(?:UPSTREAMS?_|ENVSUBST_FILTER_INVALID|DEV_PROXY)`,
-        'g'
-    ),
-    'dossier nginx': new RegExp(`/etc/nginx/${P}/`, 'g'),
-    "script d'entrée nginx": new RegExp(`\\b15-${P}-upstreams\\.envsh\\b`, 'g'),
-    'variables nginx': new RegExp(
-        `\\$${P}_(?:cache_control|relay_guard|forwarded_proto)\\b`,
-        'g'
-    ),
-});
+// Familles de noms que le produit possède : source unique dans
+// product-identity.mjs (aussi lue par la contre-preuve du renommage).
+const FAMILIES = PRODUCT_NAME_FAMILIES;
 const SESSION_FAMILIES = Object.keys(FAMILIES).filter(
     (family) => family !== 'contexte d’accès du navigateur'
 );
@@ -636,12 +616,10 @@ test('rendu : un seul préfixe, porté par chaque nom que le produit possède', 
             assert.ok(all.includes(form), `${name} : ${form}`);
         // Chaque occurrence de chaque famille porte le préfixe déclaré, et
         // les familles de ce rendu y sont toutes.
-        for (const [family, pattern] of Object.entries(FAMILIES)) {
-            const found = [...all.matchAll(pattern)].map((match) =>
-                match[1].toLowerCase()
-            );
+        const forms = productNameForms(all);
+        for (const family of Object.keys(FAMILIES)) {
             assert.deepEqual(
-                [...new Set(found)],
+                [...(forms.get(family) ?? [])],
                 families.includes(family) ? ['qz'] : [],
                 `${name} : ${family}`
             );

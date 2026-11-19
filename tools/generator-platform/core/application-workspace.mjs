@@ -41,7 +41,7 @@ import {
 } from './application-workspace-root.mjs';
 import {
     commitDirectoryTransaction,
-    withGenerationLock,
+    withProductWriterLocks,
 } from './generation-transaction.mjs';
 
 import {
@@ -245,6 +245,9 @@ async function planWorkspace(options, documentSources, internal = {}) {
         output: context.productRoot,
         candidate: workspaceCandidate(context.productRoot, planId),
         recoveringApp: internal.recoveringApp,
+        // Réservé au renommage du préfixe et à sa reprise (plan_id du
+        // renommage) : ses arbres de travail et son journal sont tolérés.
+        renaming: internal.renaming,
     };
     if (await pathExists(context.productRoot))
         await verifyWorkspaceRoot(plan, documentSources);
@@ -281,7 +284,7 @@ export async function publishApplicationWorkspace(options) {
         initial.plan_id !== options.expectedPlanId
     )
         externalFailure('reviewed workspace plan required or stale');
-    return withGenerationLock(initial.productRoot, async () => {
+    return withProductWriterLocks(initial.productRoot, [], async () => {
         const plan = await planApplicationWorkspace(options);
         if (plan.plan_id !== initial.plan_id)
             externalFailure('workspace changed under lock');
@@ -311,10 +314,13 @@ export async function publishApplicationWorkspace(options) {
 }
 
 export async function readOwnedWorkspace(options, internal = {}) {
-    const context = await ownedProductContext({
-        workspaceRoot: options.workspaceRoot ?? repositoryRoot,
-        targetRoot: options.targetRoot,
-    });
+    const context = await ownedProductContext(
+        {
+            workspaceRoot: options.workspaceRoot ?? repositoryRoot,
+            targetRoot: options.targetRoot,
+        },
+        internal
+    );
     const manifest = JSON.parse(
         (await readProductFile(context.productRoot, MANIFEST)).toString('utf8')
     );
@@ -405,6 +411,39 @@ async function renderProductShell(options) {
         prefix,
     });
     return { ...rendered, inputs, designSha256: sha256(designBytes) };
+}
+
+// Renommage du préfixe (lot MARQUE, commit 3) : la coque d'une appli
+// existante, rendue depuis ses entrées scellées (conception, expérience, nom,
+// profil) avec un préfixe donné. Mêmes entrées que create-app, sans plan.
+export async function renderExternalShellFiles(workspace, manifest, prefix) {
+    return (
+        await renderProductShell({
+            productRoot: workspace.productRoot,
+            toolsRoot: workspace.toolsRoot,
+            appName: manifest.app_name,
+            designPath: manifest.design_ref?.path,
+            experienceId: manifest.experience_id,
+            profile: manifest.profile,
+            prefix,
+        })
+    ).files;
+}
+
+// Manifeste d'espace avec un autre préfixe : mêmes champs dans le même ordre,
+// `identity.prefix` changé, `workspace_id` recalculé, texte canonique comme à
+// la préparation de l'espace.
+export async function renamedWorkspaceManifest(manifest, prefix) {
+    const { workspace_id: _id, ...fields } = manifest;
+    void _id;
+    const renamed = { ...fields, identity: { ...fields.identity, prefix } };
+    const next = { ...renamed, workspace_id: workspaceId(renamed) };
+    const text = (
+        await canonicalizeGeneratedFiles({
+            [MANIFEST]: JSON.stringify(next, null, 2) + '\n',
+        })
+    )[MANIFEST];
+    return { manifest: next, text };
 }
 
 export async function planExternalApplicationShell(options) {
@@ -523,7 +562,9 @@ export async function publishExternalApplicationShell(
         externalFailure('reviewed shell plan is stale');
     const run = dependencies.run ?? runExternalApplicationCommand;
     const phase = dependencies.phase ?? (() => undefined);
-    return withGenerationLock(initial.outputAbsolute, async () => {
+    // Lot MARQUE, commit 3 (B) : verrou du produit, puis celui de l'appli.
+    const outputs = [initial.outputAbsolute];
+    return withProductWriterLocks(initial.root, outputs, async () => {
         const plan = await planExternalApplicationShell(options);
         if (plan.plan_id !== initial.plan_id)
             externalFailure('shell changed under lock');

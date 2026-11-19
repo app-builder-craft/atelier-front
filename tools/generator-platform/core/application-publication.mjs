@@ -36,7 +36,7 @@ import { sha256, stableStringify } from './generation-manifest.mjs';
 import {
     removeTreeAndSync,
     renameAndSync,
-    withGenerationLock,
+    withProductWriterLocks,
 } from './generation-transaction.mjs';
 
 const APP_MANIFEST = SIGNATURE_FILES.appManifest;
@@ -46,8 +46,9 @@ function appLocation(options) {
         externalFailure('invalid app name');
     if (typeof options.targetRoot !== 'string')
         externalFailure('publication requires a target root');
-    const apps = resolve(options.targetRoot, 'apps');
-    return { apps, output: resolve(apps, options.appName) };
+    const product = resolve(options.targetRoot);
+    const apps = resolve(product, 'apps');
+    return { product, apps, output: resolve(apps, options.appName) };
 }
 
 // Entrées du produit liées au plan (X2) : relues et comparées à chaque plan,
@@ -408,12 +409,14 @@ async function recoverUnderLock(options) {
 // produit vérifiée comme pour toute commande extérieure, puis verrou de
 // l'application.
 export async function recoverApplicationPublication(options) {
-    const { output } = appLocation(options);
+    const { product, output } = appLocation(options);
     await ownedProductContext({
         workspaceRoot: options.workspaceRoot ?? repositoryRoot,
         targetRoot: options.targetRoot,
     });
-    return withGenerationLock(output, () => recoverUnderLock(options));
+    return withProductWriterLocks(product, [output], () =>
+        recoverUnderLock(options)
+    );
 }
 
 async function alreadyPublished(options) {
@@ -436,8 +439,8 @@ export async function publishApplicationPublication(
     // Injectable pour éprouver un échec entre les deux renommages de l'échange.
     const swap = dependencies.rename ?? renameAndSync;
     const internal = recovering(options);
-    const { output } = appLocation(options);
-    return withGenerationLock(output, async () => {
+    const { product, output } = appLocation(options);
+    return withProductWriterLocks(product, [output], async () => {
         const recovery = await recoverUnderLock(options);
         if (await alreadyPublished(options))
             return {

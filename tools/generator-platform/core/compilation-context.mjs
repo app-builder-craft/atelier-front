@@ -10,7 +10,7 @@ import {
 } from './external-application-paths.mjs';
 import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
-import { withGenerationLock } from './generation-transaction.mjs';
+import { withProductWriterLocks } from './generation-transaction.mjs';
 
 const MARKER = SIGNATURE_FILES.workspaceManifest;
 const COMPILATION_FILES = [
@@ -249,6 +249,8 @@ export async function bindCompilationContext(
             'apps',
             `document-${sha256(outputPath)}`
         ),
+        // Racine du produit, hors liaison : verrou de l'écrivain du produit.
+        lock_product: context.productRoot,
     };
 }
 
@@ -271,8 +273,9 @@ export async function publishCompilationWithContext(
     failPlan
 ) {
     if (!plan.compilation_context) return publish(plan, failPlan);
-    return withGenerationLock(
-        plan.compilation_context.lock_output,
+    return withProductWriterLocks(
+        plan.compilation_context.lock_product,
+        [plan.compilation_context.lock_output],
         async () => {
             const current = await replan(options);
             if (

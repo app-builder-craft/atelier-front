@@ -508,6 +508,21 @@ export async function withGenerationLock(outputRoot, operation) {
     return result;
 }
 
+// Point d'entrée UNIQUE des écrivains d'un produit extérieur (lot MARQUE,
+// commit 3) : le verrou du produit, PUIS celui de chaque sortie (appli, ou
+// document) dans l'ordre des chemins. L'ordre est le même pour tous : pas
+// d'interblocage ; et un écrivain d'une appli nouvelle partage au moins le
+// verrou du produit avec un renommage. Un verrou déjà tenu fait refuser, il
+// n'attend pas (`acquireGenerationLock`).
+export async function withProductWriterLocks(productRoot, outputs, operation) {
+    const ordered = [...new Set(outputs)].sort();
+    const nested = (index) =>
+        index === ordered.length
+            ? operation()
+            : withGenerationLock(ordered[index], () => nested(index + 1));
+    return withGenerationLock(productRoot, () => nested(0));
+}
+
 export async function commitDirectoryTransaction({
     outputRoot,
     candidateRoot,

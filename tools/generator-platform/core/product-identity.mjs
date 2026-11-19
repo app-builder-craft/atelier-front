@@ -124,3 +124,36 @@ export function prefixRefusals(
             );
     return reasons;
 }
+
+// Familles de noms que le produit possède, relevées QUEL QUE SOIT le préfixe
+// qu'elles portent : une forme écrite en dur, ou laissée par un ancien
+// préfixe, y apparaît sous un autre préfixe que celui scellé. Source unique du
+// test « un seul préfixe » et de la contre-preuve du renommage.
+const FAMILY_PREFIX = '([a-z][a-z0-9]{1,5})';
+export const PRODUCT_NAME_FAMILIES = Object.freeze({
+    'politique du service worker': `\\b${FAMILY_PREFIX}-sw\\b`,
+    'caches du service worker': `\\b${FAMILY_PREFIX}-(?:shell|session-static)-v1\\b`,
+    'contexte d’accès du navigateur': `\\b__${FAMILY_PREFIX}AppAccessContext\\b`,
+    "variables de l'opérateur":
+        '\\b([A-Z][A-Z0-9]{1,5})_(?:UPSTREAMS?_|ENVSUBST_FILTER_INVALID|DEV_PROXY)',
+    'dossier nginx': `/etc/nginx/${FAMILY_PREFIX}/`,
+    "script d'entrée nginx": `\\b15-${FAMILY_PREFIX}-upstreams\\.envsh\\b`,
+    'variables nginx': `\\$${FAMILY_PREFIX}_(?:cache_control|relay_guard|forwarded_proto)\\b`,
+});
+
+/**
+ * Préfixes portés par chaque famille dans un texte, en minuscules : `Map`
+ * famille → ensemble des préfixes trouvés (familles absentes omises).
+ */
+export function productNameForms(text) {
+    const found = new Map();
+    for (const [family, source] of Object.entries(PRODUCT_NAME_FAMILIES)) {
+        const prefixes = new Set(
+            [...String(text).matchAll(new RegExp(source, 'g'))].map((match) =>
+                match[1].toLowerCase()
+            )
+        );
+        if (prefixes.size) found.set(family, prefixes);
+    }
+    return found;
+}
