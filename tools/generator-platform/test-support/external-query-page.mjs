@@ -46,3 +46,49 @@ export const compositionFile = (plan, name) =>
             path.endsWith(`/composition/src/${name}`)
         )
     ];
+
+// X5 C6 : modèle et chemin de la liaison de lignes, depuis la réponse.
+function collectionBinding(contract, domain) {
+    const operation = contract.operations.find(
+        (entry) => entry.id === `${domain}-catalogue`
+    );
+    const responseId = operation.responses[0].body.model_id;
+    const response = contract.models.find((model) => model.id === responseId);
+    if (response.kind !== 'object') return { model_id: responseId };
+    const items = response.fields.find((field) => field.name === 'items');
+    return { model_id: items.type.items.model_id, source_path: ['items'] };
+}
+
+// Contrat : `label` nullable. Conception : une liaison de la lecture, avec ou
+// sans texte d'absence.
+export const nullableLabel =
+    (domain, absentText) =>
+    ({ contract, design }) => {
+        const item = contract.models.find(
+            (model) => model.id === `${domain}-item`
+        );
+        item.fields.find((field) => field.name === 'label').nullable = true;
+        const page = design.pages.find((entry) => entry.loads.length > 0);
+        page.data_bindings.push({
+            id: 'catalogue-rows',
+            operation_ref: structuredClone(page.loads[0].operation_ref),
+            response_status: 200,
+            // X5 C6 : la liaison nomme la COLLECTION de la lecture : la liste
+            // elle-même (equipment-hire), ou, pour une page, le modèle
+            // d'élément de son champ `items`, avec ce chemin source
+            // (observatory). Règle : assertQueryOutputBinding.
+            ...collectionBinding(contract, domain),
+            field_names: [],
+            visible_in_state_ids: [page.loads[0].success_state_id],
+            ...(absentText === undefined ? {} : { absent_text: absentText }),
+        });
+        page.regions[0].elements.push({
+            id: 'catalogue-list',
+            kind: 'list',
+            accessible_name: 'Catalogue',
+            content: 'Catalogue rows',
+            control_ids: [],
+            action_ids: [],
+            data_binding_ids: ['catalogue-rows'],
+        });
+    };
