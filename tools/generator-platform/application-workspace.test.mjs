@@ -35,6 +35,11 @@ import {
     sourceDependencyExpectations,
     verifyWorkspaceDependencyProfiles,
 } from './test-support/workspace-dependency-assertions.mjs';
+import {
+    SIGNATURE,
+    SIGNATURE_FILES,
+    signaturePath,
+} from './core/atelier-signature.mjs';
 
 test('T1 : preview pur sur source, destination et voisins', async (t) => {
     const parent = await fixtureParent(t);
@@ -133,10 +138,10 @@ test('T6 : préparation/reprise exacte, aucun écrasement après modification', 
 test('T6 : dossier étranger, marqueur incomplet et candidat étranger restent intacts', async (t) => {
     const parent = await fixtureParent(t);
     const target = join(parent, 'foreign');
-    await mkdir(join(target, '.cmz'), { recursive: true });
+    await mkdir(join(target, SIGNATURE.dir), { recursive: true });
     await writeFile(join(target, 'owner.txt'), 'ne pas déplacer\n');
     await writeFile(
-        join(target, '.cmz/application-workspace.json'),
+        join(target, SIGNATURE_FILES.workspaceManifest),
         JSON.stringify({
             kind: 'application-workspace-manifest',
             target_root: target,
@@ -637,7 +642,7 @@ test('v10 : chemins produit déclarés acceptés, journal inconnu refusé', asyn
     const root = await fixtureParent(t);
     assert.equal(spawnSync('git', ['init', '-q', root]).status, 0);
     await mkdir(join(root, 'tools'));
-    const journal = ['.cmz', 'fixture-journal'].join('/');
+    const journal = signaturePath('fixture-journal');
     await writeFile(join(root, '.gitignore'), journal + '/\n');
     const paths = [...Object.values(EXTERNAL_WORKSPACE_CMZ), journal];
     // Décision A du lot MARQUE : un outil nomme un chemin sous le dossier de
@@ -649,7 +654,7 @@ test('v10 : chemins produit déclarés acceptés, journal inconnu refusé', asyn
     const accepted = verifyCmzJournalsIgnored(root);
     assert.equal(accepted.ok, true, accepted.errors.join('\n'));
     assert.deepEqual(accepted.names, ['fixture-journal']);
-    const unknown = ['.cmz', 'undeclared-product'].join('/');
+    const unknown = signaturePath('undeclared-product');
     await writeFile(source, [...paths, unknown].map(call).join(';\n'));
     const refused = verifyCmzJournalsIgnored(root);
     assert.equal(refused.ok, false);

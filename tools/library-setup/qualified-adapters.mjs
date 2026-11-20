@@ -12,7 +12,10 @@ import {
     angularTailwindSources,
     scaffoldTailwind,
 } from '../scaffold-tailwind-core.mjs';
-import { SIGNATURE_FILES } from '../generator-platform/core/atelier-signature.mjs';
+import {
+    SIGNATURE,
+    SIGNATURE_FILES,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 const ADAPTER_VERSION = '1.0.0';
 const MATERIAL_THEME = `// Include theming for Angular Material with \`mat.theme()\`.
@@ -201,7 +204,7 @@ function applyAngularTailwind(workspace, context, track) {
     writeOwned(
         workspace,
         `${context.sourceRoot}/tailwind.css`,
-        `/* Adaptateur qualifié CMZ, tailwindcss@${version}. */\n${css}`,
+        `/* Adaptateur qualifié ${SIGNATURE.name}, tailwindcss@${version}. */\n${css}`,
         { createOnly: true }
     );
     const styles = context.project.targets?.build?.options?.styles;

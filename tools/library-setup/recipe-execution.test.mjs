@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 
 import { executeLibraryRecipe } from './recipe-execution.mjs';
+import { SIGNATURE_FILES } from '../generator-platform/core/atelier-signature.mjs';
 
 async function put(root, path, content) {
     await mkdir(dirname(join(root, path)), { recursive: true });
@@ -27,7 +28,7 @@ async function fixture(t) {
     await put(root, 'candidate/apps/demo/project.json', '{"name":"demo"}\n');
     await put(
         root,
-        'candidate/apps/demo/.cmz/libraries.json',
+        `candidate/apps/demo/${SIGNATURE_FILES.libraries}`,
         '{"schema_version":"1.0.0","kind":"app-library-manifest","platform":"angular","libraries":[]}\n'
     );
     await put(root, 'candidate/node_modules/nx/dist/bin/nx.js', '');
@@ -71,11 +72,13 @@ test('borne toutes les écritures de recette à l’app et ajoute le manifeste',
         },
     });
     assert.deepEqual(result.changes.map(({ path }) => path).sort(), [
-        'apps/demo/.cmz/libraries.json',
+        `apps/demo/${SIGNATURE_FILES.libraries}`,
         'apps/demo/material.txt',
     ]);
     const manifest = JSON.parse(
-        await readFile(join(root, 'candidate/apps/demo/.cmz/libraries.json'))
+        await readFile(
+            join(root, `candidate/apps/demo/${SIGNATURE_FILES.libraries}`)
+        )
     );
     assert.deepEqual(manifest.libraries, ['angular-material']);
 });
@@ -112,7 +115,7 @@ test('une réécriture cosmétique du package.json est restaurée à l’octet p
     });
     assert.deepEqual(
         result.changes.map(({ path }) => path),
-        ['apps/demo/.cmz/libraries.json']
+        [`apps/demo/${SIGNATURE_FILES.libraries}`]
     );
     assert.equal(
         await readFile(join(root, 'candidate/package.json'), 'utf8'),
@@ -274,7 +277,7 @@ test('canonise toute sortie de recette avec Prettier dans le bac à sable', asyn
         'node_modules/prettier/bin/prettier.cjs',
         '--write',
         '--ignore-unknown',
-        'apps/demo/.cmz/libraries.json',
+        `apps/demo/${SIGNATURE_FILES.libraries}`,
         'apps/demo/src/index.html',
     ]);
     assert.equal(
@@ -317,7 +320,7 @@ test('ne reformate jamais un fichier applicatif étranger à la recette', async 
         },
     });
     assert.deepEqual(formattedPaths, [
-        'apps/demo/.cmz/libraries.json',
+        `apps/demo/${SIGNATURE_FILES.libraries}`,
         'apps/demo/generated.ts',
     ]);
     assert.equal(
@@ -345,7 +348,7 @@ test('le manifeste de l’app est écrit avant Prettier, donc canonisé', async 
         run: ({ candidate, argv }) => {
             if (argv[0] === 'node_modules/prettier/bin/prettier.cjs') {
                 manifestAtFormatTime = readFileSync(
-                    join(candidate, 'apps/demo/.cmz/libraries.json'),
+                    join(candidate, `apps/demo/${SIGNATURE_FILES.libraries}`),
                     'utf8'
                 );
             }
@@ -361,7 +364,7 @@ test('le manifeste de l’app est écrit avant Prettier, donc canonisé', async 
     // dans le change-set validé et non dans un supplément non contrôlé.
     assert.ok(
         changeSet.changes.some(
-            (change) => change.path === 'apps/demo/.cmz/libraries.json'
+            (change) => change.path === `apps/demo/${SIGNATURE_FILES.libraries}`
         )
     );
 });

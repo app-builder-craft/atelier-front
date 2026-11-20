@@ -4,22 +4,22 @@
   "page_id": "page_a11ca71000000001",
   "page_contract_sha256": "db71c2e587eff26428370693f243401afd1c8af159cd62e7d6ddff9e4deb80b9",
   "states": [
-    { "id": "ready", "selector": "[data-cmz-id=\"ready\"]" },
-    { "id": "submitted", "selector": "[data-cmz-id=\"submitted\"]" },
-    { "id": "failed", "selector": "[data-cmz-id=\"failed\"]" },
-    { "id": "offline", "selector": "[data-cmz-id=\"offline\"]" }
+    { "id": "ready", "selector": "[data-atelier-id=\"ready\"]" },
+    { "id": "submitted", "selector": "[data-atelier-id=\"submitted\"]" },
+    { "id": "failed", "selector": "[data-atelier-id=\"failed\"]" },
+    { "id": "offline", "selector": "[data-atelier-id=\"offline\"]" }
   ],
-  "controls": [{ "id": "message", "selector": "[data-cmz-id=\"message\"]" }],
+  "controls": [{ "id": "message", "selector": "[data-atelier-id=\"message\"]" }],
   "actions": [
-    { "id": "submit-note", "selector": "[data-cmz-id=\"submit-note\"]" }
+    { "id": "submit-note", "selector": "[data-atelier-id=\"submit-note\"]" }
   ],
   "data_bindings": [],
-  "regions": [{ "id": "main", "selector": "[data-cmz-id=\"main\"]" }],
+  "regions": [{ "id": "main", "selector": "[data-atelier-id=\"main\"]" }],
   "elements": [
     {
       "id": "page-heading",
-      "selector": "[data-cmz-id=\"page-heading\"]"
+      "selector": "[data-atelier-id=\"page-heading\"]"
     },
-    { "id": "note-form", "selector": "[data-cmz-id=\"note-form\"]" }
+    { "id": "note-form", "selector": "[data-atelier-id=\"note-form\"]" }
   ]
 }

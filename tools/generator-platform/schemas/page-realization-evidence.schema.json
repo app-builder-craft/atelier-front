@@ -43,7 +43,7 @@
         },
         "selector": {
           "type": "string",
-          "pattern": "^\\[data-cmz-id=\"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\"\\]$"
+          "pattern": "^\\[data-atelier-id=\"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\"\\]$"
         }
       }
     },

@@ -8,6 +8,7 @@ import {
     WITNESSES,
     witnessPage,
 } from './check-page-submit-witnesses.mjs';
+import { signatureName } from './core/atelier-signature.mjs';
 
 const measured = (overrides = {}) =>
     WITNESSES.map((witness) => ({
@@ -46,7 +47,7 @@ test('N4 : la page témoin porte un formulaire par témoin, chacun vers sa méth
     for (const { id, method } of WITNESSES) {
         assert.ok(
             page.includes(
-                `id="w-${id}" action="/cmz-witness/${id}" (submit)="${method}()"`
+                `id="w-${id}" action="/${signatureName('witness')}/${id}" (submit)="${method}()"`
             ),
             id
         );

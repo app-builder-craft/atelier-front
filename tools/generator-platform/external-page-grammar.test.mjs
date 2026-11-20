@@ -10,6 +10,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 
 import { grammarFixture } from './test-support/page-grammar-fixture.mjs';
+import { SIGNATURE } from './core/atelier-signature.mjs';
 
 // MU1 : le corpus positif parcourt la copie épinglée des tables, pas la table
 // vivante ; retirer une entrée fait donc échouer sa variante.
@@ -222,10 +223,12 @@ test('O-G §6.2 : corpus positif du gabarit, une variante par entrée de liste b
         'hidden',
         'tabindex',
         'aria-label',
-        'data-cmz-id',
+        SIGNATURE.idAttribute,
     ]) {
         const value =
-            attribute === 'data-cmz-id' ? 'ready' : (VALUES[attribute] ?? 'x');
+            attribute === SIGNATURE.idAttribute
+                ? 'ready'
+                : (VALUES[attribute] ?? 'x');
         accepted(
             fixture,
             html(`<span ${attribute}="${value}"></span>`),
@@ -481,8 +484,10 @@ test('O-G §6.4 (MU7) : valeurs imposées refusées hors de leur forme exacte', 
             'T6',
         ],
         [
-            'data-cmz-id hors contrat',
-            variant(base, { html: '    <p data-cmz-id="hors-contrat"></p>\n' }),
+            `${SIGNATURE.idAttribute} hors contrat`,
+            variant(base, {
+                html: `    <p ${SIGNATURE.idAttribute}="hors-contrat"></p>\n`,
+            }),
             'H3',
         ],
         [

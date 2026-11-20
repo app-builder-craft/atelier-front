@@ -16,7 +16,11 @@ import {
     scanCmzDirectories,
     verifyCmzJournalsIgnored,
 } from './check-cmz-journals-ignored.mjs';
-import { SIGNATURE } from './generator-platform/core/atelier-signature.mjs';
+import {
+    retiredAppTombstone,
+    SIGNATURE,
+    SIGNATURE_FILES,
+} from './generator-platform/core/atelier-signature.mjs';
 
 const call = (...names) =>
     `signaturePath(${names.map((name) => `'${name}'`).join(', ')})`;
@@ -98,6 +102,31 @@ test('journal non ignoré signalé, ignoré accepté, scan vide signalé', async
     assert.deepEqual(verifyCmzJournalsIgnored(testOnly).errors, [
         `aucun journal ${SIGNATURE.dir} détecté — scan cassé`,
     ]);
+});
+
+// Les dossiers que la signature exporte (`SIGNATURE_FILES`), pierres tombales
+// de `retire-app` comprises (Q3 du lot MARQUE), sont versionnés : jamais lus
+// comme des journaux, même appelés par `signaturePath('<nom>')`.
+test('les dossiers gouvernés de la signature ne sont pas des journaux', async (t) => {
+    const governed = [
+        ...Object.values(SIGNATURE_FILES),
+        retiredAppTombstone('x'),
+    ].map((path) => path.slice(SIGNATURE.dir.length + 1).split(/[/.]/)[0]);
+    assert.ok(governed.includes('retired-apps'));
+    const root = await repository(t, {
+        'tools/x.mjs': [...governed, 'journal-x']
+            .map(
+                (name) =>
+                    `export const p_${name.replaceAll('-', '_')} = ${call(name)};\n`
+            )
+            .join(''),
+        '.gitignore': `/${SIGNATURE.dir}/journal-x/\n`,
+    });
+    assert.deepEqual(verifyCmzJournalsIgnored(root), {
+        ok: true,
+        names: ['journal-x'],
+        errors: [],
+    });
 });
 
 test('témoin positif : les deux journaux connus du dépôt sont trouvés', () => {

@@ -52,6 +52,7 @@ import {
     SESSION_FIXTURE_DOMAINS,
     writeExternalActionDefinitions,
 } from './test-support/external-session-fixture.mjs';
+import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 const native = () => ({ run: () => undefined });
 const cli = (script, args) =>
@@ -134,7 +135,7 @@ test('X3 : page Connexion planifiée puis composée sur deux produits fictifs, e
         );
         assert.equal(
             document.source.page_contract.uri,
-            `apps/${product.shell.appName}/.cmz/pages/${product.pageId}.json`
+            `apps/${product.shell.appName}/${SIGNATURE_FILES.pages}/${product.pageId}.json`
         );
         assert.equal(document.session.effects[0].kind, 'establish');
         // Recompilation déterministe : rien de neuf à publier.
@@ -351,7 +352,7 @@ test('X3 : références du plan hors de l’application et commande consommée d
         )
     );
     assert.deepEqual(assertPlanReferences(plan, app, owned), [
-        `.cmz/pages/${product.pageId}.json`,
+        `${SIGNATURE_FILES.pages}/${product.pageId}.json`,
         'src/app/generated/actions/observatory-enter/execution-model.json',
     ]);
     for (const uri of [

@@ -53,9 +53,17 @@ test('les valeurs refusées couvrent chaque famille de la signature', () => {
     ])
         assert.ok(IDENTITY_VALUES.includes(value), value);
     assert.ok(!IDENTITY_VALUES.includes(SIGNATURE.name), 'nom nu exclu');
-    assert.ok(
-        IDENTITY_VALUES.every((value) => value.length > SIGNATURE.name.length)
-    );
+    assert.ok(!IDENTITY_VALUES.includes(INTERNAL.name), 'nom interne nu exclu');
+    // Valeurs COMPOSÉES : chacune porte le nom dont elle dérive, et plus. Les
+    // deux noms diffèrent du commit 4 au commit 6 (décision B du lot MARQUE).
+    const internal = new Set([INTERNAL.scope, INTERNAL.env]);
+    for (const value of IDENTITY_VALUES) {
+        const name = internal.has(value) ? INTERNAL.name : SIGNATURE.name;
+        assert.ok(
+            value.toLowerCase().includes(name) && value.length > name.length,
+            value
+        );
+    }
 });
 
 test('les formes composées passent par les modules et ont les valeurs attendues', () => {

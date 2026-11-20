@@ -40,6 +40,7 @@ import {
     SESSION_FIXTURE_DOMAINS,
     writeExternalActionDefinitions,
 } from './test-support/external-session-fixture.mjs';
+import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 const CLI = join(
     TOOLS_ROOT,
@@ -381,7 +382,7 @@ test('X2 : entrées et applications hors périmètre refusées avant toute écri
     await refuse(
         {
             ...product.options,
-            definitionPath: `apps/${product.shell.appName}/.cmz/app-manifest.json`,
+            definitionPath: `apps/${product.shell.appName}/${SIGNATURE_FILES.appManifest}`,
         },
         /reserved workspace namespace/
     );

@@ -9,19 +9,20 @@ import {
     grammarFixture,
     insertAt,
 } from './test-support/page-grammar-fixture.mjs';
+import { SIGNATURE } from './core/atelier-signature.mjs';
 
 const HTML = 'page.component.html';
 
 const PROBES = [
     [
         'entité Cf dans un texte',
-        '<h1 data-cmz-id="report-heading">',
+        `<h1 ${SIGNATURE.idAttribute}="report-heading">`,
         'a&#x202E;b',
         /decoded text carries an invisible or control character U\+202E \(format\)/,
     ],
     [
         'entité de largeur nulle dans un texte',
-        '<h1 data-cmz-id="report-heading">',
+        `<h1 ${SIGNATURE.idAttribute}="report-heading">`,
         'a&#8203;b',
         /decoded text carries an invisible or control character U\+200B \(format\)/,
     ],

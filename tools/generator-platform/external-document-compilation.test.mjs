@@ -43,6 +43,7 @@ import {
     runDocumentCli,
 } from './test-support/external-document-fixture.mjs';
 import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
+import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 const backendOptions = (fixture, request = fixture.backendRequests.at(-1)) => ({
     workspaceRoot: TOOLS_ROOT,
@@ -137,7 +138,7 @@ if (nativeCell !== undefined) {
             recursive: true,
         });
         await writeFile(join(fixture.root, neighbour), bytes, { flag: 'wx' });
-        const marker = join(fixture.root, '.cmz/application-workspace.json');
+        const marker = join(fixture.root, SIGNATURE_FILES.workspaceManifest);
         const markerBefore = await readFile(marker);
 
         // Generation keeps its strict ownership boundary on this same tree.
@@ -181,7 +182,7 @@ if (nativeCell !== undefined) {
         test(`EXT03A/unrelated ${kind} source is rejected without publication`, async (t) => {
             const fixture = await documentFixture(t, 'B');
             const directory =
-                kind === 'reserved' ? '.cmz/proof' : 'examples/other';
+                kind === 'reserved' ? SIGNATURE_FILES.proof : 'examples/other';
             await mkdir(join(fixture.root, directory), { recursive: true });
             const path = join(fixture.root, directory, 'foreign');
             if (kind === 'symbolic-file')
@@ -372,7 +373,7 @@ if (nativeCell !== undefined) {
             '../foreign.json',
             join(fixture.root, request.definitionPath),
             'package.json',
-            '.cmz/proof/foreign.json',
+            `${SIGNATURE_FILES.proof}/foreign.json`,
         ]) {
             await assert.rejects(
                 planStructuredBackendPublication({
@@ -397,7 +398,7 @@ if (nativeCell !== undefined) {
 
     test('EXT03A/marker and owned technical bytes are verified', async (t) => {
         const fixture = await documentFixture(t, 'B');
-        const path = join(fixture.root, '.cmz/application-workspace.json');
+        const path = join(fixture.root, SIGNATURE_FILES.workspaceManifest);
         const original = await readFile(path);
         const marker = JSON.parse(original.toString('utf8'));
         marker.review_owner = 'different-reviewer';
@@ -502,7 +503,7 @@ if (nativeCell !== undefined) {
         for (const outputPath of [
             fixture.backendRequests[0].definitionPath,
             'package.json',
-            '.cmz/proof/new.json',
+            `${SIGNATURE_FILES.proof}/new.json`,
             'apps/new.json',
         ]) {
             await assert.rejects(

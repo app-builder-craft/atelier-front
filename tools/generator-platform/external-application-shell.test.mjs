@@ -40,6 +40,7 @@ import {
     snapshotTree,
     TOOLS_ROOT,
 } from './test-support/external-application-fixture.mjs';
+import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 test('CLI extérieure : plan obligatoire, options uniques et valeurs complètes', () => {
     const args = [
@@ -708,7 +709,7 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
     );
     const session = JSON.parse(
         rendered.files[
-            `.cmz/pages/${data.design.experiences[0].entry_page_id}.json`
+            `${SIGNATURE_FILES.pages}/${data.design.experiences[0].entry_page_id}.json`
         ]
     ).experience.session;
     assert.equal(session.storage, 'memory');
@@ -718,7 +719,7 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
     );
     assert.equal(data.networkVerified, false);
     const generatedFiles = Object.entries(rendered.files)
-        .filter(([path]) => path !== '.cmz/app-manifest.json')
+        .filter(([path]) => path !== SIGNATURE_FILES.appManifest)
         .map(([path, content]) => ({
             path,
             bytes: Buffer.byteLength(content),

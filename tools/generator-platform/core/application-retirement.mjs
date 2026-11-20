@@ -20,6 +20,7 @@ import {
 } from '../../module-lifecycle-nx.mjs';
 import { currentGitIdentity } from '../../workspace-transaction.mjs';
 import {
+    retiredAppTombstone,
     SIGNATURE,
     SIGNATURE_FILES,
     signaturePath,
@@ -223,7 +224,7 @@ async function readState(paths, appName) {
         !['prepared', 'moved'].includes(state.phase) ||
         state.app_name !== appName ||
         state.output !== `apps/${appName}` ||
-        state.tombstone !== `docs/architecture/retired-apps/${appName}.json` ||
+        state.tombstone !== retiredAppTombstone(appName) ||
         typeof state.tombstone_parent_existed !== 'boolean' ||
         !/^[a-f0-9]{64}$/.test(state.plan_id ?? '') ||
         !/^[a-f0-9]{64}$/.test(state.tree_sha256 ?? '') ||
@@ -291,7 +292,7 @@ export async function planApplicationRetirement(
         file_count: app.snapshot.files.length,
         design_ref: app.manifest.design_ref,
         git_head: identity.head,
-        tombstone: `docs/architecture/retired-apps/${appName}.json`,
+        tombstone: retiredAppTombstone(appName),
     };
     const planId = sha256(JSON.stringify(base));
     return {

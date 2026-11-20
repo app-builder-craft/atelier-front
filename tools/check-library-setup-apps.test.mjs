@@ -16,6 +16,7 @@ import {
     validRecipe,
     write,
 } from './check-library-setup-fixture.mjs';
+import { SIGNATURE_FILES } from './generator-platform/core/atelier-signature.mjs';
 
 // Suite 2/2 : verifyApps (manifeste obligatoire, plateforme déterminée,
 // dépendances cohérentes, confinement) + helpers exportés.
@@ -38,7 +39,7 @@ test('app avec project.json + manifeste + invariants satisfaits → ok', async (
     assert.equal(result.checkedApps, 1);
 });
 
-test('BYPASS : app avec project.json régulier mais sans .cmz/libraries.json → échec', async (t) => {
+test(`BYPASS : app avec project.json régulier mais sans ${SIGNATURE_FILES.libraries} → échec`, async (t) => {
     const root = await scaffold(t, {
         recipes: working(),
         apps: { 'demo-app': { manifest: null } },
@@ -57,7 +58,7 @@ test('BYPASS : dossier d’app est un lien symbolique → échec', async (t) => 
         name: 'demo-app',
         targets: { build: { executor: '@angular/build:application' } },
     });
-    await write(join(outside, '.cmz/libraries.json'), manifest());
+    await write(join(outside, SIGNATURE_FILES.libraries), manifest());
     const root = await scaffold(t, {
         recipes: working(),
         apps: { 'demo-app': { dirSymlink: outside } },

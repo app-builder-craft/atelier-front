@@ -118,7 +118,7 @@
       "authority": "observational",
       "id": "reference-note-postman",
       "kind": "postman",
-      "sha256": "5d68f8294f7f6b1b1e91eaa107b17642f9ee5a92f8d7333207f44ba66c9201c9",
+      "sha256": "de9d17a8dbce5e70951cd5af7a393a1e180e11c448955590b8f4c42d0a9c5998",
       "snapshot_uri": "examples/application-conception-proof/reference-api.postman.json",
       "status": "reference"
     }

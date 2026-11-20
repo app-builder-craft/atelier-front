@@ -15,10 +15,10 @@ describe('PageComponent', () => {
 
         const root = fixture.nativeElement as HTMLElement;
         const field = root.querySelector<HTMLTextAreaElement>(
-            '[data-cmz-id="message"]'
+            '[data-atelier-id="message"]'
         );
         const action = root.querySelector<HTMLButtonElement>(
-            '[data-cmz-id="submit-note"]'
+            '[data-atelier-id="submit-note"]'
         );
 
         expect(field?.required).toBe(true);

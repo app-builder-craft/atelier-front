@@ -5,19 +5,19 @@
   "profile": "react-spa",
   "design_ref": {
     "path": "designs/library-qualification-bench.application-design.json",
-    "sha256": "a46b917cc4327dca189e8efeda9fbee65258df5cb1cfc2b3299c9dc39848bff3"
+    "sha256": "407ebd68edaf374961f84833f6b8c908a7eb351f15f9dcd9e211f7788c0bea93"
   },
   "experience_id": "visitor-web",
   "generated_files": [
     {
-      "path": ".cmz/libraries.json",
+      "path": ".atelier/libraries.json",
       "bytes": 108,
       "sha256": "c3f2551e21438af48d354958e174da65f3188402e8f42d2d5fccf3031c4b7b9b"
     },
     {
-      "path": ".cmz/pages/page_a11ca71000000001.json",
+      "path": ".atelier/pages/page_a11ca71000000001.json",
       "bytes": 3885,
-      "sha256": "9aebe8432d4e631f25c5199cf4598ed4ccfe5a94c6300424c798b5ccab47f5f7"
+      "sha256": "6334b4e2c775b3e810b0e5e445179349c0865bae084a40bdbfa3f57b42ee693a"
     },
     {
       "path": "eslint.config.mjs",
@@ -95,5 +95,5 @@
       "sha256": "e7a376999e27cc4c42733879913117e3b5c092a289921f1d123b94ad7ff5341a"
     }
   ],
-  "tree_sha256": "f73818bb944717d78f962d2612c01c49c76dae8ef6a329761a988a8b5543b516"
+  "tree_sha256": "8e29cfc245592e12b58b713dff0fc905de5479e703f1db7567cb878a66c745c5"
 }

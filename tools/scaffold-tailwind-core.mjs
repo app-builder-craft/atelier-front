@@ -1,6 +1,8 @@
 import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 
+import { SIGNATURE } from './generator-platform/core/atelier-signature.mjs';
+
 const ANGULAR_TEMPLATE = 'conventions/libraries/angular/tailwind.template.css';
 const ANGULAR_POSTCSS = 'conventions/libraries/angular/tailwind.postcssrc.json';
 const REACT_TEMPLATE = 'conventions/libraries/react/tailwind.template.css';
@@ -106,7 +108,7 @@ function scaffoldAngular(repository, app, version) {
     writeNew(
         repository,
         `${appRoot}/src/tailwind.css`,
-        `/* Adaptateur qualifié CMZ, tailwindcss@${version}. */\n${sources.css}`
+        `/* Adaptateur qualifié ${SIGNATURE.name}, tailwindcss@${version}. */\n${sources.css}`
     );
 
     const projectPath = `${appRoot}/project.json`;
@@ -143,7 +145,7 @@ function scaffoldReact(repository, app, version) {
     writeNew(
         repository,
         cssPath,
-        `/* Adaptateur qualifié CMZ, tailwindcss@${version}. */\n${template}`
+        `/* Adaptateur qualifié ${SIGNATURE.name}, tailwindcss@${version}. */\n${template}`
     );
 
     const mainPath = `${appRoot}/src/main.tsx`;

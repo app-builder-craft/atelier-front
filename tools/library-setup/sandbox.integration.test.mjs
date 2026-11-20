@@ -18,6 +18,7 @@ import {
     resolutionPolicySha256,
 } from './resolution-policy.mjs';
 import { availableSandboxBackends, runConfined } from './sandbox.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const repositoryRoot = new URL('../..', import.meta.url).pathname;
 
@@ -65,7 +66,7 @@ forEachBackend(
                 : join(paths.repository, 'package.json');
         const forbiddenCache =
             backend === 'docker'
-                ? '/cmz-cache/secret'
+                ? `/${signatureName('cache')}/secret`
                 : join(paths.cache, 'secret');
         const repositoryTarget =
             backend === 'docker'

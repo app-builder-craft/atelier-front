@@ -21,6 +21,7 @@ import {
     planApplicationShell,
     publishApplicationShell,
 } from './core/application-shell-publication.mjs';
+import { signaturePath } from './core/atelier-signature.mjs';
 import {
     withProductPrefix,
     writeApplicationDesignFixture,
@@ -38,6 +39,9 @@ const backendContractSchema = JSON.parse(
         'utf8'
     )
 );
+
+// Q3 du lot MARQUE : la pierre tombale vit sous le dossier de signature.
+const TOMBSTONE = signaturePath('retired-apps', 'sample-app.json');
 
 async function exists(path) {
     try {
@@ -109,6 +113,7 @@ test('retire une app possédée, publie le tombstone et prouve les gates', async
         { workspaceRoot: data.root, appName: 'sample-app' },
         data.dependencies
     );
+    assert.equal(plan.tombstone, TOMBSTONE);
     const calls = [];
     const result = await publishApplicationRetirement(
         {
@@ -126,15 +131,7 @@ test('retire une app possédée, publie le tombstone et prouve les gates', async
     assert.deepEqual(calls, ['install+frozen', 'nx-post-gate']);
     assert.equal(await exists(join(data.root, 'apps/sample-app')), false);
     assert.equal(
-        JSON.parse(
-            await readFile(
-                join(
-                    data.root,
-                    'docs/architecture/retired-apps/sample-app.json'
-                ),
-                'utf8'
-            )
-        ).kind,
+        JSON.parse(await readFile(join(data.root, TOMBSTONE), 'utf8')).kind,
         'retired-application'
     );
     await assert.rejects(
@@ -170,12 +167,7 @@ test('tout échec de gate restaure l’app et retire son tombstone', async () =>
         await exists(join(data.root, 'apps/sample-app/project.json')),
         true
     );
-    assert.equal(
-        await exists(
-            join(data.root, 'docs/architecture/retired-apps/sample-app.json')
-        ),
-        false
-    );
+    assert.equal(await exists(join(data.root, TOMBSTONE)), false);
 });
 
 test('refuse consommateurs Nx et références textuelles avant écriture', async () => {
@@ -218,13 +210,10 @@ test('reprend une transaction interrompue après déplacement exact', async () =
     );
     const transaction = join(
         data.root,
-        '.cmz/retire-app-transactions/sample-app'
+        signaturePath('retire-app-transactions', 'sample-app')
     );
     const backup = join(transaction, 'app');
-    const tombstonePath = join(
-        data.root,
-        'docs/architecture/retired-apps/sample-app.json'
-    );
+    const tombstonePath = join(data.root, TOMBSTONE);
     const tombstone = `${JSON.stringify(
         {
             schema_version: '1.0.0',
@@ -239,7 +228,7 @@ test('reprend une transaction interrompue après déplacement exact', async () =
     )}\n`;
     await mkdir(transaction, { recursive: true });
     await rename(join(data.root, 'apps/sample-app'), backup);
-    await mkdir(join(data.root, 'docs/architecture/retired-apps'), {
+    await mkdir(join(data.root, signaturePath('retired-apps')), {
         recursive: true,
     });
     await writeFile(tombstonePath, tombstone);
@@ -256,7 +245,7 @@ test('reprend une transaction interrompue après déplacement exact', async () =
                 app_name: 'sample-app',
                 output: 'apps/sample-app',
                 tree_sha256: plan.tree_sha256,
-                tombstone: 'docs/architecture/retired-apps/sample-app.json',
+                tombstone: TOMBSTONE,
                 tombstone_parent_existed: false,
                 tombstone_sha256: tombstoneHash,
             },

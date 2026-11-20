@@ -4,6 +4,10 @@ import test from 'node:test';
 
 import { compileOpenApiBackendContract } from './adapters/openapi-adapter.mjs';
 import { parseStructuredSource } from './core/source-document.mjs';
+import { SIGNATURE } from './core/atelier-signature.mjs';
+
+// Conventions d'entrée de l'atelier (signature) : `x-<nom>-contract`.
+const CONTRACT = `${SIGNATURE.openapiExtension}contract`;
 
 const backendContractSchema = JSON.parse(
     await readFile(
@@ -23,10 +27,10 @@ function validDocument() {
         servers: [
             {
                 url: 'https://api.sample-app.example/v1',
-                'x-cmz-environment': 'production',
+                [`${SIGNATURE.openapiExtension}environment`]: 'production',
             },
         ],
-        'x-cmz-contract': {
+        [CONTRACT]: {
             authority: 'declared',
             contract_id: 'sample-app-api',
             lifecycle: 'planned',
@@ -162,7 +166,7 @@ test('parse JSON et YAML strictement avec clés YAML dupliquées interdites', ()
 
 test('refuse une maturité OpenAPI qui ne correspond pas à son autorité', () => {
     const document = validDocument();
-    document['x-cmz-contract'].lifecycle = 'implemented';
+    document[CONTRACT].lifecycle = 'implemented';
     assert.throws(
         () => compile(document),
         /implemented requires authoritative/

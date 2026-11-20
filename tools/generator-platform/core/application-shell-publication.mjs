@@ -16,6 +16,7 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { renderAngularPwaShell } from '../renderers/angular-pwa-shell-renderer.mjs';
 import { renderReactSpaShell } from '../renderers/react-spa-shell-renderer.mjs';
 import { validateApplicationDesignWithDependencies } from './application-design.mjs';
+import { retiredAppTombstone } from './atelier-signature.mjs';
 import { repositoryRoot } from '../validate-ir.mjs';
 import { assertDesignPrefix } from './product-prefix.mjs';
 import {
@@ -298,10 +299,7 @@ export async function planApplicationShell({
     if (!/^[a-z][a-z0-9-]*$/.test(appName ?? ''))
         fail('app name must be kebab-case');
     const root = await realpath(resolve(workspaceRoot));
-    const tombstone = resolve(
-        root,
-        `docs/architecture/retired-apps/${appName}.json`
-    );
+    const tombstone = resolve(root, retiredAppTombstone(appName));
     if (await entryExists(tombstone))
         fail(
             `retired app tombstone forbids implicit recreation: ${relative(root, tombstone)}`

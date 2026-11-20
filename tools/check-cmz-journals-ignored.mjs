@@ -8,7 +8,8 @@
  * donc la liste depuis le CODE : un chemin sous le dossier de signature ne
  * s'écrit que par `signaturePath('<nom>', …)` (le contrôle des sources uniques
  * refuse le littéral), et chaque `<nom>` d'outil ainsi appelé doit être
- * ignoré, sauf ceux qui sont relatifs à une app ou au produit, donc gouvernés.
+ * ignoré, sauf les dossiers GOUVERNÉS qu'exporte la signature
+ * (`SIGNATURE_FILES`), versionnés.
  * Un nouveau journal non ignoré échoue sans que personne ait à y penser ; un
  * balayage vide échoue aussi (fermé par défaut).
  *
@@ -32,20 +33,19 @@ import { fileURLToPath } from 'node:url';
 import {
     internalName,
     SIGNATURE,
+    SIGNATURE_FILES,
 } from './generator-platform/core/atelier-signature.mjs';
-import { EXTERNAL_WORKSPACE_CMZ } from './generator-platform/renderers/application-workspace-renderer.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 /**
- * Répertoires de signature portés par une APPLICATION (`apps/<app>/<dir>/…`),
- * donc versionnés : ce sont des artefacts gouvernés, pas des journaux
- * d'exécution.
+ * Noms GOUVERNÉS sous le dossier de signature, dérivés de `SIGNATURE_FILES` :
+ * manifeste, bibliothèques et pages d'une app (`apps/<app>/<dir>/…`),
+ * disposition du produit, pierres tombales des applis retirées. Ils sont
+ * versionnés : ce ne sont pas des journaux d'exécution.
  */
-export const APP_SCOPED = new Set(['app-manifest', 'libraries', 'pages']);
-
-const PRODUCT_SCOPED = new Set(
-    Object.values(EXTERNAL_WORKSPACE_CMZ).map(
+export const GOVERNED = new Set(
+    Object.values(SIGNATURE_FILES).map(
         (path) =>
             path.slice(SIGNATURE.dir.length + 1).match(/^([a-z][a-z0-9-]*)/)[1]
     )
@@ -75,8 +75,7 @@ export function scanCmzDirectories(root = ROOT) {
         if (file.endsWith('.test.mjs')) continue;
         const source = readFileSync(join(root, file), 'utf8');
         for (const name of cmzDirectoryNames(source)) {
-            if (!APP_SCOPED.has(name) && !PRODUCT_SCOPED.has(name))
-                names.add(name);
+            if (!GOVERNED.has(name)) names.add(name);
         }
     }
     return [...names].sort();

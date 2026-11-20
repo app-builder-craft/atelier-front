@@ -43,6 +43,7 @@ import {
     sessionShellOptions,
     writeExternalSessionDesign,
 } from './test-support/external-session-fixture.mjs';
+import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 async function sessionProduct(t, domain) {
     const fixture = await prepareFixture(t);
@@ -114,7 +115,9 @@ test('X0 : deux produits fictifs planifient une coque Angular avec session, sans
             )
         );
         const entry = JSON.parse(
-            plan.files[`.cmz/pages/${product.input.entryPage.id}.json`]
+            plan.files[
+                `${SIGNATURE_FILES.pages}/${product.input.entryPage.id}.json`
+            ]
         );
         assert.equal(entry.experience.session.storage, 'memory');
         assert.equal(
@@ -180,7 +183,7 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
         assert.equal(await pathExists(plan.outputAbsolute), false);
         assert.equal(await pathExists(plan.candidate), false);
         const marker = await readFile(
-            join(product.root, '.cmz/application-workspace.json')
+            join(product.root, SIGNATURE_FILES.workspaceManifest)
         );
         const calls = [];
         const result = await publishExternalApplicationShell(
@@ -220,7 +223,7 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
         );
         await verifyGeneratedTree(plan.outputAbsolute, plan.files);
         assert.equal(await pathExists(plan.candidate), false);
-        const manifest = JSON.parse(plan.files['.cmz/app-manifest.json']);
+        const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
         assert.equal(manifest.design_ref.path, product.input.designPath);
         assert.ok(
             manifest.generated_files.some(
@@ -229,7 +232,7 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
         );
         assert.deepEqual(
             await readFile(
-                join(product.root, '.cmz/application-workspace.json')
+                join(product.root, SIGNATURE_FILES.workspaceManifest)
             ),
             marker
         );
@@ -343,9 +346,9 @@ test('X0 : la coque extérieure avec session porte son test de garde ; le mode a
         assert.match(external[spec], /from '\.\/session\.guard'/);
         assert.match(external[spec], /toBeInstanceOf\(UrlTree\)/);
         assert.ok(
-            JSON.parse(external['.cmz/app-manifest.json']).generated_files.some(
-                (entry) => entry.path === spec
-            )
+            JSON.parse(
+                external[SIGNATURE_FILES.appManifest]
+            ).generated_files.some((entry) => entry.path === spec)
         );
     }
 });
@@ -410,7 +413,7 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
             `add_header Content-Security-Policy "${EXTERNAL_CSP_HEADER}" always;`
         )
     );
-    const manifest = JSON.parse(external['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(external[SIGNATURE_FILES.appManifest]);
     for (const path of ['src/index.html', EXTERNAL_CSP_HEADER_PATH])
         assert.ok(
             manifest.generated_files.some((entry) => entry.path === path),

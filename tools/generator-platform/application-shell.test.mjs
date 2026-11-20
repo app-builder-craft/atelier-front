@@ -26,6 +26,7 @@ import {
     withProductPrefix,
     writeApplicationDesignFixture,
 } from './test-support/application-design-fixture.mjs';
+import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 const applicationDesignSchema = JSON.parse(
     await readFile(
@@ -177,21 +178,21 @@ test('le renderer produit routing, i18n, PWA et un contrat borné par page', asy
         prefix: FIXTURE_PREFIX,
     });
     for (const path of [
-        '.cmz/libraries.json',
+        SIGNATURE_FILES.libraries,
         'project.json',
         'src/app/access.guard.ts',
         'src/app/access.guard.spec.ts',
         'src/app/app.routes.ts',
         'public/manifest.webmanifest',
         'public/sw.js',
-        '.cmz/libraries.json',
-        '.cmz/app-manifest.json',
-        '.cmz/pages/page_1111111111111111.json',
-        '.cmz/pages/page_2222222222222222.json',
+        SIGNATURE_FILES.libraries,
+        SIGNATURE_FILES.appManifest,
+        `${SIGNATURE_FILES.pages}/page_1111111111111111.json`,
+        `${SIGNATURE_FILES.pages}/page_2222222222222222.json`,
     ]) {
         assert.ok(rendered.files[path], `missing ${path}`);
     }
-    assert.deepEqual(JSON.parse(rendered.files['.cmz/libraries.json']), {
+    assert.deepEqual(JSON.parse(rendered.files[SIGNATURE_FILES.libraries]), {
         schema_version: '1.0.0',
         kind: 'app-library-manifest',
         platform: 'angular',
@@ -234,7 +235,7 @@ test('le renderer produit routing, i18n, PWA et un contrat borné par page', asy
         'le shell doit fournir un point d’entrée host générique et fail-closed'
     );
     assert.doesNotMatch(
-        rendered.files['.cmz/pages/page_1111111111111111.json'],
+        rendered.files[`${SIGNATURE_FILES.pages}/page_1111111111111111.json`],
         /angular/i
     );
 });
@@ -257,11 +258,11 @@ test('le renderer produit directement des octets canoniques et les atteste', asy
     );
     assert.deepEqual(await canonicalizeGeneratedFiles(prefixed), prefixed);
 
-    const manifest = JSON.parse(rendered.files['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(rendered.files[SIGNATURE_FILES.appManifest]);
     assert.deepEqual(
         manifest.generated_files,
         Object.entries(rendered.files)
-            .filter(([path]) => path !== '.cmz/app-manifest.json')
+            .filter(([path]) => path !== SIGNATURE_FILES.appManifest)
             .map(([path, content]) => ({
                 path,
                 bytes: Buffer.byteLength(content),
@@ -323,27 +324,27 @@ test('le renderer React produit un shell SPA mono-stack borné par les mêmes co
         prefix: FIXTURE_PREFIX,
     });
     for (const path of [
-        '.cmz/libraries.json',
-        '.cmz/app-manifest.json',
+        SIGNATURE_FILES.libraries,
+        SIGNATURE_FILES.appManifest,
         'project.json',
         'vite.config.mts',
         'src/main.tsx',
         'src/app/app.routes.tsx',
         'src/app/access-policy.tsx',
         'src/app/access-policy.spec.ts',
-        '.cmz/pages/page_1111111111111111.json',
-        '.cmz/pages/page_2222222222222222.json',
+        `${SIGNATURE_FILES.pages}/page_1111111111111111.json`,
+        `${SIGNATURE_FILES.pages}/page_2222222222222222.json`,
     ]) {
         assert.ok(rendered.files[path], `missing ${path}`);
     }
-    assert.deepEqual(JSON.parse(rendered.files['.cmz/libraries.json']), {
+    assert.deepEqual(JSON.parse(rendered.files[SIGNATURE_FILES.libraries]), {
         schema_version: '1.0.0',
         kind: 'app-library-manifest',
         platform: 'react',
         libraries: [],
     });
     assert.equal(
-        JSON.parse(rendered.files['.cmz/app-manifest.json']).profile,
+        JSON.parse(rendered.files[SIGNATURE_FILES.appManifest]).profile,
         'react-spa'
     );
     assert.match(rendered.files['vite.config.mts'], /@vitejs\/plugin-react/);
@@ -368,7 +369,7 @@ test('le renderer React produit un shell SPA mono-stack borné par les mêmes co
         )
     );
     assert.doesNotMatch(
-        rendered.files['.cmz/pages/page_1111111111111111.json'],
+        rendered.files[`${SIGNATURE_FILES.pages}/page_1111111111111111.json`],
         /react/i
     );
     assert.equal(rendered.files['public/manifest.webmanifest'], undefined);
@@ -385,11 +386,11 @@ test('le renderer React produit un shell SPA mono-stack borné par les mêmes co
         ])
     );
     assert.deepEqual(await canonicalizeGeneratedFiles(prefixed), prefixed);
-    const manifest = JSON.parse(rendered.files['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(rendered.files[SIGNATURE_FILES.appManifest]);
     assert.deepEqual(
         manifest.generated_files,
         Object.entries(rendered.files)
-            .filter(([path]) => path !== '.cmz/app-manifest.json')
+            .filter(([path]) => path !== SIGNATURE_FILES.appManifest)
             .map(([path, content]) => ({
                 path,
                 bytes: Buffer.byteLength(content),
@@ -664,7 +665,7 @@ test('une app fraîchement rendue passe la gate library-setup', async (t) => {
         prefix: FIXTURE_PREFIX,
     });
 
-    const manifest = JSON.parse(rendered.files['.cmz/libraries.json']);
+    const manifest = JSON.parse(rendered.files[SIGNATURE_FILES.libraries]);
     assert.deepEqual(manifest, {
         schema_version: '1.0.0',
         kind: 'app-library-manifest',

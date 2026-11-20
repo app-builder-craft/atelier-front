@@ -15,6 +15,7 @@ import {
     validRecipe,
     write,
 } from './check-library-setup-fixture.mjs';
+import { SIGNATURE_FILES } from './generator-platform/core/atelier-signature.mjs';
 
 // Suite 1/2 : validateRecipes (lecture confinée + schéma fermé + cohérence).
 // Suite verifyApps : check-library-setup-apps.test.mjs (plafond 800 l.).
@@ -484,7 +485,7 @@ test('normalise la sortie réelle du schematic Material et refuse sa dérive', a
         }
         put('apps/demo/project.json', '{"name":"demo"}\n');
         put(
-            'apps/demo/.cmz/libraries.json',
+            `apps/demo/${SIGNATURE_FILES.libraries}`,
             '{"schema_version":"1.0.0","kind":"app-library-manifest","platform":"angular","libraries":[]}\n'
         );
         const indexLinks = recipe.install.normalizations

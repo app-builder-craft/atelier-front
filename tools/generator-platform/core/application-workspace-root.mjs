@@ -68,6 +68,17 @@ export async function ownedProductContext(options, internal = {}) {
     return context;
 }
 
+// Manifeste d'une appli du produit, sous le dossier de signature courant : le
+// seul lecteur de ce marqueur avant la vérification de la racine. Une appli
+// sans lui (par exemple à la disposition d'avant le renommage de la signature,
+// lot MARQUE) est refusée, nommée, et non par une erreur système portant un
+// chemin local.
+export async function readAppManifest(appRoot) {
+    if (!(await pathExists(resolve(appRoot, SIGNATURE_FILES.appManifest))))
+        externalFailure('app ownership marker missing');
+    return readProductFile(appRoot, SIGNATURE_FILES.appManifest);
+}
+
 // Préfixe du produit scellé dans son espace (`identity.prefix`, couvert par
 // `workspace_id`) ; validé avant tout usage.
 export async function sealedProductPrefix(productRoot) {
@@ -132,9 +143,7 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
             externalFailure('unowned app entry');
         const appRoot = resolve(productRoot, 'apps', entry.name);
         const app = JSON.parse(
-            (
-                await readProductFile(appRoot, SIGNATURE_FILES.appManifest)
-            ).toString('utf8')
+            (await readAppManifest(appRoot)).toString('utf8')
         );
         if (app.app_name !== entry.name || !plan.profiles.includes(app.profile))
             externalFailure('unowned app manifest');

@@ -9,8 +9,8 @@
 // (`tools/check-identity-sources.mjs`) : aucune ne doit être écrite en dur
 // hors de ce module et de `product-identity.mjs`.
 
-// Signature rangée dans les produits et les bancs.
-const NAME = 'cmz';
+// Signature rangée dans les produits et les bancs (lot MARQUE, commit 4).
+const NAME = 'atelier';
 // Noms internes du dépôt de l'atelier.
 const INTERNAL_NAME = 'cmz';
 
@@ -55,7 +55,14 @@ export const SIGNATURE_FILES = Object.freeze({
     workspaceManifest: signaturePath('application-workspace.json'),
     support: signaturePath('support'),
     proof: signaturePath('proof'),
+    // Pierres tombales des applis retirées (`retire-app`), versionnées.
+    retiredApps: signaturePath('retired-apps'),
 });
+
+/** Pierre tombale d'une appli retirée : `<dir>/retired-apps/<app>.json`. */
+export function retiredAppTombstone(appName) {
+    return `${SIGNATURE_FILES.retiredApps}/${appName}.json`;
+}
 
 export const INTERNAL = Object.freeze({
     name: INTERNAL_NAME,

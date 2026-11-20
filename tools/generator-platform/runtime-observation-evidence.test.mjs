@@ -28,6 +28,7 @@ import {
     observationDocuments,
     observationFixture,
 } from './test-support/observation-evidence-fixture.mjs';
+import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 const SENTINEL = 'FICTITIOUS_SECRET_MUST_NEVER_REACH_DIAGNOSTICS';
 const json = (value) => JSON.stringify(value, null, 2) + '\n';
@@ -567,7 +568,7 @@ test('bounds reject before parsing and before recursive schema validation', asyn
     await rejectedCore(fixture, 'OBS_LIMIT');
     await fixture.write(observationDocuments());
     assert.equal((await inspect(fixture)).facts.length, 5);
-    const marker = join(fixture.root, '.cmz/application-workspace.json');
+    const marker = join(fixture.root, SIGNATURE_FILES.workspaceManifest);
     const original = await readFile(marker);
     await truncate(marker, OBSERVATION_LIMITS.markerBytes + 1);
     await rejectedCore(fixture, 'OBS_LIMIT');
@@ -586,7 +587,7 @@ test('physical roots, traversal, symbolic leaves/ancestors and ownership drift',
         '../escape.json',
         '/absolute.json',
         'descriptions/../escape.json',
-        '.cmz/application-workspace.json',
+        SIGNATURE_FILES.workspaceManifest,
         'package.json',
     ])
         rejectedCli(inspectionCli(fixture.root, path), 'OBS_FILE');

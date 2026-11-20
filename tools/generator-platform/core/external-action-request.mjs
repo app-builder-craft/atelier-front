@@ -18,6 +18,7 @@ import {
 import {
     inputFilePath,
     ownedProductContext,
+    readAppManifest,
 } from './application-workspace-root.mjs';
 import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
@@ -79,9 +80,7 @@ export async function sessionApplication(
     const appRoot = resolve(root, 'apps', appName);
     if (!(await pathExists(appRoot))) externalFailure('application is absent');
     const manifest = JSON.parse(
-        (await readProductFile(appRoot, SIGNATURE_FILES.appManifest)).toString(
-            'utf8'
-        )
+        (await readAppManifest(appRoot)).toString('utf8')
     );
     // Angular seulement : React reste explicitement refusé.
     if (manifest.profile !== 'angular-pwa')

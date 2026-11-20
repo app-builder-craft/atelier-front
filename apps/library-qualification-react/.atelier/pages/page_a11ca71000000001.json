@@ -3,7 +3,7 @@
   "kind": "page-realization-contract",
   "design_ref": {
     "path": "designs/library-qualification-bench.application-design.json",
-    "sha256": "a46b917cc4327dca189e8efeda9fbee65258df5cb1cfc2b3299c9dc39848bff3"
+    "sha256": "407ebd68edaf374961f84833f6b8c908a7eb351f15f9dcd9e211f7788c0bea93"
   },
   "design": {
     "id": "library-qualification-bench",
@@ -20,7 +20,7 @@
     {
       "id": "reference-note-api",
       "role": "reference",
-      "sha256": "208511b936508567b246807036c305dde012ec53332c361be9b28c3ce20a9938",
+      "sha256": "2b0f07548aa3c0896dd586314be1dc44b731c3b995afceb9972977a54280998b",
       "snapshot_uri": "examples/application-conception-proof/reference-api.backend-contract.json"
     },
     {

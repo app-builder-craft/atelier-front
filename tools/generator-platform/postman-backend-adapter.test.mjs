@@ -3,6 +3,10 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { compilePostmanBackendContract } from './adapters/postman-adapter.mjs';
+import { SIGNATURE } from './core/atelier-signature.mjs';
+
+// Variables de métadonnées de l'atelier (signature) : `<nom>_<champ>`.
+const meta = (name) => `${SIGNATURE.postmanVariable}${name}`;
 
 const backendContractSchema = JSON.parse(
     await readFile(
@@ -14,11 +18,11 @@ const backendContractSchema = JSON.parse(
 function variables() {
     return {
         baseUrl: 'https://reference.example/api',
-        cmz_contract_id: 'reference-api',
-        cmz_contract_version: '1.0.0',
-        cmz_environment: 'reference',
-        cmz_service_id: 'mobile-api',
-        cmz_source_id: 'reference-postman',
+        [meta('contract_id')]: 'reference-api',
+        [meta('contract_version')]: '1.0.0',
+        [meta('environment')]: 'reference',
+        [meta('service_id')]: 'mobile-api',
+        [meta('source_id')]: 'reference-postman',
     };
 }
 
@@ -180,7 +184,7 @@ test('refuse de déduire un schéma depuis form-data ou urlencoded', () => {
 test('refuse les métadonnées absentes, versions et auth non supportées', () => {
     const missing = validCollection();
     missing.variable = missing.variable.filter(
-        (entry) => entry.key !== 'cmz_contract_version'
+        (entry) => entry.key !== meta('contract_version')
     );
     assert.throws(() => compile(missing), /missing metadata variable/);
 
