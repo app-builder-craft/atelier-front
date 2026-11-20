@@ -207,21 +207,22 @@ Les messages correspondants sont dans le dépannage (§ 8).
 
 Toutes se lancent dans `~/atelier-front`.
 
-| Commande                                   | À quoi elle sert                                                         |
-| ------------------------------------------ | ------------------------------------------------------------------------ |
-| `git switch main && git pull`              | Revenir sur `main` à jour                                                |
-| `bun install --frozen-lockfile`            | Installer exactement les versions du verrou `bun.lock`, sans le réécrire |
-| `bun run check:engines`                    | Vérifier que Node et Bun sont dans la plage `engines` de `package.json`  |
-| `bun run check:all`                        | Lancer tous les contrôles locaux de l'atelier (long)                     |
-| `bun run check:docs`                       | Vérifier la charte et les liens entre documents                          |
-| `bun run format`                           | Mettre en forme `apps/`, `libs/`, `tools/` et les configurations         |
-| `bun run format:check`                     | Vérifier la mise en forme sans rien modifier                             |
-| `bun run check:secrets`                    | Chercher des secrets dans l'historique (gitleaks)                        |
-| `bun run check:library-setup`              | Contrôler les bibliothèques qualifiées (Material, Tailwind)              |
-| `bun run test:external-application-shells` | Tester la chaîne de création des applications extérieures                |
-| `bun run check:nginx-digest`               | Vérifier l'empreinte de l'image nginx du relais (Docker requis)          |
-| `bunx nx show projects`                    | Lister les projets du dépôt                                              |
-| `bun run protect:main -- --dry-run`        | Afficher la protection de `main` sans l'appliquer                        |
+| Commande                                   | À quoi elle sert                                                            |
+| ------------------------------------------ | --------------------------------------------------------------------------- |
+| `git switch main && git pull`              | Revenir sur `main` à jour                                                   |
+| `bun install --frozen-lockfile`            | Installer exactement les versions du verrou `bun.lock`, sans le réécrire    |
+| `bun run check:engines`                    | Vérifier que Node et Bun sont dans la plage `engines` de `package.json`     |
+| `bun run check:all`                        | Lancer tous les contrôles locaux de l'atelier (long)                        |
+| `bun run check:docs`                       | Vérifier la charte et les liens entre documents                             |
+| `bun run format`                           | Mettre en forme `apps/`, `libs/`, `tools/` et les configurations            |
+| `bun run format:check`                     | Vérifier la mise en forme sans rien modifier                                |
+| `bun run check:secrets`                    | Chercher des secrets dans l'historique (gitleaks)                           |
+| `bun run check:library-setup`              | Contrôler les bibliothèques qualifiées (Material, Tailwind)                 |
+| `bun run test:external-application-shells` | Tester la chaîne de création des applications extérieures                   |
+| `bun run check:nginx-image`                | Vérifier la forme de l'image nginx du relais, sans réseau                   |
+| `bun run check:nginx-digest`               | Comparer l'empreinte de l'image nginx du relais au registre (Docker requis) |
+| `bunx nx show projects`                    | Lister les projets du dépôt                                                 |
+| `bun run protect:main -- --dry-run`        | Afficher la protection de `main` sans l'appliquer                           |
 
 `bun run protect:main` (sans `--dry-run`) applique réellement la protection de
 `main` et les réglages de fusion sur GitHub. Il demande `gh auth login`. C'est
@@ -676,21 +677,21 @@ La CI (`.github/workflows/ci.yml`) tourne sur chaque PR vers `main` et sur
 `main`. Pour reproduire un contrôle en local, lance la commande `bun run …`
 écrite dans le nom de l'étape rouge.
 
-| Job                                                        | Un rouge veut le plus souvent dire                                                                                                                          |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Garde-fous socle                                           | un contrôle `check:…` a échoué ; le nom de l'étape le dit. « Format check » : lancer `bun run format`                                                       |
-| Publication durability (linux-ext4 / macos-apfs)           | une régression des publications transactionnelles du moteur                                                                                                 |
-| Library candidate isolation (linux-docker / macos-sandbox) | une régression du confinement des bibliothèques (lancé seulement si ses outils changent)                                                                    |
-| Library integration (create-app → Material → Tailwind)     | pistes non `verified`, versions testées différentes de la CI, ou entrées gouvernantes changées : requalifier (§ 5). Lancé seulement si ses entrées changent |
-| External application shells                                | une régression de la chaîne de création ; ou l'étape nginx : voir `CMZ_NGINX_DIGEST_STALE` (§ 8)                                                            |
-| Secret scan (gitleaks)                                     | un secret dans l'historique : ne pas contourner, le retirer et le révoquer                                                                                  |
-| Oracle — lint + build + ngc + test                         | un projet modifié ne compile pas, a un avertissement de lint ou un test rouge                                                                               |
-| E2E smoke (Playwright)                                     | la preuve navigateur du projet `workspace-react-proof` a échoué (lancée seulement si ce projet est concerné)                                                |
-| Dead-code (knip)                                           | un fichier, un export ou une dépendance inutilisés                                                                                                          |
-| Dependency audit (bun audit)                               | une vulnérabilité haute ou critique ; une exception d'`AUDIT_IGNORES` expirée, périmée, rendue inutile par un correctif ou invérifiable (registre npm)      |
-| Third-party licenses (license-checker)                     | une dépendance de production sous licence non permissive                                                                                                    |
-| Duplicate files (MD5)                                      | deux fichiers identiques entre modules                                                                                                                      |
-| SAST (Semgrep, rapport seul)                               | un rapport à lire ; ce job ne bloque pas la fusion                                                                                                          |
+| Job                                                        | Un rouge veut le plus souvent dire                                                                                                                               |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Garde-fous socle                                           | un contrôle `check:…` a échoué ; le nom de l'étape le dit. « Format check » : lancer `bun run format`                                                            |
+| Publication durability (linux-ext4 / macos-apfs)           | une régression des publications transactionnelles du moteur                                                                                                      |
+| Library candidate isolation (linux-docker / macos-sandbox) | une régression du confinement des bibliothèques (lancé seulement si ses outils changent)                                                                         |
+| Library integration (create-app → Material → Tailwind)     | pistes non `verified`, versions testées différentes de la CI, ou entrées gouvernantes changées : requalifier (§ 5). Lancé seulement si ses entrées changent      |
+| External application shells                                | une régression de la chaîne de création ; ou la forme de l'image nginx : voir `CMZ_NGINX_IMAGE_INVALID` (§ 8). Une image republiée ne rougit plus ce job (§ 8.2) |
+| Secret scan (gitleaks)                                     | un secret dans l'historique : ne pas contourner, le retirer et le révoquer                                                                                       |
+| Oracle — lint + build + ngc + test                         | un projet modifié ne compile pas, a un avertissement de lint ou un test rouge                                                                                    |
+| E2E smoke (Playwright)                                     | la preuve navigateur du projet `workspace-react-proof` a échoué (lancée seulement si ce projet est concerné)                                                     |
+| Dead-code (knip)                                           | un fichier, un export ou une dépendance inutilisés                                                                                                               |
+| Dependency audit (bun audit)                               | une vulnérabilité haute ou critique ; une exception d'`AUDIT_IGNORES` expirée, périmée, rendue inutile par un correctif ou invérifiable (registre npm)           |
+| Third-party licenses (license-checker)                     | une dépendance de production sous licence non permissive                                                                                                         |
+| Duplicate files (MD5)                                      | deux fichiers identiques entre modules                                                                                                                           |
+| SAST (Semgrep, rapport seul)                               | un rapport à lire ; ce job ne bloque pas la fusion                                                                                                               |
 
 Un job **annulé** parce qu'il a dépassé sa durée maximale (machines chargées)
 n'est pas un échec du code : relance-le (page du run → « Re-run failed jobs »,
@@ -699,13 +700,14 @@ n'est plus un hasard : fais-le diagnostiquer.
 
 ## 7. Les PR automatiques
 
-Dependabot (`.github/dependabot.yml`) propose chaque lundi des mises à jour pour
-trois familles : les paquets (`build(deps): …`), les actions GitHub
-(`ci(deps): …`) et l'image nginx du relais (`build(docker): …`). Deux workflows
-ouvrent aussi des PR : `security-overrides-repair.yml` (réparation quotidienne
-des surcharges de sécurité,
+Dependabot (`.github/dependabot.yml`) propose des mises à jour pour trois
+familles : chaque lundi, les paquets (`build(deps): …`) et les actions GitHub
+(`ci(deps): …`) ; chaque jour, l'image nginx du relais (`build(docker): …`).
+Deux workflows ouvrent aussi des PR : `security-overrides-repair.yml`
+(réparation quotidienne des surcharges de sécurité,
 `fix(deps): auto-repair vulnerable security overrides`) et `nx-migrations.yml`
-(§ 4.6).
+(§ 4.6). Le workflow quotidien `nginx-digest-freshness.yml` n'ouvre pas de PR :
+en cas d'écart, il ouvre une issue (§ 8.2).
 
 | Type de PR                                                                                                                             | Que faire                                                                                                                                                                                                                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -714,7 +716,7 @@ des surcharges de sécurité,
 | Nx                                                                                                                                     | Dependabot ne la propose pas : c'est la PR brouillon de `nx-migrations.yml`, déjà requalifiée ; vérifier sa CI                                                                                                                                                                                                               |
 | Nouvelle version d'une action GitHub (`ci(deps)`)                                                                                      | La relire : une action s'exécute avec le jeton du dépôt. Si `check:dependabot-policy` ou `check:ci-wiring` affiche `action non relue dans la publication`, l'action sert à la publication de `nx-migrations.yml` : la liste relue est dans `tools/nx-migration-plan.mjs`, à faire mettre à jour par un agent après relecture |
 | Toute PR qui change `.nvmrc` ou `packageManager`                                                                                       | Suivre la procédure du § 4.3                                                                                                                                                                                                                                                                                                 |
-| Image nginx (`build(docker)`)                                                                                                          | Vérifier que l'étape « Empreinte de l'image nginx du relais » est verte                                                                                                                                                                                                                                                      |
+| Image nginx (`build(docker)`)                                                                                                          | Vérifier que « External application shells » est vert : forme de l'image et relais sur la nouvelle empreinte. La faire fusionner vite : tant qu'elle attend, la vérification quotidienne reste rouge et son issue ouverte. Si une autre PR propose la même empreinte, fermer l'une des deux (§ 8.2)                          |
 | Jobs annulés par dépassement de durée                                                                                                  | Relancer (§ 6.5)                                                                                                                                                                                                                                                                                                             |
 
 Après un push humain sur une branche Dependabot, Dependabot ne la met plus à
@@ -727,34 +729,35 @@ la cause, puis relance. Les messages ci-dessous sont copiés du code (`…`
 remplace une partie variable) ; ceux de Windows, WSL, Docker ou npm viennent de
 ces outils.
 
-| Message affiché                                                                                                                            | Cause                                                                                      | Que faire                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `[check:secrets] plateforme non supportée: win32/x64. Installez gitleaks v… et exportez GITLEAKS_BIN.`                                     | Git lancé depuis Windows natif : le hook `pre-push` n'a pas de gitleaks pour Windows       | Travailler dans Ubuntu (WSL2), dans `~/atelier-front` (§ 2)                                                                                                                                                     |
-| `plateforme sans backend de confinement approuvé : win32`                                                                                  | Qualification lancée sous Windows natif : seuls macOS et Linux ont un confinement          | Travailler dans Ubuntu (WSL2)                                                                                                                                                                                   |
-| `git commit-tree a échoué … Author identity unknown …`                                                                                     | `add-library` ignore l'identité globale ; le clone n'a pas d'identité locale               | `git config user.name "<prénom nom>"` et `git config user.email "<adresse>"` dans le clone, sans `--global` (le conseil `--global` de Git ne suffit pas ici), puis refaire la commande 3 depuis son `--dry-run` |
-| `Could not resolve host`                                                                                                                   | Le DNS de WSL ne répond pas                                                                | Relancer une fois ; sinon, dans PowerShell, `wsl --shutdown` puis rouvrir Ubuntu ; en dernier recours, § 8.1                                                                                                    |
-| `The command 'docker' could not be found in this WSL 2 distro.`                                                                            | L'intégration WSL de Docker Desktop n'est pas activée pour Ubuntu                          | Docker Desktop → Settings → Resources → WSL integration → Ubuntu → Apply & restart ; puis `docker info > /dev/null && echo DOCKER-OK`                                                                           |
-| `Docker absent (exécutable introuvable)`, `Docker présent mais accès/socket refusé` ou `Docker installé mais daemon indisponible (code …)` | Docker Desktop arrêté ou non relié à Ubuntu                                                | Démarrer Docker Desktop, vérifier l'intégration WSL, puis `docker info > /dev/null && echo DOCKER-OK` (sans `sudo`)                                                                                             |
-| `npm error … AppData\Roaming\npm` pendant `nvm install`                                                                                    | Le npm de Windows est vu à travers le `PATH` partagé avec Windows                          | Sans gravité. Vérifier `command -v node` : le chemin doit contenir `/.nvm/`                                                                                                                                     |
-| `CMZ_NGINX_DIGEST_STALE nginx:… : empreinte périmée`                                                                                       | L'image officielle a été republiée sous le même tag                                        | Mettre à jour l'empreinte épinglée : § 8.2                                                                                                                                                                      |
-| `CMZ_NGINX_DIGEST_UNVERIFIABLE nginx:… : vérification impossible`                                                                          | Registre injoignable ou Docker indisponible                                                | Vérifier Docker et le réseau, puis relancer `bun run check:nginx-digest`                                                                                                                                        |
-| ``✖ Environnement non conforme au champ `engines` :``                                                                                      | Node ou Bun hors de la plage `engines`                                                     | `nvm install` puis `nvm use` (sans numéro : ils lisent `.nvmrc`). Ignorer le numéro proposé à la dernière ligne du message                                                                                      |
-| `runtime-policy: packageManager non exact` ou `runtime-policy: .nvmrc non exact`                                                           | Version écrite avec `^` ou `~`, déclarée deux fois, ou ligne en trop                       | Écrire une seule version exacte, comme `1.2.3`                                                                                                                                                                  |
-| `Bun exécuté … différent du packageManager …`                                                                                              | Le Bun installé n'est pas celui de `packageManager`                                        | Réinstaller Bun avec sa version exacte (§ 2.7)                                                                                                                                                                  |
-| `… piste verified compatible`                                                                                                              | Aucune piste `verified` ne correspond aux versions actuelles                               | Requalifier (§ 5)                                                                                                                                                                                               |
-| `node … différent de la qualification`                                                                                                     | Le Node qui tourne n'est pas celui des preuves                                             | `nvm use` ; si `.nvmrc` a changé, requalifier (§ 4.3)                                                                                                                                                           |
-| `… a changé depuis la qualification` (par exemple `le contexte source a changé depuis la qualification`)                                   | Une entrée gouvernante a changé après la qualification                                     | Repasser la piste en `candidate` et requalifier (§ 4.3 étape 7, puis § 5)                                                                                                                                       |
-| `0 piste candidate compatible (attendu exactement 1)`                                                                                      | Promotion d'une piste encore `verified`, ou nouvelle version hors de la plage de la piste  | Repasser la piste en `candidate` (§ 4.3 étape 7) ; hors plage, créer une nouvelle piste (§ 4.6)                                                                                                                 |
-| « Library integration » rouge en CI, vert chez toi                                                                                         | Preuves faites avec un Node différent de `.nvmrc`, ou entrées gouvernantes changées depuis | Aligner la machine sur `.nvmrc` (`nvm use`) et requalifier                                                                                                                                                      |
-| `plan attendu library-plan:…, obtenu library-plan:…`                                                                                       | Plan périmé : un commit ou un changement depuis le `--dry-run`                             | Refaire le `--dry-run` de la commande 3, puis la publication avec le nouveau plan                                                                                                                               |
-| `promotion déjà active (pid …)`                                                                                                            | Une autre promotion tourne, ou un verrou laissé sous un autre nom de machine               | Vérifier qu'aucune promotion ne tourne. Ne pas supprimer `.git/cmz-library-promotion.lock` : signaler                                                                                                           |
-| `ancienne transaction présente (…)`                                                                                                        | Une publication `add-library` a été interrompue                                            | Ne pas supprimer le journal ni le verrou nommés : signaler, avec `git status --short` et `git log --oneline -6`                                                                                                 |
-| `dépôt entièrement propre requis`                                                                                                          | `git status --short` n'est pas vide                                                        | Committer ou faire examiner les changements ; jamais de nettoyage à l'aveugle                                                                                                                                   |
-| `… n'est pas installé à la racine`                                                                                                         | Dépendances absentes ou anciennes                                                          | `bun install --frozen-lockfile`                                                                                                                                                                                 |
-| `.git doit être un vrai répertoire canonique en V1`                                                                                        | Promotion lancée depuis un `git worktree` ou un chemin lié                                 | Lancer depuis le clone principal                                                                                                                                                                                |
-| `bun: not found` dans un hook                                                                                                              | Client Git graphique sans le `PATH` du terminal                                            | Créer `~/.config/husky/init.sh` (§ 6.3)                                                                                                                                                                         |
-| `action non relue dans la publication`                                                                                                     | Nouvelle version d'une action utilisée par la publication de `nx-migrations.yml`           | Voir § 7                                                                                                                                                                                                        |
-| Job CI annulé pour dépassement de durée                                                                                                    | Machines de la CI chargées                                                                 | Relancer le job (§ 6.5)                                                                                                                                                                                         |
+| Message affiché                                                                                                                            | Cause                                                                                                           | Que faire                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[check:secrets] plateforme non supportée: win32/x64. Installez gitleaks v… et exportez GITLEAKS_BIN.`                                     | Git lancé depuis Windows natif : le hook `pre-push` n'a pas de gitleaks pour Windows                            | Travailler dans Ubuntu (WSL2), dans `~/atelier-front` (§ 2)                                                                                                                                                     |
+| `plateforme sans backend de confinement approuvé : win32`                                                                                  | Qualification lancée sous Windows natif : seuls macOS et Linux ont un confinement                               | Travailler dans Ubuntu (WSL2)                                                                                                                                                                                   |
+| `git commit-tree a échoué … Author identity unknown …`                                                                                     | `add-library` ignore l'identité globale ; le clone n'a pas d'identité locale                                    | `git config user.name "<prénom nom>"` et `git config user.email "<adresse>"` dans le clone, sans `--global` (le conseil `--global` de Git ne suffit pas ici), puis refaire la commande 3 depuis son `--dry-run` |
+| `Could not resolve host`                                                                                                                   | Le DNS de WSL ne répond pas                                                                                     | Relancer une fois ; sinon, dans PowerShell, `wsl --shutdown` puis rouvrir Ubuntu ; en dernier recours, § 8.1                                                                                                    |
+| `The command 'docker' could not be found in this WSL 2 distro.`                                                                            | L'intégration WSL de Docker Desktop n'est pas activée pour Ubuntu                                               | Docker Desktop → Settings → Resources → WSL integration → Ubuntu → Apply & restart ; puis `docker info > /dev/null && echo DOCKER-OK`                                                                           |
+| `Docker absent (exécutable introuvable)`, `Docker présent mais accès/socket refusé` ou `Docker installé mais daemon indisponible (code …)` | Docker Desktop arrêté ou non relié à Ubuntu                                                                     | Démarrer Docker Desktop, vérifier l'intégration WSL, puis `docker info > /dev/null && echo DOCKER-OK` (sans `sudo`)                                                                                             |
+| `npm error … AppData\Roaming\npm` pendant `nvm install`                                                                                    | Le npm de Windows est vu à travers le `PATH` partagé avec Windows                                               | Sans gravité. Vérifier `command -v node` : le chemin doit contenir `/.nvm/`                                                                                                                                     |
+| `CMZ_NGINX_IMAGE_INVALID …`                                                                                                                | La ligne `FROM` du Dockerfile du harnais n'a pas la forme attendue, ou nginx est épinglé ailleurs dans le dépôt | Corriger la ligne `FROM`, ou retirer l'autre épinglage : § 8.2                                                                                                                                                  |
+| `CMZ_NGINX_DIGEST_STALE nginx:… : empreinte périmée`                                                                                       | L'image officielle a été republiée sous le même tag (vérification quotidienne, ou lancée à la main)             | Faire fusionner la PR Dependabot ; sans PR Dependabot, § 8.2                                                                                                                                                    |
+| `CMZ_NGINX_DIGEST_UNVERIFIABLE nginx:… : vérification impossible`                                                                          | Registre injoignable ou Docker indisponible                                                                     | Vérifier Docker et le réseau, puis relancer `bun run check:nginx-digest` ou le workflow de fraîcheur (§ 8.2)                                                                                                    |
+| ``✖ Environnement non conforme au champ `engines` :``                                                                                      | Node ou Bun hors de la plage `engines`                                                                          | `nvm install` puis `nvm use` (sans numéro : ils lisent `.nvmrc`). Ignorer le numéro proposé à la dernière ligne du message                                                                                      |
+| `runtime-policy: packageManager non exact` ou `runtime-policy: .nvmrc non exact`                                                           | Version écrite avec `^` ou `~`, déclarée deux fois, ou ligne en trop                                            | Écrire une seule version exacte, comme `1.2.3`                                                                                                                                                                  |
+| `Bun exécuté … différent du packageManager …`                                                                                              | Le Bun installé n'est pas celui de `packageManager`                                                             | Réinstaller Bun avec sa version exacte (§ 2.7)                                                                                                                                                                  |
+| `… piste verified compatible`                                                                                                              | Aucune piste `verified` ne correspond aux versions actuelles                                                    | Requalifier (§ 5)                                                                                                                                                                                               |
+| `node … différent de la qualification`                                                                                                     | Le Node qui tourne n'est pas celui des preuves                                                                  | `nvm use` ; si `.nvmrc` a changé, requalifier (§ 4.3)                                                                                                                                                           |
+| `… a changé depuis la qualification` (par exemple `le contexte source a changé depuis la qualification`)                                   | Une entrée gouvernante a changé après la qualification                                                          | Repasser la piste en `candidate` et requalifier (§ 4.3 étape 7, puis § 5)                                                                                                                                       |
+| `0 piste candidate compatible (attendu exactement 1)`                                                                                      | Promotion d'une piste encore `verified`, ou nouvelle version hors de la plage de la piste                       | Repasser la piste en `candidate` (§ 4.3 étape 7) ; hors plage, créer une nouvelle piste (§ 4.6)                                                                                                                 |
+| « Library integration » rouge en CI, vert chez toi                                                                                         | Preuves faites avec un Node différent de `.nvmrc`, ou entrées gouvernantes changées depuis                      | Aligner la machine sur `.nvmrc` (`nvm use`) et requalifier                                                                                                                                                      |
+| `plan attendu library-plan:…, obtenu library-plan:…`                                                                                       | Plan périmé : un commit ou un changement depuis le `--dry-run`                                                  | Refaire le `--dry-run` de la commande 3, puis la publication avec le nouveau plan                                                                                                                               |
+| `promotion déjà active (pid …)`                                                                                                            | Une autre promotion tourne, ou un verrou laissé sous un autre nom de machine                                    | Vérifier qu'aucune promotion ne tourne. Ne pas supprimer `.git/cmz-library-promotion.lock` : signaler                                                                                                           |
+| `ancienne transaction présente (…)`                                                                                                        | Une publication `add-library` a été interrompue                                                                 | Ne pas supprimer le journal ni le verrou nommés : signaler, avec `git status --short` et `git log --oneline -6`                                                                                                 |
+| `dépôt entièrement propre requis`                                                                                                          | `git status --short` n'est pas vide                                                                             | Committer ou faire examiner les changements ; jamais de nettoyage à l'aveugle                                                                                                                                   |
+| `… n'est pas installé à la racine`                                                                                                         | Dépendances absentes ou anciennes                                                                               | `bun install --frozen-lockfile`                                                                                                                                                                                 |
+| `.git doit être un vrai répertoire canonique en V1`                                                                                        | Promotion lancée depuis un `git worktree` ou un chemin lié                                                      | Lancer depuis le clone principal                                                                                                                                                                                |
+| `bun: not found` dans un hook                                                                                                              | Client Git graphique sans le `PATH` du terminal                                                                 | Créer `~/.config/husky/init.sh` (§ 6.3)                                                                                                                                                                         |
+| `action non relue dans la publication`                                                                                                     | Nouvelle version d'une action utilisée par la publication de `nx-migrations.yml`                                | Voir § 7                                                                                                                                                                                                        |
+| Job CI annulé pour dépassement de durée                                                                                                    | Machines de la CI chargées                                                                                      | Relancer le job (§ 6.5)                                                                                                                                                                                         |
 
 ### 8.1 Dernier recours pour le DNS de WSL
 
@@ -779,7 +782,53 @@ ces outils.
 
 ### 8.2 Mettre à jour l'empreinte de l'image nginx
 
-Dans une branche dédiée :
+Le relais tire l'image nginx par son empreinte, écrite à un seul endroit :
+`tools/generator-platform/nginx-harness/Dockerfile`. Docker Hub republie parfois
+le même tag sous une nouvelle empreinte. Trois mécanismes se partagent le
+travail :
+
+| Mécanisme                                                        | Quand                                                                                                                                 | Rôle                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check:nginx-image` (a)                                          | Chaque PR et chaque push sur `main`, job « External application shells »                                                              | Forme seulement, sans réseau : une seule ligne `FROM nginx:<tag>@sha256:<64 caractères>`, aucun autre épinglage de nginx dans le dépôt. Bloquant                                                                                             |
+| Dependabot, PR `build(docker): bump nginx …`                     | Chaque jour, à l'heure fixe écrite dans `.github/dependabot.yml`                                                                      | Ouvre la PR qui met à jour l'empreinte, même quand le tag ne change pas. C'est la source normale des mises à jour                                                                                                                            |
+| `nginx-digest-freshness.yml`, qui lance `check:nginx-digest` (b) | Chaque jour, au moins deux heures après Dependabot ; ou à la main (Actions → « Fraîcheur de l'image nginx du relais » → Run workflow) | Compare l'empreinte épinglée à celle du registre. Ne bloque aucune PR. En échec, le run reste rouge, et une seule issue « nginx du relais : empreinte épinglée à rafraîchir », assignée au propriétaire, est ouverte, actualisée ou rouverte |
+
+Le cas normal : la PR Dependabot arrive dans la journée ; la relire et la faire
+fusionner (§ 7). L'issue ne s'ouvre que si l'empreinte est encore périmée au
+passage de (b). Une PR Dependabot d'empreinte n'est pas remplacée tant qu'elle
+reste ouverte : si le tag a encore été republié entre-temps, commenter
+`@dependabot recreate` sur la PR.
+
+**(b) rouge sans PR Dependabot.** Dans trois cas connus, Dependabot n'ouvre rien
+alors que (b) est rouge :
+
+- l'index multi-architecture a changé, mais le manifeste de chaque plate-forme
+  est identique : Dependabot juge la mise à jour inutile, alors que (b) compare
+  l'empreinte de l'index ;
+- GitHub a activé, de son côté, la suppression des PR d'empreinte seule (une
+  expérience de Dependabot) ;
+- le registre n'a pas rendu d'empreinte à Dependabot : il suppose alors l'image
+  à jour, sans le signaler.
+
+Un échec de Dependabot lui-même n'apparaît que dans « Insights → Dependency
+graph → Dependabot ». Dans ces cas, mettre l'empreinte à jour à la main
+(procédure ci-dessous). Si (b) affiche `CMZ_NGINX_DIGEST_UNVERIFIABLE`, c'est le
+registre ou Docker : relancer le workflow avant toute autre action. GitHub
+suspend aussi les workflows planifiés d'un dépôt public après 60 jours sans
+activité : s'il est suspendu, le réactiver dans Actions.
+
+**Risque accepté.** (a) ne vérifie que la forme. Une empreinte bien formée mais
+publiée pour un autre tag nginx, plus ancien par exemple, passe (a) et le
+relais, qui la tire sans erreur. Seule (b) la voit, à son passage suivant : au
+plus tard le lendemain.
+
+**Empreinte retirée du registre.** Une empreinte périmée reste tirée par le
+relais : la CI des PR ne dépend plus de la fraîcheur. Si Docker Hub cessait de
+servir l'empreinte épinglée, `check:nginx-relay` (job « External application
+shells ») échouerait au tirage de l'image sur toutes les PR. Ce cas n'a pas été
+observé ; la conduite est la mise à jour à la main ci-dessous.
+
+**Mise à jour à la main**, dans une branche dédiée :
 
 1. Lis le tag épinglé :
    `grep '^FROM nginx:' tools/generator-platform/nginx-harness/Dockerfile`.
@@ -793,12 +842,17 @@ Dans une branche dédiée :
 
 3. Dans `tools/generator-platform/nginx-harness/Dockerfile`, remplace
    l'empreinte de la ligne `FROM nginx:<tag>@sha256:…` par la nouvelle.
-4. Vérifie :
+4. Vérifie la forme, puis la fraîcheur :
 
     ```sh
+    bun run check:nginx-image
     bun run check:nginx-digest
     ```
 
-    Doit afficher `CMZ_NGINX_DIGEST_OK nginx:<tag>`.
+    Doivent afficher `CMZ_NGINX_IMAGE_OK nginx:<tag>@sha256:…`, puis
+    `CMZ_NGINX_DIGEST_OK nginx:<tag>`.
 
-5. Commit, puis PR (§ 6.4).
+5. Commit, puis PR (§ 6.4). Si une PR Dependabot propose la même empreinte,
+   fermer l'une des deux.
+6. Après la fusion, relance le workflow de fraîcheur à la main ; s'il est vert,
+   ferme l'issue de suivi.

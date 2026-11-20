@@ -20,6 +20,7 @@ import {
     checkWorkflows,
     classifySecretUse,
     eventViolations,
+    NGINX_FRESHNESS_WORKFLOW,
     permissionViolations,
     secretViolations,
     tokenizeExpression,
@@ -669,4 +670,116 @@ fs.writeFileSync(path,JSON.stringify(state));\n`
     writeFileSync(statePath, JSON.stringify(state));
     assert.notEqual(run().status, 0);
     assert.equal(JSON.parse(readFileSync(statePath)).created, 1);
+});
+
+// NGINX-FRAICHEUR (C5) : seul le suivi écrit, seulement l'issue, depuis main.
+const nginxWorkflow = () =>
+    parseYaml(
+        readFileSync(
+            new URL(
+                `../.github/workflows/${NGINX_FRESHNESS_WORKFLOW}`,
+                import.meta.url
+            ),
+            'utf8'
+        )
+    );
+
+test('nginx : suivi par issue limité à issues, gardé par main, sans code du dépôt', () => {
+    const file = NGINX_FRESHNESS_WORKFLOW;
+    // Le garde du suivi est branché dans checkWorkflows, comme dans la CLI.
+    const check = (w, writes = ALLOWED_JOB_WRITES) =>
+        checkWorkflows([{ file, content: stringifyYaml(w) }], {
+            writes: { [file]: writes[file] },
+            handovers: {},
+        });
+    const workflow = nginxWorkflow();
+    assert.deepEqual(check(workflow), []);
+    assert.deepEqual(workflow.jobs.freshness.permissions, { contents: 'read' });
+    assert.ok(check(workflow, {}).length > 0, 'écriture non listée refusée');
+    const followupRun = (w) => w.jobs.followup.steps[0];
+    for (const mutate of [
+        (w) => (w.jobs.followup.permissions.contents = 'write'),
+        (w) => (w.jobs.followup.permissions['pull-requests'] = 'write'),
+        (w) => (w.jobs.followup.if = 'failure()'),
+        (w) =>
+            (w.jobs.followup.if =
+                "github.ref == 'refs/heads/main' || failure()"),
+        (w) =>
+            (w.jobs.followup.if =
+                "github.ref == 'refs/heads/main' && always()"),
+        (w) => (w.jobs.freshness.permissions = { issues: 'write' }),
+        (w) => (w.permissions = { issues: 'write' }),
+        (w) => (w.on.pull_request = null),
+        (w) => (w.jobs.followup.needs = ['autre']),
+        (w) => w.jobs.followup.steps.unshift({ uses: 'actions/checkout@v7' }),
+        (w) => (followupRun(w).run += '\nnode tools/x.mjs'),
+        (w) =>
+            (followupRun(w).run = followupRun(w).run.replace(
+                'gh issue edit',
+                'gh issue comment'
+            )),
+        (w) => (followupRun(w).env.GH_TOKEN = '${{ secrets.GITHUB_TOKEN }}'),
+    ]) {
+        const bad = structuredClone(workflow);
+        mutate(bad);
+        assert.ok(check(bad).length > 0, mutate.toString());
+    }
+});
+
+test('nginx : le vrai shell du suivi crée une issue, l’actualise, la rouvre, refuse un doublon', (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'nginx-issue-test-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const gh = join(root, 'gh');
+    writeFileSync(
+        gh,
+        `#!${process.execPath}\nconst fs = require('node:fs');
+const path = process.env.GH_TEST_STATE;
+const state = JSON.parse(fs.readFileSync(path));
+const [, , , command, number] = process.argv;
+const option = (name) => process.argv[process.argv.indexOf(name) + 1];
+if (command === 'list') console.log(JSON.stringify(state.issues));
+else if (command === 'create') { state.created.push({ title: option('--title'), assignee: option('--assignee'), body: fs.readFileSync(option('--body-file'), 'utf8') }); state.issues.push({ number: 7, title: option('--title'), state: 'OPEN' }); }
+else if (command === 'edit' && number === '7') state.edited++;
+else if (command === 'reopen' && number === '7') { state.reopened++; state.issues[0].state = 'OPEN'; }
+else process.exit(3);
+fs.writeFileSync(path, JSON.stringify(state));\n`
+    );
+    chmodSync(gh, 0o755);
+    const statePath = join(root, 'issues.json');
+    const save = (state) => writeFileSync(statePath, JSON.stringify(state));
+    const load = () => JSON.parse(readFileSync(statePath, 'utf8'));
+    save({ issues: [], created: [], edited: 0, reopened: 0 });
+    const script = nginxWorkflow().jobs.followup.steps[0].run;
+    const run = () =>
+        spawnSync('/bin/bash', ['-e', '-o', 'pipefail', '-c', script], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                GITHUB_REPOSITORY: 'test/repo',
+                GITHUB_RUN_ID: '123',
+                GITHUB_RUN_ATTEMPT: '1',
+                PATH: `${root}:${process.env.PATH}`,
+                RUNNER_TEMP: root,
+                GH_TEST_STATE: statePath,
+            },
+        });
+    let result = run();
+    assert.equal(result.status, 0, result.stderr);
+    result = run();
+    assert.equal(result.status, 0, result.stderr);
+    let state = load();
+    assert.equal(state.created.length, 1);
+    assert.equal(state.created[0].assignee, 'ismaelkouda');
+    assert.match(state.created[0].body, /actions\/runs\/123/);
+    assert.match(state.created[0].body, /CMZ_NGINX_DIGEST_STALE/);
+    assert.equal(state.edited, 1);
+    state.issues[0].state = 'CLOSED';
+    save(state);
+    assert.equal(run().status, 0);
+    state = load();
+    assert.deepEqual([state.edited, state.reopened], [2, 1]);
+    state.issues.push({ ...state.issues[0], number: 8 });
+    save(state);
+    assert.notEqual(run().status, 0);
+    assert.equal(load().created.length, 1);
 });
