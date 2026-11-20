@@ -91,6 +91,7 @@ export function runtimeWorkflowErrors(entries) {
         !same(ci?.on, {
             push: { branches: ['main'] },
             pull_request: { branches: ['main'] },
+            merge_group: { types: ['checks_requested'], branches: ['main'] },
             workflow_dispatch: null,
         })
     )

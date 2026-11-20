@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+
+import { parse as parseYaml } from 'yaml';
+
+import { evaluateTemplate } from './check-branch-protection-contexts.mjs';
 
 import {
     changedPathsSince,
@@ -252,5 +262,214 @@ describe('base du diff de la CI', () => {
                 Error,
                 base
             );
+    });
+});
+
+// File de fusion : les étapes qui calculent la base sont exécutées telles
+// quelles (`bash -e`, comme le shell par défaut de GitHub), avec
+// l'environnement que GitHub leur donne : leurs expressions `env` sont
+// évaluées sur le contexte de l'événement, et GITHUB_EVENT_NAME est posé.
+// Elles sont dérivées de `ci.yml` : toute étape qui publie une base
+// (`NX_BASE=` ou `library-ci-impact.mjs --base`) doit suivre la forme commune.
+const BASE_STEPS = (() => {
+    const ci = parseYaml(
+        readFileSync(
+            new URL('../.github/workflows/ci.yml', import.meta.url),
+            'utf8'
+        )
+    );
+    const all = Object.entries(ci.jobs).flatMap(([job, { steps = [] }]) =>
+        steps.map((step) => ({ job, step }))
+    );
+    const producers = all.filter(({ step }) =>
+        /NX_BASE=|library-ci-impact\.mjs --base/.test(step.run ?? '')
+    );
+    const steps = all.filter(({ step }) =>
+        step.run?.split('\n').some((l) => l.trim() === PARENT_FORM)
+    );
+    assert.ok(producers.length > 0, 'aucune étape ne publie de base');
+    assert.deepEqual(steps, producers, 'producteur de base hors forme commune');
+    return steps;
+})();
+
+// Ce que l'étape publie : `base=` (sélecteur bibliothèque) ou `NX_BASE=`.
+function runBaseStep(t, { step }, cwd, github, shell = ['-e']) {
+    const out = mkdtempSync(join(tmpdir(), 'ci-base-out-'));
+    t.after(() => rmSync(out, { recursive: true, force: true }));
+    const files = {
+        GITHUB_ENV: join(out, 'env'),
+        GITHUB_OUTPUT: join(out, 'output'),
+    };
+    const env = Object.fromEntries(
+        Object.entries(step.env ?? {}).map(([name, value]) => [
+            name,
+            evaluateTemplate(value, { github }),
+        ])
+    );
+    execFileSync('/bin/bash', [...shell, '-c', step.run], {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+            PATH: process.env.PATH,
+            HOME: cwd,
+            GITHUB_EVENT_NAME: github.event_name,
+            ...files,
+            ...env,
+        },
+    });
+    const published = Object.values(files)
+        .flatMap((file) => {
+            try {
+                return readFileSync(file, 'utf8').trim().split('\n');
+            } catch {
+                return [];
+            }
+        })
+        .filter((line) => /^(?:base|NX_BASE)=/.test(line));
+    assert.equal(published.length, 1, published.join(' | '));
+    return published[0].replace(/^(?:base|NX_BASE)=/, '');
+}
+
+// Deux PR ; la file empile leurs entrées : celle de la seconde a pour parent
+// celle de la première (docs « Managing a merge queue »). La première entre
+// par squash, la seconde par rebase (deux commits) : le parent de l'entrée
+// (`base_sha`) n'est donc pas `HEAD~1`. Un faux sélecteur d'impact recopie la
+// base reçue.
+function queuedRepository(t) {
+    const repo = repository(t);
+    const { root, git, commit } = repo;
+    commit('a.txt', 'racine');
+    git('checkout', '-q', '-b', 'pr1', 'main');
+    commit('pr1.txt', 'pr1');
+    git('checkout', '-q', '-b', 'pr2', 'main');
+    commit('pr2.txt', 'pr2');
+    commit('pr2-bis.txt', 'pr2-bis');
+    git('checkout', '-q', '-b', 'file', 'main');
+    git('merge', '-q', '--squash', 'pr1');
+    git('commit', '-q', '-m', 'entrée pr1');
+    const first = git('rev-parse', 'HEAD');
+    git('cherry-pick', 'main..pr2');
+    mkdirSync(join(root, 'tools'));
+    writeFileSync(
+        join(root, 'tools/library-ci-impact.mjs'),
+        "const a = process.argv.slice(2);\nconsole.log('base=' + a[a.indexOf('--base') + 1]);\n"
+    );
+    const head = git('rev-parse', 'HEAD');
+    assert.notEqual(git('rev-parse', 'HEAD~1'), first);
+    return { ...repo, first, head };
+}
+
+const queueRun = (head, base) => {
+    const ref = `refs/heads/gh-readonly-queue/main/pr-2-${head}`;
+    return {
+        event_name: 'merge_group',
+        ref,
+        sha: head,
+        base_ref: '',
+        event: {
+            merge_group: {
+                head_sha: head,
+                head_ref: ref,
+                base_sha: base,
+                base_ref: 'refs/heads/main',
+            },
+        },
+    };
+};
+
+describe('base du diff dans la file de fusion', () => {
+    it('merge_group : chaque étape rend le parent de l’entrée, et tout le diff de la PR', (t) => {
+        const { root, first, head } = queuedRepository(t);
+        for (const entry of BASE_STEPS) {
+            const base = runBaseStep(t, entry, root, queueRun(head, first));
+            assert.equal(base, first, entry.job);
+            assert.deepEqual(changedPathsSince(base, { cwd: root }), [
+                'pr2-bis.txt',
+                'pr2.txt',
+            ]);
+        }
+    });
+
+    it('merge_group : HEAD autre que le groupe, base absente, non ancêtre ou vide : échec sur la commande visée', (t) => {
+        const { root, git, first, head } = queuedRepository(t);
+        const outsider = git('rev-parse', 'pr1');
+        // Critère de mort : le code de sortie ET la dernière commande tracée
+        // par `bash -x`, qui doit être la vérification visée.
+        const cases = [
+            [
+                'HEAD autre que le groupe',
+                queueRun(first, first),
+                1,
+                /^\+ test [0-9a-f]{40} = [0-9a-f]{40}$/,
+            ],
+            [
+                'groupe vide',
+                queueRun('', first),
+                1,
+                /^\+ test [0-9a-f]{40} = ''$/,
+            ],
+            [
+                'base absente',
+                queueRun(head, 'f'.repeat(40)),
+                128,
+                /^\+\+ git rev-parse --verify 'f{40}\^\{commit\}'$/,
+            ],
+            [
+                'base vide',
+                queueRun(head, ''),
+                128,
+                /^\+\+ git rev-parse --verify '\^\{commit\}'$/,
+            ],
+            [
+                'base non ancêtre',
+                queueRun(head, outsider),
+                1,
+                /^\+ git merge-base --is-ancestor [0-9a-f]{40} HEAD$/,
+            ],
+        ];
+        for (const [name, run, status, lastCommand] of cases)
+            for (const entry of BASE_STEPS) {
+                const label = `${name} › ${entry.job}`;
+                let failure;
+                try {
+                    runBaseStep(t, entry, root, run, ['-e', '-x']);
+                } catch (error) {
+                    failure = error;
+                }
+                assert.ok(failure, `accepté : ${label}`);
+                assert.equal(failure.status, status, label);
+                // Les traces d'affectation (`+ base=…`) varient selon la
+                // version de bash : seule la dernière COMMANDE tracée compte.
+                const traced = String(failure.stderr)
+                    .split('\n')
+                    .filter(
+                        (line) =>
+                            line.startsWith('+') &&
+                            !/^\++ [A-Za-z_][A-Za-z0-9_]*=/.test(line)
+                    );
+                assert.match(traced.at(-1), lastCommand, label);
+            }
+    });
+
+    it('pull_request et push : comportement inchangé', (t) => {
+        const { root, git } = queuedRepository(t);
+        const pullRequest = {
+            event_name: 'pull_request',
+            ref: 'refs/pull/2/merge',
+            base_ref: 'main',
+            event: { pull_request: { number: 2 } },
+        };
+        const push = { event_name: 'push', ref: 'refs/heads/main', event: {} };
+        for (const entry of BASE_STEPS) {
+            assert.equal(
+                runBaseStep(t, entry, root, pullRequest),
+                'origin/main'
+            );
+            assert.equal(
+                runBaseStep(t, entry, root, push),
+                git('rev-parse', 'HEAD~1')
+            );
+        }
     });
 });

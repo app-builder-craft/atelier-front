@@ -89,6 +89,24 @@ test('refuse un événement non relu et un `on` absent', () => {
     );
 });
 
+// File de fusion : `github.ref` y est la branche de l'entrée, jamais `main`
+// (docs « Events that trigger workflows », merge_group) ; la garde `main` des
+// écritures et des secrets ne s'y ouvre donc pas.
+test('merge_group est un événement relu', () => {
+    assert.deepEqual(
+        eventViolations('ci.yml', {
+            on: {
+                pull_request: { branches: ['main'] },
+                merge_group: {
+                    types: ['checks_requested'],
+                    branches: ['main'],
+                },
+            },
+        }),
+        []
+    );
+});
+
 test('workflow_run reste refusé dans tout workflow', () => {
     const on = {
         schedule: [],
