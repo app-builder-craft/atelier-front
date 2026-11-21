@@ -81,7 +81,7 @@
     "@angular/platform-browser": "catalog:",
     "@angular/router": "catalog:",
     "exceljs": "^4.4.0",
-    "react-router": "8.5.0",
+    "react-router": "8.5.1",
     "rxjs": "catalog:",
     "tslib": "catalog:"
   },
