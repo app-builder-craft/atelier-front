@@ -76,6 +76,10 @@ export const REVIEWED_EVENTS = [
     'workflow_dispatch',
 ];
 
+export const NGINX_FRESHNESS_WORKFLOW = 'nginx-digest-freshness.yml';
+export const NGINX_FOLLOWUP_CONDITION =
+    "github.ref == 'refs/heads/main' && failure()";
+
 // Écritures de job acceptées. Toute autre écriture échoue : l'ajouter ici est
 // une décision relue, pas un effet de bord.
 export const ALLOWED_JOB_WRITES = {
@@ -89,6 +93,11 @@ export const ALLOWED_JOB_WRITES = {
     'security-overrides-repair.yml': {
         events: ['schedule', 'workflow_dispatch'],
         jobs: { publish: ['actions', 'contents', 'pull-requests'] },
+    },
+    // NGINX-FRAICHEUR (C5) : issue unique de suivi si la fraîcheur échoue.
+    [NGINX_FRESHNESS_WORKFLOW]: {
+        events: ['schedule', 'workflow_dispatch'],
+        jobs: { followup: ['issues'] },
     },
 };
 
@@ -444,6 +453,9 @@ export function checkWorkflows(
                 ...permissionViolations(file, workflow, writes),
                 ...secretViolations(file, workflow, handovers),
                 ...workflowAuditViolations(file, workflow),
+                ...(file === NGINX_FRESHNESS_WORKFLOW
+                    ? nginxFollowupErrors(workflow)
+                    : []),
             ];
         }),
         ...cited
@@ -484,12 +496,13 @@ async function main() {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();
 
-// Le suivi Nx est le seul nouveau job privilégié : aucune exécution candidate.
-export function nxFollowupErrors(followup, condition) {
+// Suivi par issue unique (nx-migrations.yml, nginx-digest-freshness.yml) :
+// job privilégié borné à main et à `issues: write`, sans code du dépôt.
+export function issueFollowupErrors(followup, condition, needs) {
     const errors = [];
     if (
         followup?.if !== condition ||
-        followup?.needs?.join() !== 'plan,assess' ||
+        followup?.needs?.join() !== needs ||
         JSON.stringify(followup?.permissions) !==
             JSON.stringify({ issues: 'write' }) ||
         followup?.steps?.length !== 1 ||
@@ -515,6 +528,19 @@ export function nxFollowupErrors(followup, condition) {
             'suivi : seul le jeton GitHub natif de l’étape est autorisé'
         );
     return errors;
+}
+
+export function nxFollowupErrors(followup, condition) {
+    return issueFollowupErrors(followup, condition, 'plan,assess');
+}
+
+// Le run de fraîcheur reste rouge ; seul ce job écrit, et seulement l'issue.
+export function nginxFollowupErrors(workflow) {
+    return issueFollowupErrors(
+        workflow?.jobs?.followup,
+        NGINX_FOLLOWUP_CONDITION,
+        'freshness'
+    ).map((error) => `${NGINX_FRESHNESS_WORKFLOW} : ${error}`);
 }
 
 export const QUALIFICATION_CONDITION =
