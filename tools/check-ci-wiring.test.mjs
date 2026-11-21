@@ -1,4 +1,6 @@
 import './runtime-version-policy.test.mjs';
+// Contre-tests NGINX-FRAICHEUR (C1), dans le même contexte CI.
+import './check-ci-wiring-nginx.test.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {

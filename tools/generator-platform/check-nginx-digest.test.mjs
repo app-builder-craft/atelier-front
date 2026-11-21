@@ -1,27 +1,22 @@
-// X4-config : filet d'empreinte de l'image nginx, trois issues fermées, sans
-// réseau (exécutable docker témoin).
+// X4-config, NGINX-FRAICHEUR (b) : fraîcheur de l'empreinte de l'image nginx,
+// trois issues fermées, sans réseau (exécutable docker témoin). La forme du
+// Dockerfile relève de (a) : check-nginx-image.test.mjs.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { checkNginxDigest, pinnedNginxImage } from './check-nginx-digest.mjs';
+import { checkNginxDigest } from './check-nginx-digest.mjs';
+import {
+    pinnedNginxImage,
+    readNginxHarnessDockerfile,
+} from './check-nginx-image.mjs';
 
-const dockerfile = readFileSync(
-    new URL('./nginx-harness/Dockerfile', import.meta.url),
-    'utf8'
-);
+const dockerfile = readNginxHarnessDockerfile();
 const pinned = pinnedNginxImage(dockerfile);
 const inspect = (digest) => () => ({
     status: 0,
     signal: null,
     stdout: `Name:      docker.io/library/nginx:${pinned.tag}\nMediaType: application/vnd.oci.image.index.v1+json\nDigest:    ${digest}\n\nManifests:\n  Name: x\n`,
     stderr: '',
-});
-
-test('X4-config : empreinte du harnais épinglée par tag et empreinte, seule ligne FROM', () => {
-    assert.match(pinned.tag, /^\d+\.\d+-alpine$/);
-    assert.match(pinned.digest, /^sha256:[a-f0-9]{64}$/);
-    assert.equal(dockerfile.match(/^FROM /gm).length, 1);
 });
 
 test('X4-config : concordance, empreinte périmée et vérification impossible', () => {
