@@ -12,6 +12,7 @@ import {
     relativeLinkTargets,
     trackedMarkdown,
 } from './check-documentation-authority.mjs';
+import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
 function rejects(documents, diagnostic) {
     assert.ok(
@@ -23,7 +24,7 @@ function rejects(documents, diagnostic) {
 }
 
 function tree(t, files) {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-doc-links-'));
+    const root = mkdtempSync(join(tmpdir(), signatureName('doc-links-')));
     t.after(() => rmSync(root, { recursive: true, force: true }));
     for (const [path, content] of Object.entries(files)) {
         mkdirSync(dirname(join(root, path)), { recursive: true });

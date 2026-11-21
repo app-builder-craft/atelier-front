@@ -158,7 +158,7 @@ La LLM lit le bon de travail publié, y compris le nœud de rôle `screen`, le
 profil de l'application et le contrat d'archétype haché (`shape` + `forbid`),
 puis écrit uniquement les fichiers autorisés. Elle est libre de l’interface
 dans ce cadre. Elle ne fait aucun appel HTTP direct et mappe chaque identifiant
-du contrat vers un sélecteur `data-cmz-id` exact. Ensuite :
+du contrat vers un sélecteur `data-atelier-id` exact. Ensuite :
 
 ```bash
 bun run verify:page-realization -- --target-root <racine> --app <app> --page <page_id> --dry-run
@@ -183,7 +183,7 @@ Avant le premier entretien, lis au minimum :
 - [`docs/etape-b/external-application-creation.md`](./docs/etape-b/external-application-creation.md) ;
 - les schémas sous `tools/generator-platform/schemas/` ;
 - la racine du produit, si elle existe déjà : `descriptions/`, `apps/` et son
-  manifeste `.cmz/application-workspace.json`.
+  manifeste `.atelier/application-workspace.json`.
 
 Utilise la recherche du dépôt et du produit pour découvrir les contrats, routes,
 permissions et pages déjà disponibles. Ne lis pas tous les fichiers sans

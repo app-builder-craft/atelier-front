@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { basename, dirname, relative, resolve, sep } from 'node:path';
 
-import { EXTERNAL_WORKSPACE_CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
 import { repositoryRoot } from '../validate-ir.mjs';
 import { lastWriters, RENAME_TOOL } from './application-ownership.mjs';
 import {
@@ -483,7 +483,7 @@ async function verifyRenamed(plan, options, run) {
         [
             resolve(
                 plan.productRoot,
-                `${EXTERNAL_WORKSPACE_CMZ.support}/check-workspace.mjs`
+                `${EXTERNAL_WORKSPACE_SIGNATURE.support}/check-workspace.mjs`
             ),
         ],
         plan.productRoot

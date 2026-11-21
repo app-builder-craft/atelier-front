@@ -9,10 +9,9 @@
 // (`tools/check-identity-sources.mjs`) : aucune ne doit être écrite en dur
 // hors de ce module et de `product-identity.mjs`.
 
-// Signature rangée dans les produits et les bancs (lot MARQUE, commit 4).
+// Nom de l'atelier : signature rangée dans les produits et les bancs, et noms
+// internes de son dépôt (lot MARQUE, commits 4 et 6).
 const NAME = 'atelier';
-// Noms internes du dépôt de l'atelier.
-const INTERNAL_NAME = 'cmz';
 
 const dir = `.${NAME}`;
 
@@ -64,15 +63,16 @@ export function retiredAppTombstone(appName) {
     return `${SIGNATURE_FILES.retiredApps}/${appName}.json`;
 }
 
+// Noms internes du dépôt de l'atelier, dérivés du même nom.
 export const INTERNAL = Object.freeze({
-    name: INTERNAL_NAME,
-    scope: `@${INTERNAL_NAME}`,
-    env: `${INTERNAL_NAME.toUpperCase()}_`,
+    name: NAME,
+    scope: `@${NAME}`,
+    env: `${NAME.toUpperCase()}_`,
 });
 
 /** Nom interne de l'atelier (skill, agent) : `<nom>-<suffixe>`. */
 export function internalName(suffix) {
-    return `${INTERNAL_NAME}-${suffix}`;
+    return `${NAME}-${suffix}`;
 }
 
 /** Variable d'environnement ou code d'outil : `<NOM>_<suffixe>`. */

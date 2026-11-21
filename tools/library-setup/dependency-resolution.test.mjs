@@ -15,6 +15,7 @@ import {
     validateLockEvolution,
 } from './dependency-resolution.mjs';
 import { materializeGitTree, readGitTree } from './git-tree.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const track = {
     catalog: 'default',
@@ -320,7 +321,7 @@ test('lockfile : résout une dépendance dans le contexte Bun de son ancêtre ex
 });
 
 test('overlay clos remplace uniquement package.json et bun.lock puis revérifie le tree', async (t) => {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-overlay-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('overlay-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     const repo = join(root, 'repo');
     const workspace = join(root, 'workspace');

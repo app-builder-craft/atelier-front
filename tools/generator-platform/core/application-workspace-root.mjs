@@ -4,7 +4,7 @@
 import { lstat, readdir } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 
-import { EXTERNAL_WORKSPACE_CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
 import { verifyApplicationOwnership } from './application-ownership.mjs';
 import {
     escapeRegExp,
@@ -24,7 +24,7 @@ import {
 import { sha256 } from './generation-manifest.mjs';
 import { prefixRefusals } from './product-identity.mjs';
 
-const MANIFEST = EXTERNAL_WORKSPACE_CMZ.manifest;
+const MANIFEST = EXTERNAL_WORKSPACE_SIGNATURE.manifest;
 // Espaces de noms réservés à la racine du produit.
 const RESERVED_NAMESPACE = new RegExp(
     `^(?:apps|node_modules|${escapeRegExp(SIGNATURE.dir)}|\\.git|\\.nx|\\.angular|dist|coverage|tmp)/`

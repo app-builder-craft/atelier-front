@@ -43,7 +43,7 @@ import {
     runDocumentCli,
 } from './test-support/external-document-fixture.mjs';
 import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
-import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
+import { SIGNATURE_FILES, toolEnv } from './core/atelier-signature.mjs';
 
 const backendOptions = (fixture, request = fixture.backendRequests.at(-1)) => ({
     workspaceRoot: TOOLS_ROOT,
@@ -61,26 +61,26 @@ const designOptions = (fixture) => ({
 });
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
-const nativeCell = process.env.CMZ_EXT03A_NATIVE_CELL;
+const nativeCell = process.env[toolEnv('EXT03A_NATIVE_CELL')];
 if (nativeCell !== undefined) {
     if (
         !NATIVE_CELLS.includes(nativeCell) ||
-        !process.env.CMZ_EXT03A_NATIVE_ROOT
+        !process.env[toolEnv('EXT03A_NATIVE_ROOT')]
     )
         throw new Error(
             'Explicit valid cell and owned native root are required'
         );
     test(`EXT03A/native/${nativeCell}`, async () => {
-        const receipt = process.env.CMZ_EXT03A_NATIVE_CONTEXT
+        const receipt = process.env[toolEnv('EXT03A_NATIVE_CONTEXT')]
             ? await (
                   await import('./proof-support/external-document-native.mjs')
               ).provePreparedDocumentCell(
-                  process.env.CMZ_EXT03A_NATIVE_ROOT,
+                  process.env[toolEnv('EXT03A_NATIVE_ROOT')],
                   nativeCell,
-                  process.env.CMZ_EXT03A_NATIVE_CONTEXT
+                  process.env[toolEnv('EXT03A_NATIVE_CONTEXT')]
               )
             : await proveNativeDocumentCell(
-                  process.env.CMZ_EXT03A_NATIVE_ROOT,
+                  process.env[toolEnv('EXT03A_NATIVE_ROOT')],
                   nativeCell
               );
         process.stdout.write(`${JSON.stringify(receipt)}\n`);

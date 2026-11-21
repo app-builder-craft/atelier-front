@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
@@ -13,13 +13,19 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-// Noms des rôles (skills et agents), dérivés du nom interne de l'atelier.
-const STEWARD = internalName('steward');
-const EXECUTOR = internalName('step-executor');
-const SPECIALIST = internalName('task-specialist');
-const ORCHESTRATOR = internalName('orchestrator');
-// Dépôt d'origine nommé dans les descriptions des adaptateurs Claude.
-const ORIGIN_REPOSITORY = internalName('platform');
+// Noms des rôles (skills et agents) : `<nom interne>-<suffixe>`, dérivés du
+// nom interne de l'atelier.
+const ROLE_SUFFIXES = Object.freeze([
+    'steward',
+    'step-executor',
+    'task-specialist',
+    'orchestrator',
+]);
+const [STEWARD, EXECUTOR, SPECIALIST, ORCHESTRATOR] =
+    ROLE_SUFFIXES.map(internalName);
+// Dépôt piloté par les rôles, nommé dans les descriptions des adaptateurs
+// Claude.
+const REPOSITORY = 'atelier-front';
 
 export const AGENT_MODEL_FILES = Object.freeze({
     agents: 'AGENTS.md',
@@ -52,6 +58,33 @@ const CLIENT_ROLE_SYNTAX = new RegExp(
     `\\/(?:${ROLES.map(escapeRegExp).join('|')})\\b`
 );
 
+// Dossier de skill nommé comme un rôle, sous un autre nom que le nom interne
+// courant (par exemple le dossier survivant d'un ancien nom) : les clients le
+// découvriraient sans que ce contrôle le lise. Motif dérivé des suffixes de
+// rôle, sans aucun nom écrit.
+const ROLE_DIRECTORY = new RegExp(
+    `^[a-z0-9]+(?:-[a-z0-9]+)*-(?:${ROLE_SUFFIXES.map(escapeRegExp).join('|')})$`
+);
+
+function validateSkillDirectories(directories, violations) {
+    if (
+        directories === null ||
+        typeof directories !== 'object' ||
+        Object.keys(directories).length === 0
+    ) {
+        violations.push(
+            'aucune racine de skills lue : contrôle des dossiers cassé'
+        );
+        return;
+    }
+    for (const [root, names] of Object.entries(directories))
+        for (const name of names)
+            if (ROLE_DIRECTORY.test(name) && !ROLES.includes(name))
+                violations.push(
+                    `dossier de skill de rôle hors du nom interne : ${root}/${name} (rôles : ${ROLES.join(', ')})`
+                );
+}
+
 const CONTRACT_ROLES = Object.freeze({
     steward: STEWARD,
     'step-executor': EXECUTOR,
@@ -60,10 +93,10 @@ const CONTRACT_ROLES = Object.freeze({
 });
 
 const CLAUDE_ADAPTER_DESCRIPTIONS = Object.freeze({
-    [STEWARD]: `Piloter ${ORIGIN_REPOSITORY} dans la durée depuis ses autorités courantes, son état GitHub vivant et ses preuves, sans décider seul du cap produit.`,
-    [EXECUTOR]: `Réaliser une étape ${ORIGIN_REPOSITORY} déjà validée dans un work order immuable, avec un périmètre fermé et des preuves réfutables.`,
-    [SPECIALIST]: `Diagnostiquer, rechercher, relire ou corriger une tâche ${ORIGIN_REPOSITORY} précise en restant en lecture seule sauf mode fix explicitement autorisé.`,
-    [ORCHESTRATOR]: `Aider le propriétaire à choisir et contrôler le bon rôle ${ORIGIN_REPOSITORY} en français simple, sans implémenter ni élargir l'autorité par défaut.`,
+    [STEWARD]: `Piloter ${REPOSITORY} dans la durée depuis ses autorités courantes, son état GitHub vivant et ses preuves, sans décider seul du cap produit.`,
+    [EXECUTOR]: `Réaliser une étape ${REPOSITORY} déjà validée dans un work order immuable, avec un périmètre fermé et des preuves réfutables.`,
+    [SPECIALIST]: `Diagnostiquer, rechercher, relire ou corriger une tâche ${REPOSITORY} précise en restant en lecture seule sauf mode fix explicitement autorisé.`,
+    [ORCHESTRATOR]: `Aider le propriétaire à choisir et contrôler le bon rôle ${REPOSITORY} en français simple, sans implémenter ni élargir l'autorité par défaut.`,
 });
 
 const SLASH_COMMANDS = Object.freeze([
@@ -342,6 +375,7 @@ export function collectAgentModelViolations(documents) {
     };
 
     validateStructuredContract(documents, violations);
+    validateSkillDirectories(documents.skillDirectories, violations);
 
     requireText(
         'agents',
@@ -629,13 +663,37 @@ export function collectAgentModelViolations(documents) {
     return violations;
 }
 
-export function readAgentModelDocuments(root = ROOT) {
+// Dossiers de skills que découvre chaque client, aux racines déclarées par le
+// contrat structuré.
+export function readSkillDirectories(root = ROOT) {
+    const contract = JSON.parse(
+        readFileSync(join(root, AGENT_MODEL_FILES.contract), 'utf8')
+    );
+    const roots = [
+        ...new Set(
+            Object.values(contract.skill_discovery?.clients ?? {}).map(
+                (client) => client.root
+            )
+        ),
+    ].sort();
     return Object.fromEntries(
-        Object.entries(AGENT_MODEL_FILES).map(([key, path]) => [
-            key,
-            readFileSync(join(root, path), 'utf8'),
+        roots.map((directory) => [
+            directory,
+            readdirSync(join(root, directory)).sort(),
         ])
     );
+}
+
+export function readAgentModelDocuments(root = ROOT) {
+    return {
+        ...Object.fromEntries(
+            Object.entries(AGENT_MODEL_FILES).map(([key, path]) => [
+                key,
+                readFileSync(join(root, path), 'utf8'),
+            ])
+        ),
+        skillDirectories: readSkillDirectories(root),
+    };
 }
 
 function main() {

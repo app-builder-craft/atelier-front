@@ -61,20 +61,20 @@ const JOURNAL_CALL = /\bsignaturePath\(\s*(['"`])([a-z][a-z0-9-]*)\1\s*[,)]/g;
 const JOURNAL_TEMPLATE =
     /\$\{\s*SIGNATURE\.dir\s*\}\/([a-z][a-z0-9-]*)(?![\w.-])/g;
 
-export function cmzDirectoryNames(source) {
+export function signatureDirectoryNames(source) {
     return [
         ...[...source.matchAll(JOURNAL_CALL)].map(([, , name]) => name),
         ...[...source.matchAll(JOURNAL_TEMPLATE)].map(([, name]) => name),
     ];
 }
 
-export function scanCmzDirectories(root = ROOT) {
+export function scanSignatureDirectories(root = ROOT) {
     const names = new Set();
     for (const file of globSync('tools/**/*.mjs', { cwd: root })) {
         // Les tests portent des noms d'exemple, pas des journaux d'outil.
         if (file.endsWith('.test.mjs')) continue;
         const source = readFileSync(join(root, file), 'utf8');
-        for (const name of cmzDirectoryNames(source)) {
+        for (const name of signatureDirectoryNames(source)) {
             if (!GOVERNED.has(name)) names.add(name);
         }
     }
@@ -94,9 +94,9 @@ export function ignoredByGit(root, relativePath) {
 
 const PROBE = `${SIGNATURE.dir}-ignore-probe`;
 
-export function verifyCmzJournalsIgnored(root = ROOT) {
+export function verifySignatureJournalsIgnored(root = ROOT) {
     const errors = [];
-    const names = scanCmzDirectories(root);
+    const names = scanSignatureDirectories(root);
     if (names.length === 0)
         errors.push(`aucun journal ${SIGNATURE.dir} détecté — scan cassé`);
     for (const name of names) {
@@ -123,7 +123,7 @@ export function verifyCmzJournalsIgnored(root = ROOT) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    const result = verifyCmzJournalsIgnored();
+    const result = verifySignatureJournalsIgnored();
     if (!result.ok) {
         console.error(`\n❌ Journaux ${SIGNATURE.dir} non ignorés :`);
         for (const error of result.errors) console.error(`  - ${error}`);

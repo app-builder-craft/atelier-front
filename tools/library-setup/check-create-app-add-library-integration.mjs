@@ -18,6 +18,7 @@ import {
     SIGNATURE,
     SIGNATURE_FILES,
     signatureName,
+    INTERNAL,
 } from '../generator-platform/core/atelier-signature.mjs';
 
 const SOURCE = realpathSync(fileURLToPath(new URL('../..', import.meta.url)));
@@ -219,15 +220,22 @@ function main() {
         git(repository, [
             'switch',
             '--create',
-            'cmz/library-integration-proof',
+            `${INTERNAL.name}/library-integration-proof`,
         ]);
         const proofBranch = git(repository, ['symbolic-ref', '-q', 'HEAD']);
-        if (proofBranch !== 'refs/heads/cmz/library-integration-proof') {
+        if (
+            proofBranch !==
+            `refs/heads/${INTERNAL.name}/library-integration-proof`
+        ) {
             fail(
                 `branche de preuve inattendue : ${proofBranch || '(détachée)'}`
             );
         }
-        git(repository, ['config', 'user.name', 'CMZ Integration Proof']);
+        git(repository, [
+            'config',
+            'user.name',
+            signatureName('integration-proof'),
+        ]);
         git(repository, [
             'config',
             'user.email',

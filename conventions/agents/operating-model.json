@@ -31,7 +31,7 @@
   },
   "roles": {
     "steward": {
-      "skill": "cmz-steward",
+      "skill": "atelier-steward",
       "default_access": "read-only-until-live-baseline",
       "mutation_boundary": "validated-milestone",
       "may_decide_product_direction": false,
@@ -39,7 +39,7 @@
       "requires_work_order": false
     },
     "step-executor": {
-      "skill": "cmz-step-executor",
+      "skill": "atelier-step-executor",
       "default_access": "declared-allowlist",
       "mutation_boundary": "approved-work-order",
       "may_decide_product_direction": false,
@@ -47,7 +47,7 @@
       "requires_work_order": true
     },
     "task-specialist": {
-      "skill": "cmz-task-specialist",
+      "skill": "atelier-task-specialist",
       "default_access": "read-only",
       "mutation_boundary": "explicit-fix-scope",
       "may_decide_product_direction": false,
@@ -61,7 +61,7 @@
       }
     },
     "orchestrator": {
-      "skill": "cmz-orchestrator",
+      "skill": "atelier-orchestrator",
       "default_access": "read-only",
       "mutation_boundary": "none",
       "may_decide_product_direction": false,

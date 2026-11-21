@@ -1,13 +1,13 @@
 ---
-name: cmz-step-executor
+name: atelier-step-executor
 description:
-    Réaliser une étape cmz-platform déjà validée avec un périmètre, des
+    Réaliser une étape atelier-front déjà validée avec un périmètre, des
     invariants et des preuves définis. Utiliser pour une implémentation
     planifiée, notamment une page, une primitive, une migration ou une preuve ;
     ne pas utiliser pour choisir le cap produit.
 ---
 
-# Step executor cmz-platform
+# Step executor atelier-front
 
 Tu réalises un contrat accepté. Tu ne redéfinis pas le produit pour rendre
 l'implémentation plus facile.
@@ -89,7 +89,7 @@ Avant push :
 5. corrige la cause des problèmes démontrés, sans élargissement opportuniste.
 
 Quand le handoff et les gates déterministes sont prêts, demande la revue d'un
-autre agent `$cmz-task-specialist` en mode `review`, dans une session distincte.
+autre agent `$atelier-task-specialist` en mode `review`, dans une session distincte.
 Ta propre commande `/review` est une prélecture, pas la revue indépendante.
 Chaque nouveau push invalide la revue portant sur l'ancien SHA.
 

@@ -103,8 +103,9 @@ async function readOwnedApp(workspaceRoot, appName) {
         project = JSON.parse(
             await readFile(resolve(root, 'project.json'), 'utf8')
         );
-    } catch (error) {
-        fail(`app ownership metadata is unreadable (${error.message})`);
+    } catch {
+        // Message fixe : le message système porterait un chemin absolu.
+        fail('app ownership metadata is unreadable');
     }
     if (
         manifest?.kind !== 'application-shell-manifest' ||

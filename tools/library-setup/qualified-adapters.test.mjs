@@ -19,6 +19,7 @@ import { scaffoldTailwind } from '../scaffold-tailwind-core.mjs';
 import {
     SIGNATURE,
     SIGNATURE_FILES,
+    signatureName,
 } from '../generator-platform/core/atelier-signature.mjs';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
@@ -42,7 +43,9 @@ function copy(root, source, target) {
 }
 
 function fixture(t, { libraries = [] } = {}) {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-qualified-adapter-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('qualified-adapter-'))
+    );
     t.after(() => rmSync(root, { recursive: true, force: true }));
     put(
         root,
@@ -114,7 +117,9 @@ function fixture(t, { libraries = [] } = {}) {
 }
 
 function reactFixture(t, { libraries = [] } = {}) {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-react-tailwind-adapter-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('react-tailwind-adapter-'))
+    );
     t.after(() => rmSync(root, { recursive: true, force: true }));
     put(
         root,

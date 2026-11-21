@@ -267,7 +267,7 @@ Une invocation combine au plus une skill de rôle et les skills techniques
 nécessaires, par exemple :
 
 ```text
-$cmz-step-executor $angular-developer
+$atelier-step-executor $angular-developer
 ```
 
 La skill technique n'autorise aucune action externe et ne remplace pas les

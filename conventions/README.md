@@ -107,7 +107,7 @@ intégré, un nouvel audit de sécurité et une décision explicite ; une recett
 un fournisseur futur n'est pas valide.
 
 Chaque app avec un `project.json` **régulier doit** déclarer
-[`apps/<app>/.cmz/libraries.json`](./libraries/app-library-manifest.schema.json)
+[`apps/<app>/.atelier/libraries.json`](./libraries/app-library-manifest.schema.json)
 (`kind: "app-library-manifest"`, schéma fermé). `check:library-setup` (dans
 `check:all` + CI) : lit tout (recette, schéma, fichier d'app, lockfile) confiné
 sous la racine du dépôt, en **traversant zéro lien symbolique** (le dossier

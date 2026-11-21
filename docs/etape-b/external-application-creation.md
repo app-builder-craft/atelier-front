@@ -34,7 +34,7 @@ paquets matérialisés de la base. Le runtime Architect de Nx est explicitement
 déclaré depuis le paquet transitif déjà présent dans cette base.
 
 Apply publie uniquement les fichiers techniques, sous verrou commun. Le marqueur
-`.cmz/application-workspace.json` contient leur inventaire exact et les
+`.atelier/application-workspace.json` contient leur inventaire exact et les
 répertoires `apps` et `descriptions`. Il ne déclare pas une compilation réussie.
 Les répertoires vides n'ajoutent aucun fichier `.gitkeep` implicite. Un marqueur
 seul ne permet pas d'adopter un arbre : les octets des fichiers possédés sont
@@ -304,7 +304,7 @@ Marche à suivre quand une commande répond `interrupted publication pending` :
    `Écart : "apps/<app>/src/app/generated/etranger.ts" (fichier absent du manifeste de cet arbre).`
    Le cas le plus courant suit un `publication rollback refused` : un fichier a
    été ajouté ou modifié dans l'application pendant les contrôles. Le critère
-   est le manifeste `.cmz/app-manifest.json` de l'arbre nommé, pas le Git du
+   est le manifeste `.atelier/app-manifest.json` de l'arbre nommé, pas le Git du
    produit, où toute la publication apparaît comme changement. Retirer ou
    rétablir le fichier nommé, puis relancer la reprise ; recommencer tant qu'un
    écart est nommé. L'arbre redevient exact selon son propre manifeste et l'état
@@ -362,7 +362,7 @@ laboratoire reste disponible. Le rapport est `report.txt`, sans copie
 d'environnement, HAR, trace ou JSON de test. En cas de défaut inattendu, arrêter
 et analyser ; ne pas relancer ni assouplir le contrôle.
 
-Les cellules utilisent `CMZ_EXT03A_NATIVE_CELL` et `CMZ_EXT03A_NATIVE_ROOT`. Le
+Les cellules utilisent `ATELIER_EXT03A_NATIVE_CELL` et `ATELIER_EXT03A_NATIVE_ROOT`. Le
 job leur fournit un contexte de preuve pour employer le confinement natif ; le
 mode autonome reste disponible sur un produit possédé et installé. Le rapport
 conserve l’empreinte et la durée de chaque cellule. Les contrats A (Postman et
@@ -669,7 +669,7 @@ mémoire ne sont pas copiés : la coque produit ses propres contrats de page.
 `test:external-application-shells` couvre, sur les deux domaines fictifs
 `observatory` et `equipment-hire` :
 
-- le plan, sa fermeture d’entrées, l’absence de tout module `@cmz/` (`from`,
+- le plan, sa fermeture d’entrées, l’absence de tout module `@atelier/` (`from`,
   import nu, `import()` ou `require`) et d’URL de service du contrat dans les
   fichiers produits ;
 - la garde de session sur chaque route et la redirection par défaut vers la
@@ -704,7 +704,7 @@ n’est revendiquée.
 
 L'inventaire scellé étend la propriété d’une application extérieure au-delà de
 la coque. Le registre reste
-`apps/<app>/.cmz/app-manifest.json`. En mode extérieur, `create-app` y ajoute un
+`apps/<app>/.atelier/app-manifest.json`. En mode extérieur, `create-app` y ajoute un
 bloc `ownership` : identité du produit, empreinte de l’inventaire de la coque,
 publications acceptées et sceau. Le mode atelier ne change pas.
 
@@ -719,7 +719,7 @@ doit être recréée.
 voie pour changer cet inventaire :
 
 - ajout sous `src/app/generated/`, ou dans le dossier d’une page dont le contrat
-  `.cmz/pages/<page>.json` existe ;
+  `.atelier/pages/<page>.json` existe ;
 - remplacement d’un fichier de page de la coque ou d’un fichier déjà publié,
   avec l’empreinte d’avant ;
 - aucun autre chemin, aucune suppression, aucun outil hors de la liste fermée
@@ -845,7 +845,7 @@ identifiant mais d’octets différents et chaque moitié de la garde « coque a
 session ».
 
 Le contrôle T11 vérifie que la sortie n’importe que `@angular/*`, `rxjs` et des
-fichiers possédés de l’application, sans module cmz ni chemin de l’atelier.
+fichiers possédés de l’application, sans module ni chemin de l’atelier.
 `check:external-application-shells` publie la commande de connexion dans chaque
 coque avec session des produits A et B. Il l’exécute avec les binaires du
 produit, vérifie T11 et rejoue le refus d’un plan périmé.
@@ -883,7 +883,7 @@ bun run generate:page-composition --target-root /chemin/absolu/produit --app <ap
 
 `compile:page-execution-plan` compile le plan d’exécution de la page depuis les
 seuls fichiers possédés de l’application : le contrat de page
-`.cmz/pages/<page>.json` de la coque et les modèles `execution-model.json`
+`.atelier/pages/<page>.json` de la coque et les modèles `execution-model.json`
 publiés par `generate:action-request`. Chaque action backend de la page doit
 avoir exactement une commande publiée : sans commande, le refus nomme l’action
 et la commande à lancer ; avec plusieurs commandes pour la même opération, il
@@ -984,14 +984,14 @@ commandes du produit tournent confinées (voir X4-sécurité ci-dessous).
   ; aucun import dynamique ; une commande, la session ou `@angular/common/http`
   importés directement sont refusés ;
 - contrôles structurels de X4-sécurité sur la page et son gabarit ;
-- chaque `data-cmz-id` est statique, dans le gabarit, et déclaré par le contrat
+- chaque `data-atelier-id` est statique, dans le gabarit, et déclaré par le contrat
   ; la preuve `realization-evidence.json` couvre exactement les identifiants du
   contrat et chaque sélecteur est présent.
 
 L’apparence reste libre. Les autres choix de la page (textes, disposition,
 comportement d’attente) relèvent de la revue humaine : ces règles mécaniques ne
 prouvent ni l’absence de règle métier inventée, ni celle d’un contrôle inventé
-sans `data-cmz-id`. Elles ne sont pas, à elles seules, la barrière contre le
+sans `data-atelier-id`. Elles ne sont pas, à elles seules, la barrière contre le
 réseau, le stockage ou le code dynamique : ce sont des listes.
 
 **Publication.** Le brouillon conforme est publié à la place de la page
@@ -1078,8 +1078,11 @@ default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self';
 manifest-src 'self'; frame-src 'none'; object-src 'none'; form-action 'self';
 base-uri 'self'; require-trusted-types-for 'script';
-trusted-types angular angular#bundler cmz-sw
+trusted-types angular angular#bundler <p>-sw
 ```
+
+`<p>` désigne le préfixe du produit (`identity.prefix`) et `<P>` sa forme
+majuscule.
 
 - `connect-src 'self'` est définitif : le propriétaire a retenu une seule
   origine, le serveur de l’application relaie `/api/<service>/`.
@@ -1090,8 +1093,8 @@ trusted-types angular angular#bundler cmz-sw
 - Trusted Types est gardé : mesuré sans violation sur la coque construite, sur
   le serveur de développement et sur une mise à jour à chaud d’un composant.
   Ces mesures bloquaient le service worker : son enregistrement par chaîne,
-  puits `TrustedScriptURL`, était refusé sans être vu. Corrigé par `cmz-sw`.
-- `cmz-sw` : politique créée par `main.ts` avant tout autre code, locale au
+  puits `TrustedScriptURL`, était refusé sans être vu. Corrigé par `<p>-sw`.
+- `<p>-sw` : politique créée par `main.ts` avant tout autre code, locale au
   module ; `createScriptURL` n’accepte que la chaîne exacte `/sw.js` et lève
   sinon. Sans `'allow-duplicates'`, une seconde création est refusée par le
   navigateur. Si Trusted Types existe et que la création échoue, l’erreur
@@ -1182,7 +1185,7 @@ est refusée jusqu’à une nouvelle revue.
     - `[attr.*]` pour `aria-*` seulement ; `[innerHTML]`, `[outerHTML]` et les
       gestionnaires `on…` refusés ; propriétés de la liste refusées sur toute
       valeur ;
-    - `data-cmz-id` statique, insensible à la casse, déclaré par le contrat
+    - `data-atelier-id` statique, insensible à la casse, déclaré par le contrat
       (M-1).
 - SCSS : aucune règle structurelle ; la politique gouverne `url()`, `@import` et
   `@font-face`.
@@ -1245,7 +1248,7 @@ sa préparation. Après préparation, les règles sont rejouées sur la page pub
 Topologie A (décision du propriétaire) : l'application et ses services sont
 joints depuis une seule origine. Le navigateur ne connaît que des chemins
 `/api/<service_id>/` ; les adresses des services ne vivent que dans les
-variables de l'opérateur `CMZ_UPSTREAM_<SERVICE>`, lues par nginx au
+variables de l'opérateur `<P>_UPSTREAM_<SERVICE>`, lues par nginx au
 démarrage. Il n'y a pas d'`env.js` dans la coque extérieure (portée : produits
 extérieurs, topologie A).
 
@@ -1257,12 +1260,12 @@ conception, est lue à l'identique par :
   navigateur), branché dans `app.config.ts` ;
 - `deploy/nginx/templates/default.conf.template` : un bloc
   `location ^~ /api/<svc>/` par service ;
-- `deploy/nginx/docker-entrypoint.d/15-cmz-upstreams.envsh` : validation ;
+- `deploy/nginx/docker-entrypoint.d/15-<p>-upstreams.envsh` : validation ;
 - `proxy.conf.mjs` : proxy du serveur de développement (`proxyConfig` de la
   cible `serve`).
 
 **Gabarit nginx** (rendu par l'image officielle, `/etc/nginx/templates`,
-`NGINX_ENVSUBST_FILTER=^CMZ_`) :
+`NGINX_ENVSUBST_FILTER=^<P>_`) :
 
 - un seul niveau d'en-têtes : CSP et COOP (X4-sécurité), `nosniff`, CORP,
   `Referrer-Policy`, XFO, `Permissions-Policy`, tous `always`, et
@@ -1278,24 +1281,24 @@ conception, est lue à l'identique par :
   `client_max_body_size 10m`, `proxy_read_timeout 60s`.
 
 **Invariant d'échappement.** Seules les variables de l'opérateur, en
-majuscules `CMZ_*`, sont écrites `${…}` ; nginx garde ses variables en
+majuscules `<P>_*`, sont écrites `${…}` ; nginx garde ses variables en
 minuscules. Les noms de variables nginx ignorent la casse : aucune variable
 nginx ne porte le nom, en minuscules, d'une variable de l'opérateur (mesuré :
-`set $cmz_upstreams_validated "${CMZ_UPSTREAMS_VALIDATED}"` se référençait
+`set $<p>_upstreams_validated "${<P>_UPSTREAMS_VALIDATED}"` se référençait
 lui-même, et nginx acceptait la configuration).
 
 **Validation avant nginx, sans valeur.** Le `.envsh`, sourcé par l'entrypoint
-officiel avant le rendu des gabarits, refuse un filtre autre que `^CMZ_` et
+officiel avant le rendu des gabarits, refuse un filtre autre que `^<P>_` et
 toute variable absente, vide ou hors de
 `^http://hôte[:port]/` (chemin facultatif, `/` final) ; il n'écrit que le nom
-(`CMZ_UPSTREAM_<SVC>_MISSING|_EMPTY|_INVALID`) et n'exporte
-`CMZ_UPSTREAMS_VALIDATED` qu'en cas de succès. La garde
-`set $cmz_relay_guard "${CMZ_UPSTREAMS_VALIDATED}"` fait refuser la
+(`<P>_UPSTREAM_<SVC>_MISSING|_EMPTY|_INVALID`) et n'exporte
+`<P>_UPSTREAMS_VALIDATED` qu'en cas de succès. La garde
+`set $<p>_relay_guard "${<P>_UPSTREAMS_VALIDATED}"` fait refuser la
 configuration si le script n'a pas tourné (non monté ou non exécutable). La
 publication écrit ce seul fichier en `0755`.
 
 **Fichiers locaux hors du produit (T3).** Le proxy de développement lit ses
-cibles dans le fichier désigné par `CMZ_DEV_PROXY_FILE`, refusé s'il est sous
+cibles dans le fichier désigné par `<P>_DEV_PROXY_FILE`, refusé s'il est sous
 la racine du produit (chemins réels) ; la commande de référence lit ses
 variables par `--env-file` hors du produit. Toute commande de l'atelier sur un
 produit existant refuse la présence de `proxy.local.json`, `.env` ou `.env.*`
@@ -1321,7 +1324,7 @@ nginx : seule la CI Linux le prouve. `check:nginx-relay-browser` ouvre la coque
 construite par la preuve native, servie par le relais, dans son Chromium, pour
 chaque coque Angular avec service worker (avec et sans session) : politique
 exacte en en-tête et en `meta`, aucune violation, service worker enregistré et
-actif (URL et portée), nouveau document au rechargement, `cmz-sw` fermée
+actif (URL et portée), nouveau document au rechargement, `<p>-sw` fermée
 (doublon et nom hors liste refusés), `innerHTML` et `new Worker` par chaîne
 toujours bloqués, cache conforme à la variante déclarée, document servi relais
 arrêté. Garde des deux variantes : la page appelle le relais (fetch GET, fetch

@@ -18,8 +18,8 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@cmz/shared-domain": ["./libs/shared/domain/src/index.ts"],
-      "@cmz/core": ["./libs/core/src/index.ts"]
+      "@atelier/shared-domain": ["./libs/shared/domain/src/index.ts"],
+      "@atelier/core": ["./libs/core/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

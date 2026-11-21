@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { checkNginxDigest, pinnedNginxImage } from './check-nginx-digest.mjs';
+import { toolEnv } from './core/atelier-signature.mjs';
 
 const dockerfile = readFileSync(
     new URL('./nginx-harness/Dockerfile', import.meta.url),
@@ -38,7 +39,7 @@ test('X4-config : concordance, empreinte périmée et vérification impossible',
     ]);
     assert.deepEqual(ok, {
         code: 0,
-        message: `CMZ_NGINX_DIGEST_OK nginx:${pinned.tag}`,
+        message: `${toolEnv('NGINX_DIGEST_OK')} nginx:${pinned.tag}`,
     });
     // Contre-test 1 : le tag a bougé, l'empreinte épinglée est périmée.
     const stale = checkNginxDigest(
@@ -48,7 +49,7 @@ test('X4-config : concordance, empreinte périmée et vérification impossible',
     assert.equal(stale.code, 1);
     assert.match(
         stale.message,
-        /^CMZ_NGINX_DIGEST_STALE .* empreinte périmée$/
+        new RegExp(`^${toolEnv('NGINX_DIGEST_STALE')} .* empreinte périmée$`)
     );
     // Contre-test 2 : registre en panne, délai dépassé, réponse illisible.
     const unverifiable = [
@@ -89,7 +90,9 @@ test('X4-config : concordance, empreinte périmée et vérification impossible',
         assert.equal(outcome.code, 2);
         assert.match(
             outcome.message,
-            /^CMZ_NGINX_DIGEST_UNVERIFIABLE .* vérification impossible$/
+            new RegExp(
+                `^${toolEnv('NGINX_DIGEST_UNVERIFIABLE')} .* vérification impossible$`
+            )
         );
     }
     assert.equal(

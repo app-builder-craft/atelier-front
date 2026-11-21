@@ -19,14 +19,17 @@ import {
     libraryRunnerSourcePaths,
     QUALIFICATION_ORACLE_SOURCE_PATHS,
 } from './tooling-fingerprint.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const SOURCE = new URL('../..', import.meta.url).pathname;
 
 function fixture(t) {
     const root = realpathSync(
-        mkdtempSync(join(tmpdir(), 'cmz-tooling-fingerprint-'))
+        mkdtempSync(join(tmpdir(), signatureName('tooling-fingerprint-')))
     );
-    t.after(() => removeTemporaryFixture(root, 'cmz-tooling-fingerprint-'));
+    t.after(() =>
+        removeTemporaryFixture(root, signatureName('tooling-fingerprint-'))
+    );
     cpSync(join(SOURCE, 'conventions'), join(root, 'conventions'), {
         recursive: true,
     });

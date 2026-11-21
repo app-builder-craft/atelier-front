@@ -6,9 +6,15 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { snapshotFilesystem } from './filesystem-snapshot.mjs';
+import {
+    INTERNAL,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 async function workspace(t) {
-    const root = realpathSync(await mkdtemp(join(tmpdir(), 'cmz-snapshot-')));
+    const root = realpathSync(
+        await mkdtemp(join(tmpdir(), signatureName('snapshot-')))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     return root;
 }
@@ -29,11 +35,14 @@ test('les node_modules imbriqués de Bun sont exclus comme celui de la racine', 
     );
     await mkdir(join(root, 'node_modules/rxjs'), { recursive: true });
     await writeFile(join(root, 'node_modules/rxjs/index.js'), 'racine');
-    await mkdir(join(root, 'libs/catalogue/data/node_modules/@cmz'), {
-        recursive: true,
-    });
+    await mkdir(
+        join(root, `libs/catalogue/data/node_modules/${INTERNAL.scope}`),
+        {
+            recursive: true,
+        }
+    );
     await writeFile(
-        join(root, 'libs/catalogue/data/node_modules/@cmz/core'),
+        join(root, `libs/catalogue/data/node_modules/${INTERNAL.scope}/core`),
         'lien-installation'
     );
 

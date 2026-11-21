@@ -10,6 +10,7 @@ import {
     verifyLockSources,
     verifyManifestSources,
 } from './library-setup/resolution-policy.mjs';
+import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
 const policy = {
     schema_version: '1.0.0',
@@ -153,7 +154,9 @@ test('refuse les sources et intégrités non conformes du lockfile', () => {
 });
 
 test('le chargeur refuse une politique à clés inconnues et un lien symbolique', async (t) => {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-resolution-policy-'));
+    const root = await mkdtemp(
+        join(tmpdir(), signatureName('resolution-policy-'))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     const convention = join(root, 'conventions/libraries');
     await mkdir(convention, { recursive: true });

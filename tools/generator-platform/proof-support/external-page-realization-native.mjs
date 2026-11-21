@@ -21,7 +21,7 @@ import {
 } from '../core/external-page-realization.mjs';
 import { sha256 } from '../core/generation-manifest.mjs';
 import * as atelier from '../core/atelier-signature.mjs';
-import { EXTERNAL_WORKSPACE_CMZ as CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from '../renderers/application-workspace-renderer.mjs';
 import {
     hash,
     snapshotTree,
@@ -658,7 +658,7 @@ export async function qualifyRealizationBrowser(session, shells, browser) {
     for (const { input, plan, page } of shells) {
         const product = input.root;
         const domain = input.domain;
-        const proof = resolve(product, CMZ.proof);
+        const proof = resolve(product, WORKSPACE.proof);
         assert.equal(await pathExists(proof), false);
         const [action] = page.actions.filter(
             (entry) => entry.kind === 'backend'
@@ -709,7 +709,7 @@ export async function qualifyRealizationBrowser(session, shells, browser) {
                     session,
                     product,
                     [
-                        `${CMZ.proof}/realization-browser.mjs`,
+                        `${WORKSPACE.proof}/realization-browser.mjs`,
                         resolve(product, 'dist', plan.output, 'browser'),
                         `{{readonly:0}}/${browserRelative}`,
                         resolve(proof, 'realization-browser.fixture.json'),

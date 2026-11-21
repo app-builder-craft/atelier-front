@@ -43,7 +43,9 @@ function entry(path, content) {
 }
 
 async function fixture(t) {
-    const root = await realpath(await mkdtemp(join(tmpdir(), 'cmz-publish-')));
+    const root = await realpath(
+        await mkdtemp(join(tmpdir(), signatureName('publish-')))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     const repository = join(root, 'repo');
     const candidate = join(root, 'candidate');

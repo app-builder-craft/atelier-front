@@ -22,6 +22,7 @@ import {
     TOOLS_ROOT,
 } from './test-support/external-application-fixture.mjs';
 import { sessionApp } from './test-support/external-publication-fixture.mjs';
+import { signatureName } from './core/atelier-signature.mjs';
 
 const LINT_PACKAGES = [
     'eslint',
@@ -34,7 +35,7 @@ const LINT_PACKAGES = [
 // versions épinglées par le produit.
 async function lintableCopy(t, productRoot) {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-shell-lint-'))
+        await mkdtemp(join(tmpdir(), signatureName('shell-lint-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     await cp(productRoot, root, {

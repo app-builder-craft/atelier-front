@@ -40,7 +40,11 @@ import {
     snapshotTree,
     TOOLS_ROOT,
 } from './test-support/external-application-fixture.mjs';
-import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
+import {
+    SIGNATURE_FILES,
+    INTERNAL,
+    escapeRegExp,
+} from './core/atelier-signature.mjs';
 
 test('CLI extérieure : plan obligatoire, options uniques et valeurs complètes', () => {
     const args = [
@@ -680,7 +684,7 @@ test('v11 : préserve les quatre déclencheurs conservateurs hors imports', () =
     }
 });
 
-test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et aucune dépendance cmz implicite', async (t) => {
+test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et aucune dépendance implicite à l’atelier', async (t) => {
     const data = await createApplicationSessionFixture({
         domain: 'equipment-hire',
     });
@@ -700,7 +704,7 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
     );
     assert.doesNotMatch(
         source.map(([, content]) => content).join('\n'),
-        /from ['"]@cmz\//
+        new RegExp(`from ['"]${escapeRegExp(INTERNAL.scope)}/`)
     );
     assert.equal(
         source.filter(([, content]) => /export const SKIP_AUTH =/.test(content))

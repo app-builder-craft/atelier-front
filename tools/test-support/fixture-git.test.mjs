@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { fixtureGit, initFixtureRepo } from './fixture-git.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 /** Reproduit l'environnement hermétique des helpers git de production. */
 function hermeticGitConfig(root, key) {
@@ -27,7 +28,9 @@ function hermeticGitConfig(root, key) {
 }
 
 test('initFixtureRepo force l’auto-gc en avant-plan, persisté pour la production', () => {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-fixture-git-test-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('fixture-git-test-'))
+    );
     try {
         initFixtureRepo(root);
 

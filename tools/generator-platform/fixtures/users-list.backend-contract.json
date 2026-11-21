@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "kind": "backend-contract",
   "contract": {
-    "id": "cmz-users-list",
+    "id": "fixture-users-list",
     "title": "Users list fictional contract",
     "version": "1.0.0",
     "status": "implemented",

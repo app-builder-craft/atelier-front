@@ -4,7 +4,7 @@
 import { readdir } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-import { EXTERNAL_WORKSPACE_CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
 import { SIGNATURE_FILES } from './atelier-signature.mjs';
 import {
     installedBin,
@@ -501,7 +501,7 @@ export async function publishApplicationPublication(
                 [
                     resolve(
                         plan.root,
-                        `${EXTERNAL_WORKSPACE_CMZ.support}/check-workspace.mjs`
+                        `${EXTERNAL_WORKSPACE_SIGNATURE.support}/check-workspace.mjs`
                     ),
                 ],
                 plan.root

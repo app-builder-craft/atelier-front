@@ -1,6 +1,6 @@
 # T4-5 — gitleaks (ADR-0006 / AppSec).
 # Doc : https://github.com/gitleaks/gitleaks
-title = "cmz-platform"
+title = "atelier-front"
 
 [extend]
 # Règles community par défaut (AWS, private keys, generic API keys, …)

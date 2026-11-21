@@ -77,7 +77,7 @@ fichiers listés ; elle est libre de l'interface dans ce cadre. Le bon de travai
 porte aussi le nœud de rôle `screen`, le profil et le contrat d'archétype haché
 (`shape` + `forbid`). `verify:page-realization` refuse une dérive de
 l'inventaire protégé, un fichier non autorisé ou absent, un appel réseau direct,
-un littéral d'endpoint ou une correspondance `data-cmz-id` manquante, puis
+un littéral d'endpoint ou une correspondance `data-atelier-id` manquante, puis
 exécute compilation, build de production, lint et tests dans un candidat jetable
 et confiné.
 

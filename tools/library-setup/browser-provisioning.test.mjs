@@ -23,6 +23,7 @@ import {
     verifyArchive,
 } from './browser-provisioning.mjs';
 import { loadResolutionPolicy } from './resolution-policy.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const REPO_ROOT = new URL('../..', import.meta.url).pathname;
 const ARCHIVE = storedZip(
@@ -95,7 +96,7 @@ function storedZip(name, options) {
 
 async function cacheRoot(t) {
     const parent = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-browser-'))
+        await mkdtemp(join(tmpdir(), signatureName('browser-')))
     );
     t.after(() => rm(parent, { recursive: true, force: true }));
     return join(parent, 'cache');

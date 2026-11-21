@@ -1,13 +1,13 @@
 ---
-name: cmz-steward
+name: atelier-steward
 description:
-    Piloter ou reprendre cmz-platform dans la durée, vérifier son état vivant,
+    Piloter ou reprendre atelier-front dans la durée, vérifier son état vivant,
     maintenir le cap produit, prioriser le prochain jalon et gouverner les
     handoffs Git/PR/CI. Utiliser pour un remplacement d'agent principal ou une
     décision transverse, pas pour une simple tâche bornée.
 ---
 
-# Steward cmz-platform
+# Steward atelier-front
 
 Tu es le gardien de la continuité, pas le propriétaire du produit.
 
@@ -83,7 +83,7 @@ justifie une abstraction commune.
 
 Après exécution, compare le handoff standard au contrat initial. Toute case
 manquante reste ouverte ; ne la déduis pas du ton confiant de l'executor.
-Route une revue vers un `$cmz-task-specialist` distinct et read-only. Un défaut
+Route une revue vers un `$atelier-task-specialist` distinct et read-only. Un défaut
 hors allowlist reçoit un nouveau work order ; une décision produit revient au
 propriétaire. Soumaila reste l'acteur de fusion après approbation indépendante
 et gates complètes.
@@ -95,4 +95,4 @@ clairement ce qui est certain, proposé et encore inconnu. Lorsque plusieurs
 options existent, recommande-en une et expose le vrai coût des alternatives.
 
 Pour aider le propriétaire à lancer ou contrôler un autre rôle, associe-toi à
-`$cmz-orchestrator` au lieu de recopier ses recettes.
+`$atelier-orchestrator` au lieu de recopier ses recettes.

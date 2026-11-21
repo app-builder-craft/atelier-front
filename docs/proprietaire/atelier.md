@@ -228,6 +228,10 @@ Toutes se lancent dans `~/atelier-front`.
 un acte du propriétaire, à faire seulement quand
 `.github/branch-protection.main.json` a changé.
 
+Sans remote GitHub configuré, désigner le dépôt par la variable
+`ATELIER_GITHUB_REPO=<propriétaire>/<nom>`. Elle a changé de nom avec la
+signature de l'atelier : une variable exportée sous l'ancien nom n'est plus lue.
+
 ## 4. Les versions de Node et de Bun
 
 ### 4.1 Ce qui est figé, et où
@@ -526,7 +530,7 @@ git commit -m "test(deps): requalifier Tailwind React"
 D'abord, regarde si le banc a déjà Tailwind :
 
 ```sh
-node -p "require('./apps/library-qualification-angular-tailwind/.cmz/libraries.json').libraries"
+node -p "require('./apps/library-qualification-angular-tailwind/.atelier/libraries.json').libraries"
 ```
 
 - `[]` : fais la commande 3. C'est le cas après une reconstruction du banc.
@@ -598,9 +602,9 @@ sinon tout est à refaire.
    verrou. Ne relance pas avec d'autres options.
 3. Si une promotion échoue, l'outil remet lui-même la matrice dans son état
    d'origine.
-4. Un verrou `.git/cmz-library-promotion.lock` peut rester après un Ctrl-C. La
-   promotion suivante reprend d'elle-même un verrou dont le processus est mort
-   sur la même machine. Ne le supprime jamais : si le message
+4. Un verrou `.git/atelier-library-promotion.lock` peut rester après un Ctrl-C.
+   La promotion suivante reprend d'elle-même un verrou dont le processus est
+   mort sur la même machine. Ne le supprime jamais : si le message
    `promotion déjà active` persiste, signale-le.
 5. Transmets à un agent (`task-specialist`, mode `diagnose`) : le journal
    `~/requalif-<N>.log` (et `~/requalif-3-plan.json` pour la commande 3), la
@@ -682,7 +686,7 @@ La CI (`.github/workflows/ci.yml`) tourne sur chaque PR vers `main` et sur
 | Publication durability (linux-ext4 / macos-apfs)           | une régression des publications transactionnelles du moteur                                                                                                 |
 | Library candidate isolation (linux-docker / macos-sandbox) | une régression du confinement des bibliothèques (lancé seulement si ses outils changent)                                                                    |
 | Library integration (create-app → Material → Tailwind)     | pistes non `verified`, versions testées différentes de la CI, ou entrées gouvernantes changées : requalifier (§ 5). Lancé seulement si ses entrées changent |
-| External application shells                                | une régression de la chaîne de création ; ou l'étape nginx : voir `CMZ_NGINX_DIGEST_STALE` (§ 8)                                                            |
+| External application shells                                | une régression de la chaîne de création ; ou l'étape nginx : voir `ATELIER_NGINX_DIGEST_STALE` (§ 8)                                                        |
 | Secret scan (gitleaks)                                     | un secret dans l'historique : ne pas contourner, le retirer et le révoquer                                                                                  |
 | Oracle — lint + build + ngc + test                         | un projet modifié ne compile pas, a un avertissement de lint ou un test rouge                                                                               |
 | E2E smoke (Playwright)                                     | la preuve navigateur du projet `workspace-react-proof` a échoué (lancée seulement si ce projet est concerné)                                                |
@@ -736,8 +740,8 @@ ces outils.
 | `The command 'docker' could not be found in this WSL 2 distro.`                                                                            | L'intégration WSL de Docker Desktop n'est pas activée pour Ubuntu                          | Docker Desktop → Settings → Resources → WSL integration → Ubuntu → Apply & restart ; puis `docker info > /dev/null && echo DOCKER-OK`                                                                           |
 | `Docker absent (exécutable introuvable)`, `Docker présent mais accès/socket refusé` ou `Docker installé mais daemon indisponible (code …)` | Docker Desktop arrêté ou non relié à Ubuntu                                                | Démarrer Docker Desktop, vérifier l'intégration WSL, puis `docker info > /dev/null && echo DOCKER-OK` (sans `sudo`)                                                                                             |
 | `npm error … AppData\Roaming\npm` pendant `nvm install`                                                                                    | Le npm de Windows est vu à travers le `PATH` partagé avec Windows                          | Sans gravité. Vérifier `command -v node` : le chemin doit contenir `/.nvm/`                                                                                                                                     |
-| `CMZ_NGINX_DIGEST_STALE nginx:… : empreinte périmée`                                                                                       | L'image officielle a été republiée sous le même tag                                        | Mettre à jour l'empreinte épinglée : § 8.2                                                                                                                                                                      |
-| `CMZ_NGINX_DIGEST_UNVERIFIABLE nginx:… : vérification impossible`                                                                          | Registre injoignable ou Docker indisponible                                                | Vérifier Docker et le réseau, puis relancer `bun run check:nginx-digest`                                                                                                                                        |
+| `ATELIER_NGINX_DIGEST_STALE nginx:… : empreinte périmée`                                                                                   | L'image officielle a été republiée sous le même tag                                        | Mettre à jour l'empreinte épinglée : § 8.2                                                                                                                                                                      |
+| `ATELIER_NGINX_DIGEST_UNVERIFIABLE nginx:… : vérification impossible`                                                                      | Registre injoignable ou Docker indisponible                                                | Vérifier Docker et le réseau, puis relancer `bun run check:nginx-digest`                                                                                                                                        |
 | ``✖ Environnement non conforme au champ `engines` :``                                                                                      | Node ou Bun hors de la plage `engines`                                                     | `nvm install` puis `nvm use` (sans numéro : ils lisent `.nvmrc`). Ignorer le numéro proposé à la dernière ligne du message                                                                                      |
 | `runtime-policy: packageManager non exact` ou `runtime-policy: .nvmrc non exact`                                                           | Version écrite avec `^` ou `~`, déclarée deux fois, ou ligne en trop                       | Écrire une seule version exacte, comme `1.2.3`                                                                                                                                                                  |
 | `Bun exécuté … différent du packageManager …`                                                                                              | Le Bun installé n'est pas celui de `packageManager`                                        | Réinstaller Bun avec sa version exacte (§ 2.7)                                                                                                                                                                  |
@@ -747,7 +751,7 @@ ces outils.
 | `0 piste candidate compatible (attendu exactement 1)`                                                                                      | Promotion d'une piste encore `verified`, ou nouvelle version hors de la plage de la piste  | Repasser la piste en `candidate` (§ 4.3 étape 7) ; hors plage, créer une nouvelle piste (§ 4.6)                                                                                                                 |
 | « Library integration » rouge en CI, vert chez toi                                                                                         | Preuves faites avec un Node différent de `.nvmrc`, ou entrées gouvernantes changées depuis | Aligner la machine sur `.nvmrc` (`nvm use`) et requalifier                                                                                                                                                      |
 | `plan attendu library-plan:…, obtenu library-plan:…`                                                                                       | Plan périmé : un commit ou un changement depuis le `--dry-run`                             | Refaire le `--dry-run` de la commande 3, puis la publication avec le nouveau plan                                                                                                                               |
-| `promotion déjà active (pid …)`                                                                                                            | Une autre promotion tourne, ou un verrou laissé sous un autre nom de machine               | Vérifier qu'aucune promotion ne tourne. Ne pas supprimer `.git/cmz-library-promotion.lock` : signaler                                                                                                           |
+| `promotion déjà active (pid …)`                                                                                                            | Une autre promotion tourne, ou un verrou laissé sous un autre nom de machine               | Vérifier qu'aucune promotion ne tourne. Ne pas supprimer `.git/atelier-library-promotion.lock` : signaler                                                                                                       |
 | `ancienne transaction présente (…)`                                                                                                        | Une publication `add-library` a été interrompue                                            | Ne pas supprimer le journal ni le verrou nommés : signaler, avec `git status --short` et `git log --oneline -6`                                                                                                 |
 | `dépôt entièrement propre requis`                                                                                                          | `git status --short` n'est pas vide                                                        | Committer ou faire examiner les changements ; jamais de nettoyage à l'aveugle                                                                                                                                   |
 | `… n'est pas installé à la racine`                                                                                                         | Dépendances absentes ou anciennes                                                          | `bun install --frozen-lockfile`                                                                                                                                                                                 |
@@ -799,6 +803,6 @@ Dans une branche dédiée :
     bun run check:nginx-digest
     ```
 
-    Doit afficher `CMZ_NGINX_DIGEST_OK nginx:<tag>`.
+    Doit afficher `ATELIER_NGINX_DIGEST_OK nginx:<tag>`.
 
 5. Commit, puis PR (§ 6.4).

@@ -45,7 +45,7 @@ function sha256(value) {
 
 function repository(t) {
     const root = realpathSync(
-        mkdtempSync(join(tmpdir(), 'cmz-promotion-runner-'))
+        mkdtempSync(join(tmpdir(), signatureName('promotion-runner-')))
     );
     t.after(() => {
         // Le verrou est le seul résidu métier susceptible de survivre au
@@ -60,7 +60,7 @@ function repository(t) {
             false,
             'le verrou de promotion doit être libéré avant le teardown'
         );
-        removeTemporaryFixture(root, 'cmz-promotion-runner-');
+        removeTemporaryFixture(root, signatureName('promotion-runner-'));
     });
     for (const path of [
         'conventions',

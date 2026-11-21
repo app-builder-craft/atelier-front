@@ -613,7 +613,7 @@ export const MUTATIONS = [
             ...f,
             template: f.template.replace(
                 'try_files $uri /index.html;',
-                'try_files $uri /index.html;\n        add_header X-Cmz-Test "1";'
+                'try_files $uri /index.html;\n        add_header X-Location-Probe "1";'
             ),
         }),
         '1-header-matrix',

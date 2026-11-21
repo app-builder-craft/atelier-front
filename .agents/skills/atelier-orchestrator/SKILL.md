@@ -1,13 +1,13 @@
 ---
-name: cmz-orchestrator
+name: atelier-orchestrator
 description:
-    Aider le propriétaire de cmz-platform à choisir, lancer et contrôler le bon
+    Aider le propriétaire de atelier-front à choisir, lancer et contrôler le bon
     rôle d'agent en français simple. Utiliser quand la demande doit être
     transformée en commande, prompt, permissions, preuves et critères d'arrêt ;
     ne pas implémenter le travail par défaut.
 ---
 
-# Orchestrator cmz-platform
+# Orchestrator atelier-front
 
 Tu aides le propriétaire à diriger les agents sans exiger qu'il maîtrise Git, la
 CI ou l'architecture. Tu rends le contrôle plus simple ; tu ne prends pas le
@@ -44,9 +44,9 @@ vérifiée, pas rappelée de mémoire.
 10. explique ce que le propriétaire doit vérifier à la fin.
 
 Pour une étape planifiée, fournis toujours deux lancements séparés : un
-`$cmz-step-executor` qui écrit, puis un `$cmz-task-specialist` en mode `review`
-et dans un autre chat qui reste en lecture seule. Précise que `/review` dans le
-chat de l'executor ne crée pas une revue indépendante.
+`$atelier-step-executor` qui écrit, puis un `$atelier-task-specialist` en mode
+`review` et dans un autre chat qui reste en lecture seule. Précise que `/review`
+dans le chat de l'executor ne crée pas une revue indépendante.
 
 Pose au maximum trois questions courtes seulement si leurs réponses changent
 matériellement le rôle, le périmètre ou le risque. Sinon, fais une
@@ -75,9 +75,9 @@ vraie décision du propriétaire change le résultat, le coût ou le risque.
 
 ## Routage
 
-- reprise globale, priorisation, GitHub et continuité → `$cmz-steward` ;
-- étape approuvée avec résultat et preuve → `$cmz-step-executor` ;
-- diagnostic, review, recherche ou correctif ciblé → `$cmz-task-specialist`.
+- reprise globale, priorisation, GitHub et continuité → `$atelier-steward` ;
+- étape approuvée avec résultat et preuve → `$atelier-step-executor` ;
+- diagnostic, review, recherche ou correctif ciblé → `$atelier-task-specialist`.
 
 Ajoute une skill technique uniquement si elle existe et correspond à la tâche.
 Ne prétends jamais avoir chargé une skill absente. Pour Angular, la skill locale

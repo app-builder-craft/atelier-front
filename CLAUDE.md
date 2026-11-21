@@ -33,7 +33,7 @@
 
 ---
 
-# cmz-platform — entrée Claude Code
+# atelier-front — entrée Claude Code
 
 @AGENTS.md @PROJECT_AUTHORITY.md
 

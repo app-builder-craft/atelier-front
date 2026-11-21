@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:cmz:observation-evidence:1.0.0",
+  "$id": "urn:atelier:observation-evidence:1.0.0",
   "oneOf": [
     {
       "$ref": "#/$defs/selection"

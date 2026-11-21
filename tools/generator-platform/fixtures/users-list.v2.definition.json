@@ -8,9 +8,9 @@
   },
   "backend_contract": {
     "uri": "tools/generator-platform/fixtures/users-list.backend-contract.json",
-    "id": "cmz-users-list",
+    "id": "fixture-users-list",
     "version": "1.0.0",
-    "sha256": "a83b900ffd49c8627d72178878a8aebf8457c9690d7ae52887af100e6d7829a2"
+    "sha256": "d4ae3e33b2eefc45165c11460ba75ebc9c2adfe62aa6cc158991d964525798e8"
   },
   "operations": [
     {

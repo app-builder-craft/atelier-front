@@ -30,6 +30,7 @@ import {
     snapshotTree,
     TOOLS_ROOT,
 } from './test-support/external-application-fixture.mjs';
+import { signatureName } from './core/atelier-signature.mjs';
 
 test('T2 : pas de racine, ancêtre ou descendant de l’atelier', async () => {
     for (const targetRoot of [
@@ -242,7 +243,9 @@ test('EXT01 policy : initialisation sans historique Git intermédiaire et refus 
     const parent = await fixtureParent(t);
     const toolsRoot = join(parent, 'workshop');
     const proofParent = await realpath(
-        await mkdtemp(join(dirname(TOOLS_ROOT), 'cmz-policy-session-'))
+        await mkdtemp(
+            join(dirname(TOOLS_ROOT), signatureName('policy-session-'))
+        )
     );
     t.after(() => rm(proofParent, { recursive: true, force: true }));
     const policyPath = 'conventions/libraries/resolution-policy.json';
@@ -292,7 +295,7 @@ test('EXT01 policy : initialisation sans historique Git intermédiaire et refus 
         relocated +
         '\nconst TOOLS_ROOT = ' +
         JSON.stringify(toolsRoot) +
-        ';\n//# sourceURL=cmz-proof-policy-session-fixture.mjs\n';
+        `;\n//# sourceURL=${signatureName('proof-policy-session-fixture.mjs')}\n`;
     const { proofSession } = await import(
         'data:text/javascript;base64,' +
             Buffer.from(fixtureModule).toString('base64')

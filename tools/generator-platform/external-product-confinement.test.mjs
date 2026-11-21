@@ -20,7 +20,7 @@ import { pathExists } from './core/external-application-paths.mjs';
 import { runConfinedProductCommand } from './core/external-product-confinement.mjs';
 import { fixtureParent } from './test-support/external-application-fixture.mjs';
 import { repositoryRoot } from './validate-ir.mjs';
-import { SIGNATURE } from './core/atelier-signature.mjs';
+import { SIGNATURE, toolEnv } from './core/atelier-signature.mjs';
 
 // CI de la PR #389 : sur Docker, sandbox.mjs ignore `extraEnv` et fixe
 // CI=1. L'invocation réelle d'une commande du produit est construite pour les
@@ -119,7 +119,7 @@ const tcp = (host) => new Promise((done) => {
     socket.on('error', (error) => done('blocked:' + (error.code ?? 'error')));
 });
 const record = {
-    sentinel: process.env.CMZ_PROBE_SECRET ?? null,
+    sentinel: process.env.${toolEnv('PROBE_SECRET')} ?? null,
     readOutside: attempt(() => readFileSync(outsideRead)),
     writeOutside: attempt(() => writeFileSync(outsideWrite, 'x')),
     writeSources: attempt(() => writeFileSync('apps/escape.txt', 'x')),
@@ -177,7 +177,10 @@ test('X4-sécurité : une commande du produit ne sort ni par le réseau, ni du p
     const control = await promisify(execFile)(
         process.execPath,
         probe(join(root, 'unconfined/record.json')),
-        { cwd: root, env: { ...process.env, CMZ_PROBE_SECRET: 'leak' } }
+        {
+            cwd: root,
+            env: { ...process.env, [toolEnv('PROBE_SECRET')]: 'leak' },
+        }
     ).then(
         () => 0,
         (error) => error
@@ -195,8 +198,8 @@ test('X4-sécurité : une commande du produit ne sort ni par le réseau, ni du p
         await rm(join(root, path, path === 'tmp' ? 'cache.txt' : 'escape.txt'));
     hits = 0;
     // Confiné : rien ne sort, seuls les caches restent inscriptibles.
-    process.env.CMZ_PROBE_SECRET = 'leak';
-    t.after(() => delete process.env.CMZ_PROBE_SECRET);
+    process.env[toolEnv('PROBE_SECRET')] = 'leak';
+    t.after(() => delete process.env[toolEnv('PROBE_SECRET')]);
     const output = { text: '', write: (chunk) => (output.text += chunk) };
     await runExternalApplicationCommand(
         process.execPath,

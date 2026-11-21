@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/action-request-definition-v2.schema.json",
-  "title": "CMZ Action Request Authoring Definition v2",
+  "$id": "https://atelier.local/schemas/generator-platform/action-request-definition-v2.schema.json",
+  "title": "Atelier Action Request Authoring Definition v2",
   "oneOf": [
     {
       "$ref": "#/$defs/definition20"

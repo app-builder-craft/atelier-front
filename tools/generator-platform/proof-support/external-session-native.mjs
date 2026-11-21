@@ -14,7 +14,7 @@ import {
     pathExists,
     verifyGeneratedTree,
 } from '../core/external-application-paths.mjs';
-import { EXTERNAL_WORKSPACE_CMZ as CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from '../renderers/application-workspace-renderer.mjs';
 import {
     hash,
     snapshotTree,
@@ -177,7 +177,7 @@ export async function qualifySessionBrowser(session, shells, browser) {
     for (const { input, plan } of shells) {
         const product = input.root;
         const domain = input.domain;
-        const proof = resolve(product, CMZ.proof);
+        const proof = resolve(product, WORKSPACE.proof);
         assert.equal(await pathExists(proof), false);
         const fixture = {
             title: input.design.design.title,
@@ -215,7 +215,7 @@ export async function qualifySessionBrowser(session, shells, browser) {
                     session,
                     product,
                     [
-                        `${CMZ.proof}/session-browser.mjs`,
+                        `${WORKSPACE.proof}/session-browser.mjs`,
                         resolve(product, 'dist', plan.output, 'browser'),
                         `{{readonly:0}}/${browserRelative}`,
                         resolve(proof, 'session-browser.fixture.json'),

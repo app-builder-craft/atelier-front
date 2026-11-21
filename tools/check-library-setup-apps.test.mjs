@@ -16,7 +16,10 @@ import {
     validRecipe,
     write,
 } from './check-library-setup-fixture.mjs';
-import { SIGNATURE_FILES } from './generator-platform/core/atelier-signature.mjs';
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from './generator-platform/core/atelier-signature.mjs';
 
 // Suite 2/2 : verifyApps (manifeste obligatoire, plateforme déterminée,
 // dépendances cohérentes, confinement) + helpers exportés.
@@ -52,7 +55,7 @@ test(`BYPASS : app avec project.json régulier mais sans ${SIGNATURE_FILES.libra
 });
 
 test('BYPASS : dossier d’app est un lien symbolique → échec', async (t) => {
-    const outside = await mkdtemp(join(tmpdir(), 'cmz-outside-'));
+    const outside = await mkdtemp(join(tmpdir(), signatureName('outside-')));
     t.after(() => rm(outside, { recursive: true, force: true }));
     await write(join(outside, 'project.json'), {
         name: 'demo-app',
@@ -646,7 +649,9 @@ test('app sans project.json ignorée ; fichier isolé dans apps/ ignoré', async
 });
 
 test('detectAppPlatform : un seul résultat, sinon unknown (jamais "premier gagné")', async (t) => {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-platform-detect-'));
+    const root = await mkdtemp(
+        join(tmpdir(), signatureName('platform-detect-'))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     await write(join(root, 'ng/project.json'), {
         targets: { build: { executor: '@angular/build:application' } },
@@ -695,7 +700,7 @@ test('detectAppPlatform : un seul résultat, sinon unknown (jamais "premier gagn
 });
 
 test('verifyWorkspaceDependency : chaîne complète + cohérence version', async (t) => {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-dep-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('dep-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     await write(join(root, 'package.json'), {
         devDependencies: { pkg: 'catalog:tooling' },
@@ -717,7 +722,7 @@ test('verifyWorkspaceDependency : chaîne complète + cohérence version', async
 });
 
 const depRoot = async (t, catalogValue, lockVersion) => {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-dep-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('dep-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     await write(join(root, 'package.json'), {
         dependencies: { pkg: 'catalog:' },

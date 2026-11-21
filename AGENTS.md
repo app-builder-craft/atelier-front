@@ -1,4 +1,4 @@
-# Instructions obligatoires pour les agents — cmz-platform
+# Instructions obligatoires pour les agents — atelier-front
 
 Ce fichier est chargé automatiquement. Il s'applique à tout agent qui travaille
 dans le dépôt, quel que soit son outil, son modèle ou son niveau supposé.
@@ -23,14 +23,14 @@ s'auto-attribue jamais un rôle plus large pour avancer.
 
 ## Routage des rôles
 
-- `$cmz-steward` : reprendre ou piloter le workspace, maintenir le cap, choisir
-  le prochain jalon et gouverner Git/PR/CI.
-- `$cmz-step-executor` : réaliser une étape déjà validée dans un périmètre et
-  avec des preuves définis.
-- `$cmz-task-specialist` : diagnostiquer, auditer, rechercher, relire ou
+- `$atelier-steward` : reprendre ou piloter le workspace, maintenir le cap,
+  choisir le prochain jalon et gouverner Git/PR/CI.
+- `$atelier-step-executor` : réaliser une étape déjà validée dans un périmètre
+  et avec des preuves définis.
+- `$atelier-task-specialist` : diagnostiquer, auditer, rechercher, relire ou
   corriger une tâche précise. Lecture seule par défaut.
-- `$cmz-orchestrator` : aider le propriétaire à choisir, lancer et contrôler les
-  autres rôles en français simple. Aucune implémentation par défaut.
+- `$atelier-orchestrator` : aider le propriétaire à choisir, lancer et contrôler
+  les autres rôles en français simple. Aucune implémentation par défaut.
 
 Les skills de rôle fixent l'autorité. Les skills techniques, par exemple
 `$angular-developer`, complètent l'expertise mais n'élargissent jamais le

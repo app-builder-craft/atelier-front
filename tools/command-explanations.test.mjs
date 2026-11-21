@@ -11,6 +11,7 @@ import {
     EXPLAINED_COMMANDS,
     formatCommandExplanation,
 } from './command-explanations.mjs';
+import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const RUNBOOK = 'docs/proprietaire/produit.md';
@@ -119,7 +120,9 @@ test('aucune commande expliquée n’annonce de journal ni de reprise manuelle',
 });
 
 test('--explain fonctionne hors workspace et ne crée aucun fichier', (t) => {
-    const directory = mkdtempSync(join(tmpdir(), 'cmz-command-explain-'));
+    const directory = mkdtempSync(
+        join(tmpdir(), signatureName('command-explain-'))
+    );
     t.after(() => rmSync(directory, { recursive: true, force: true }));
     for (const command of EXPLAINED_COMMANDS) {
         const script =

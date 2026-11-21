@@ -17,7 +17,10 @@ import {
     proveLibraryRuntime,
     requiredAcceptances,
 } from './runtime-proofs.mjs';
-import { proveMaterialHostTypography } from './runtime-oracles/material-host-typography.mjs';
+import {
+    HOST_FONT,
+    proveMaterialHostTypography,
+} from './runtime-oracles/material-host-typography.mjs';
 import { proveMaterialTailwindBrowser } from './runtime-oracles/material-tailwind-browser.mjs';
 import { QUALIFICATION_ORACLE_SOURCE_PATHS } from './tooling-fingerprint.mjs';
 import {
@@ -42,7 +45,7 @@ async function put(root, path, content) {
 
 test('Tailwind exige une vraie règle CSS issue du build et nettoie sa sonde', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-runtime-proof-'))
+        await mkdtemp(join(tmpdir(), signatureName('runtime-proof-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -232,7 +235,7 @@ test('la coexistence est exigée quel que soit l’ordre d’installation', () =
 
 test('une acceptance déclarée sans oracle bloque en nommant la clé', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-runtime-oracle-'))
+        await mkdtemp(join(tmpdir(), signatureName('runtime-oracle-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -342,7 +345,7 @@ test('la page sonde intègre le CSS compilé et n’appelle aucun réseau', () =
 });
 
 const HOST_TYPOGRAPHY = {
-    fontFamily: '"CMZ Host Sentinel", serif',
+    fontFamily: `"${HOST_FONT}", serif`,
     fontSize: '19px',
     lineHeight: '31px',
     fontWeight: '700',
@@ -420,7 +423,12 @@ test('les mutations typographiques doivent être observées sur le body et son e
 test('la sonde place la typographie hôte avant le CSS compilé et reste hors réseau', () => {
     const compiled = 'body{color:navy}';
     const html = hostTypographyProbeHtml(compiled);
-    assert.ok(html.indexOf('CMZ Host Sentinel') < html.indexOf(compiled));
+    // La police sentinelle est déclarée, et avant le CSS compilé.
+    const font = html.indexOf(`font-family: "${HOST_FONT}", serif;`);
+    assert.ok(
+        font >= 0 && font < html.indexOf(compiled),
+        'police sentinelle déclarée avant le CSS compilé'
+    );
     assert.match(html, /font-size: 19px/);
     assert.match(html, /line-height: 31px/);
     assert.match(html, /font-weight: 700/);
@@ -451,7 +459,7 @@ test('l’empreinte de qualification couvre le navigateur et le nouvel oracle', 
 
 test('l’oracle de typographie rend le CSS compilé puis nettoie sa sortie', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-host-typography-proof-'))
+        await mkdtemp(join(tmpdir(), signatureName('host-typography-proof-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -532,7 +540,7 @@ test('l’oracle de typographie refuse un moteur absent, une sortie préexistant
     );
 
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-host-typography-guards-'))
+        await mkdtemp(join(tmpdir(), signatureName('host-typography-guards-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -593,7 +601,7 @@ test('l’oracle de typographie refuse un moteur absent, une sortie préexistant
 
 test('l’oracle navigateur place sa classe Tailwind dans la source puis la nettoie', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-browser-source-proof-'))
+        await mkdtemp(join(tmpdir(), signatureName('browser-source-proof-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');

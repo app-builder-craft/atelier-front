@@ -15,7 +15,10 @@ import {
     validRecipe,
     write,
 } from './check-library-setup-fixture.mjs';
-import { SIGNATURE_FILES } from './generator-platform/core/atelier-signature.mjs';
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from './generator-platform/core/atelier-signature.mjs';
 
 // Suite 1/2 : validateRecipes (lecture confinée + schéma fermé + cohérence).
 // Suite verifyApps : check-library-setup-apps.test.mjs (plafond 800 l.).
@@ -471,7 +474,7 @@ test('normalise la sortie réelle du schematic Material et refuse sa dérive', a
 
     const runRecipe = async (theme) => {
         const root = await realpath(
-            await mkdtemp(join(tmpdir(), 'cmz-material-vendor-'))
+            await mkdtemp(join(tmpdir(), signatureName('material-vendor-')))
         );
         t.after(() => rm(root, { recursive: true, force: true }));
         const workspace = join(root, 'candidate');
@@ -692,7 +695,9 @@ test('un bloc de coexistence sans aucun contrôle est refusé', async (t) => {
 
 test('BYPASS : recette fournie par lien symbolique → rejetée', async (t) => {
     const root = await scaffold(t);
-    const elsewhere = await mkdtemp(join(tmpdir(), 'cmz-elsewhere-'));
+    const elsewhere = await mkdtemp(
+        join(tmpdir(), signatureName('elsewhere-'))
+    );
     t.after(() => rm(elsewhere, { recursive: true, force: true }));
     await write(join(elsewhere, 'evil.setup.json'), validRecipe());
     await link(

@@ -127,7 +127,7 @@ function render(document, host = HOST) {
                     {
                         root: `actions/${node.primitive_ref.operation_id}/src`,
                         module: `../../../../actions/${node.primitive_ref.operation_id}/src`,
-                        sampleInput: { field: 'cmz-contrat' },
+                        sampleInput: { field: 'exemple-contrat' },
                         serviceToken: 'FIXTURE_SERVICE_API_URL',
                     },
                 ])

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/application-design.schema.json",
-  "title": "CMZ Target-neutral Application Design",
+  "$id": "https://atelier.local/schemas/generator-platform/application-design.schema.json",
+  "title": "Atelier Target-neutral Application Design",
   "oneOf": [
     {
       "$ref": "#/$defs/application10"

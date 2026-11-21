@@ -5,6 +5,7 @@ import {
     mkdtemp,
     readFile,
     rename,
+    rm,
     writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,7 @@ import {
     planApplicationShell,
     publishApplicationShell,
 } from './core/application-shell-publication.mjs';
-import { signaturePath } from './core/atelier-signature.mjs';
+import { SIGNATURE_FILES, signaturePath } from './core/atelier-signature.mjs';
 import {
     withProductPrefix,
     writeApplicationDesignFixture,
@@ -137,6 +138,29 @@ test('retire une app possédée, publie le tombstone et prouve les gates', async
     await assert.rejects(
         () => planApplicationShell(data.shellOptions),
         /tombstone forbids implicit recreation/
+    );
+});
+
+// Défaut n° 7 de la revue du commit 4 du lot MARQUE : une appli du dépôt sans
+// manifeste est refusée par un message fixe, jamais par le message système,
+// qui porterait un chemin absolu.
+test('refuse une app sans manifeste par un message fixe, sans chemin', async () => {
+    const data = await fixture();
+    await rm(join(data.root, 'apps/sample-app', SIGNATURE_FILES.appManifest));
+    await assert.rejects(
+        () =>
+            planApplicationRetirement(
+                { workspaceRoot: data.root, appName: 'sample-app' },
+                data.dependencies
+            ),
+        (error) => {
+            assert.equal(
+                error.message,
+                'application retirement: app ownership metadata is unreadable'
+            );
+            assert.ok(!error.message.includes(data.root), error.message);
+            return true;
+        }
     );
 });
 

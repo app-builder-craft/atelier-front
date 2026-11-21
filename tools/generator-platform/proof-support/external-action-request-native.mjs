@@ -59,7 +59,7 @@ export async function proveNativeActionRequest(session, shell) {
     assert.equal(labels.length, 5);
     await verifyGeneratedTree(plan.outputAbsolute, plan.files);
     // T11 : la sortie n'importe que les paquets installés du produit et ses
-    // propres fichiers ; aucun module cmz, aucun chemin de l'atelier.
+    // propres fichiers ; aucun module de l'atelier, aucun de ses chemins.
     const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
     assertProductOnlyImports(
         Object.fromEntries(

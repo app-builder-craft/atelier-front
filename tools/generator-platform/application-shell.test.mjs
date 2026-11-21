@@ -26,7 +26,7 @@ import {
     withProductPrefix,
     writeApplicationDesignFixture,
 } from './test-support/application-design-fixture.mjs';
-import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
+import { SIGNATURE_FILES, signatureName } from './core/atelier-signature.mjs';
 
 const applicationDesignSchema = JSON.parse(
     await readFile(
@@ -652,7 +652,7 @@ test('une modification de conception invalide le plan revu', async () => {
 // Critère d'acceptation : une app fraîchement créée doit passer la gate
 // applicative, pas seulement contenir un fichier. Avant ce correctif,
 // `verifyApps` refusait toute app générée — « project.json régulier mais pas de
-// .cmz/libraries.json ». Le test matérialise donc le rendu et exécute la VRAIE
+// .atelier/libraries.json ». Le test matérialise donc le rendu et exécute la VRAIE
 // gate, recettes réelles du dépôt comprises.
 test('une app fraîchement rendue passe la gate library-setup', async (t) => {
     const options = await fixture();
@@ -675,7 +675,7 @@ test('une app fraîchement rendue passe la gate library-setup', async (t) => {
         libraries: [],
     });
 
-    const root = await mkdtemp(join(tmpdir(), 'cmz-shell-gate-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('shell-gate-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     // verifyApps lit le schéma de manifeste sous la racine inspectée.
     await cp(join(REPO_ROOT, 'conventions'), join(root, 'conventions'), {
@@ -710,7 +710,9 @@ test('une app React fraîchement rendue passe la gate library-setup', async (t) 
         prefix: FIXTURE_PREFIX,
     });
 
-    const root = await mkdtemp(join(tmpdir(), 'cmz-react-shell-gate-'));
+    const root = await mkdtemp(
+        join(tmpdir(), signatureName('react-shell-gate-'))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     await cp(join(REPO_ROOT, 'conventions'), join(root, 'conventions'), {
         recursive: true,

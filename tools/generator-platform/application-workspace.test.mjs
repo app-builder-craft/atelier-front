@@ -11,8 +11,8 @@ import {
     qualifyNodeVersion,
     qualifyBrowser,
 } from './check-external-application-shells.mjs';
-import { verifyCmzJournalsIgnored } from '../check-cmz-journals-ignored.mjs';
-import { EXTERNAL_WORKSPACE_CMZ } from './renderers/application-workspace-renderer.mjs';
+import { verifySignatureJournalsIgnored } from '../check-atelier-journals-ignored.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE } from './renderers/application-workspace-renderer.mjs';
 import {
     planApplicationWorkspace,
     planExternalApplicationShell,
@@ -644,19 +644,19 @@ test('v10 : chemins produit déclarés acceptés, journal inconnu refusé', asyn
     await mkdir(join(root, 'tools'));
     const journal = signaturePath('fixture-journal');
     await writeFile(join(root, '.gitignore'), journal + '/\n');
-    const paths = [...Object.values(EXTERNAL_WORKSPACE_CMZ), journal];
+    const paths = [...Object.values(EXTERNAL_WORKSPACE_SIGNATURE), journal];
     // Décision A du lot MARQUE : un outil nomme un chemin sous le dossier de
     // signature par `signaturePath('<nom>'…)`, que le contrôle lit.
     const call = (path) =>
         `signaturePath(${JSON.stringify(path.split('/').slice(1).join('/'))})`;
     const source = join(root, 'tools/fixture.mjs');
     await writeFile(source, paths.map(call).join(';\n'));
-    const accepted = verifyCmzJournalsIgnored(root);
+    const accepted = verifySignatureJournalsIgnored(root);
     assert.equal(accepted.ok, true, accepted.errors.join('\n'));
     assert.deepEqual(accepted.names, ['fixture-journal']);
     const unknown = signaturePath('undeclared-product');
     await writeFile(source, [...paths, unknown].map(call).join(';\n'));
-    const refused = verifyCmzJournalsIgnored(root);
+    const refused = verifySignatureJournalsIgnored(root);
     assert.equal(refused.ok, false);
     assert.equal(refused.errors.length, 1);
     assert.ok(refused.errors[0].includes(unknown + '/'));

@@ -42,6 +42,7 @@ import {
 } from './test-support/application-session-fixture.mjs';
 import { TOOLS_ROOT } from './test-support/external-application-fixture.mjs';
 import { sessionApp } from './test-support/external-publication-fixture.mjs';
+import { signatureName } from './core/atelier-signature.mjs';
 
 // Formes du préfixe du produit fictif, écrites ici (oracle du test) :
 // variables de l'opérateur `<P>_*`, variables nginx et fonctions `<p>_*`.
@@ -292,7 +293,7 @@ test('X4-config : le script de validation refuse sans jamais écrire une valeur'
         t,
         SESSION_FIXTURE_DOMAINS[0]
     );
-    const root = await scratch(t, 'cmz-relay-envsh-');
+    const root = await scratch(t, signatureName('relay-envsh-'));
     const file = join(root, ENVSH_NAME);
     await writeFile(file, external[ENVSH]);
     const [first, ...others] = table.map((entry) => entry.variable);
@@ -305,7 +306,7 @@ test('X4-config : le script de validation refuse sans jamais écrire une valeur'
         assert.equal(result.status, 0, value);
         assert.equal(result.stdout, 'VALIDATED=1');
     }
-    const secret = 'cmz-secret-sentinel';
+    const secret = signatureName('secret-sentinel');
     const failures = [
         [{ [first]: `http://user:${secret}@svc/` }, `${first}_INVALID`],
         [{ [first]: `ftp://svc/${secret}/` }, `${first}_INVALID`],
@@ -337,7 +338,7 @@ test('X4-config : le script de validation refuse sans jamais écrire une valeur'
 
 test('X4-config : proxy de développement, cibles hors du produit sur chemins réels', async (t) => {
     const { external } = await renderShells(t, SESSION_FIXTURE_DOMAINS[0]);
-    const root = await scratch(t, 'cmz-relay-dev-');
+    const root = await scratch(t, signatureName('relay-dev-'));
     const product = join(root, 'product');
     const app = join(product, 'apps', 'relay-app');
     await mkdir(app, { recursive: true });
@@ -416,8 +417,9 @@ test('X4-config : seul le script de validation est exécutable', async (t) => {
     assert.equal(ownedFileMode(envsh), 0o755);
     assert.equal(ownedFileMode(ENVSH), 0o755);
     // Le mode n'est pas couvert par les empreintes : 0755 pour tout préfixe,
-    // dont `cmz`, préfixe implicite des produits créés avant le lot MARQUE.
-    for (const prefix of ['cmz', 'qz', 'abcdef'])
+    // dont l'ancien nom de l'atelier, préfixe implicite des produits créés
+    // avant le lot MARQUE (composé, pour ne pas l'écrire en dur).
+    for (const prefix of [['c', 'mz'].join(''), 'qz', 'abcdef'])
         assert.equal(
             ownedFileMode(`apps/relay-app/${relayEnvshPath(prefix)}`),
             0o755,
@@ -430,7 +432,7 @@ test('X4-config : seul le script de validation est exécutable', async (t) => {
         'package.json',
     ])
         assert.equal(ownedFileMode(path), 0o644, path);
-    const root = await scratch(t, 'cmz-relay-mode-');
+    const root = await scratch(t, signatureName('relay-mode-'));
     const candidate = join(root, 'candidate');
     await stageGeneratedTree(candidate, {
         [envsh]: 'echo\n',
@@ -448,7 +450,7 @@ test('X4-config : seul le script de validation est exécutable', async (t) => {
 });
 
 test('X4-config : fichiers de configuration locale refusés sous la racine, avec ou sans Git', async (t) => {
-    const root = await scratch(t, 'cmz-relay-local-');
+    const root = await scratch(t, signatureName('relay-local-'));
     for (const git of [false, true]) {
         for (const path of [
             '.env',

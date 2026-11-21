@@ -20,9 +20,11 @@ const RESULT_PATTERN = new RegExp(
     `<pre id="${escapeRegExp(RESULT_ID)}">([^<]*)<\\/pre>`
 );
 const BROWSER_PROFILE = `node_modules/${SIGNATURE.dir}-browser-profile`;
+// Police sentinelle de l'hôte, nommée par la signature de l'atelier.
+export const HOST_FONT = signatureName('host-sentinel');
 
 const EXPECTED_TYPOGRAPHY = Object.freeze({
-    fontFamily: '"CMZ Host Sentinel", serif',
+    fontFamily: `"${HOST_FONT}", serif`,
     fontSize: '19px',
     lineHeight: '31px',
     fontWeight: '700',
@@ -128,7 +130,7 @@ export function hostTypographyProbeHtml(compiledCss) {
     }
     return `<!doctype html><html><head><style>
 html, body {
-    font-family: "CMZ Host Sentinel", serif;
+    font-family: "${HOST_FONT}", serif;
     font-size: 19px;
     line-height: 31px;
     font-weight: 700;

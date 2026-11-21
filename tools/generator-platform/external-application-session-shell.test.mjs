@@ -15,7 +15,7 @@ import {
     pathExists,
     verifyGeneratedTree,
 } from './core/external-application-paths.mjs';
-import { EXTERNAL_WORKSPACE_CMZ as CMZ } from './renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from './renderers/application-workspace-renderer.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import {
     externalCspHeader,
@@ -43,7 +43,7 @@ import {
     sessionShellOptions,
     writeExternalSessionDesign,
 } from './test-support/external-session-fixture.mjs';
-import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
+import { SIGNATURE_FILES, INTERNAL } from './core/atelier-signature.mjs';
 
 async function sessionProduct(t, domain) {
     const fixture = await prepareFixture(t);
@@ -59,7 +59,7 @@ const EXTERNAL_CSP_HEADER = externalCspHeader(FIXTURE_PREFIX);
 const typescript = (plan) =>
     Object.entries(plan.files).filter(([path]) => path.endsWith('.ts'));
 
-test('X0 : deux produits fictifs planifient une coque Angular avec session, sans import cmz ni URL de service', async (t) => {
+test('X0 : deux produits fictifs planifient une coque Angular avec session, sans import de la portée de l’atelier ni URL de service', async (t) => {
     const plans = [];
     for (const domain of SESSION_FIXTURE_DOMAINS) {
         const product = await sessionProduct(t, domain);
@@ -219,7 +219,7 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
         );
         assert.equal(
             calls.at(-1).args[0],
-            join(product.root, CMZ.support, 'check-workspace.mjs')
+            join(product.root, WORKSPACE.support, 'check-workspace.mjs')
         );
         await verifyGeneratedTree(plan.outputAbsolute, plan.files);
         assert.equal(await pathExists(plan.candidate), false);
@@ -437,20 +437,20 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
 });
 
 // V9-R1 : l'oracle du test 37 refuse aussi un import sans `from`.
-test('X0 : l’oracle « aucun module cmz » voit chaque forme d’import, sans faux positif', () => {
+test('X0 : l’oracle « aucun module de l’atelier » voit chaque forme d’import, sans faux positif', () => {
     for (const source of [
-        "import { session } from '@cmz/shared-domain';",
-        "import '@cmz/x';",
-        'import "@cmz/x";',
-        "export * from '@cmz/x';",
-        "const lazy = await import('@cmz/x');",
-        'const old = require(`@cmz/x`);',
+        `import { session } from '${INTERNAL.scope}/shared-domain';`,
+        `import '${INTERNAL.scope}/x';`,
+        `import "${INTERNAL.scope}/x";`,
+        `export * from '${INTERNAL.scope}/x';`,
+        `const lazy = await import('${INTERNAL.scope}/x');`,
+        `const old = require(\`${INTERNAL.scope}/x\`);`,
     ])
         assert.match(source, INTERNAL_MODULE_SPECIFIER, source);
     for (const source of [
         "import { inject } from '@angular/core';",
-        "import { tokens } from '@cmzx/y';",
-        '// cmz est le nom de l’atelier, pas un module.',
+        `import { tokens } from '${INTERNAL.scope}x/y';`,
+        `// ${INTERNAL.name} est le nom de l’atelier, pas un module.`,
     ])
         assert.doesNotMatch(source, INTERNAL_MODULE_SPECIFIER, source);
 });

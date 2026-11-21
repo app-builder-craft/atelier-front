@@ -13,7 +13,10 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 
 import { executeLibraryRecipe } from './recipe-execution.mjs';
-import { SIGNATURE_FILES } from '../generator-platform/core/atelier-signature.mjs';
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 async function put(root, path, content) {
     await mkdir(dirname(join(root, path)), { recursive: true });
@@ -21,7 +24,9 @@ async function put(root, path, content) {
 }
 
 async function fixture(t) {
-    const root = await realpath(await mkdtemp(join(tmpdir(), 'cmz-recipe-')));
+    const root = await realpath(
+        await mkdtemp(join(tmpdir(), signatureName('recipe-')))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     for (const path of ['candidate', 'repo', 'cache', 'home'])
         await mkdir(join(root, path));

@@ -5,7 +5,7 @@ import { repositoryRoot, validateJsonSchema } from '../validate-ir.mjs';
 import { renderAngularPwaShell } from '../renderers/angular-pwa-shell-renderer.mjs';
 import { renderReactSpaShell } from '../renderers/react-spa-shell-renderer.mjs';
 import {
-    EXTERNAL_WORKSPACE_CMZ,
+    EXTERNAL_WORKSPACE_SIGNATURE,
     renderApplicationWorkspace,
 } from '../renderers/application-workspace-renderer.mjs';
 import { nxConfinementEnvironment } from '../../library-setup/sandbox.mjs';
@@ -55,7 +55,7 @@ export {
     qualifyProductInstallation,
 } from './application-workspace-toolchain.mjs';
 
-const MANIFEST = EXTERNAL_WORKSPACE_CMZ.manifest;
+const MANIFEST = EXTERNAL_WORKSPACE_SIGNATURE.manifest;
 function normalizeWorkspaceOptions(options) {
     if (
         !Array.isArray(options.profiles) ||
@@ -632,7 +632,7 @@ export async function publishExternalApplicationShell(
                 [
                     resolve(
                         plan.root,
-                        `${EXTERNAL_WORKSPACE_CMZ.support}/check-workspace.mjs`
+                        `${EXTERNAL_WORKSPACE_SIGNATURE.support}/check-workspace.mjs`
                     ),
                 ],
                 plan.root

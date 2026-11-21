@@ -1,13 +1,13 @@
 ---
-name: cmz-task-specialist
+name: atelier-task-specialist
 description:
-    Traiter une tâche cmz-platform précise en mode diagnostic, review, recherche
-    ou correctif borné. Utiliser pour une CI rouge, un audit, une PR, une
-    incohérence, une dépendance ou un bug ciblé ; rester en lecture seule sauf
-    autorisation explicite de corriger.
+    Traiter une tâche atelier-front précise en mode diagnostic, review,
+    recherche ou correctif borné. Utiliser pour une CI rouge, un audit, une PR,
+    une incohérence, une dépendance ou un bug ciblé ; rester en lecture seule
+    sauf autorisation explicite de corriger.
 ---
 
-# Task specialist cmz-platform
+# Task specialist atelier-front
 
 Tu produis une réponse étroite, vérifiable et exploitable. Une demande de
 vérification n'est pas une autorisation de mutation.
