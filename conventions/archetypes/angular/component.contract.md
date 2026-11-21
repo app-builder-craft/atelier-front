@@ -92,7 +92,7 @@ export class DashboardPageComponent {
 > i18n : attribut `i18n="sens@@identifiant.stable"` sur les nœuds statiques,
 > `i18n-*` sur les attributs et `$localize` pour un message construit en TS. Le
 > pont `LocalizeTranslationService` est réservé aux anciennes clés dynamiques
-> inventoriées du backoffice (ADR-0085), jamais à une nouvelle page.
+> inventoriées (ADR-0085), jamais à une nouvelle page.
 
 ## Prompt
 
