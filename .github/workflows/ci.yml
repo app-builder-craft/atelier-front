@@ -16,12 +16,27 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # File de fusion : les contextes requis de `main` doivent aussi être rapportés
+  # sur le commit du groupe (branche gh-readonly-queue/main/…), sinon la file
+  # attend un contrôle qui n'arrive jamais. Actions ne prend en charge que
+  # `checks_requested` ; `merge_group` filtre par `branches` ou
+  # `branches-ignore`, jamais par `paths`. La base de diff d'une entrée est son
+  # parent (`merge_group.base_sha`) : chaque entrée doit donc passer ses
+  # propres contrôles (réglage de file ALLGREEN, « Require all queue entries to
+  # pass required checks »). Garde : check:branch-protection-contexts
+  # (merge_group, aucun job requis sauté, groupes de concurrence distincts).
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   # Le workflow d'auto-réparation crée sa PR avec GITHUB_TOKEN. GitHub ne
   # redéclenche pas pull_request dans ce cas ; ce dispatch explicite attache
   # exactement les mêmes checks requis au SHA de la branche automatisée.
   workflow_dispatch:
 
 # Audit G-8 : un seul run actif par PR / branche — annule le précédent.
+# Dans la file, `pull_request` est vide et `github.ref` est la branche
+# temporaire de l'entrée (refs/heads/gh-readonly-queue/main/…, une par PR) :
+# un run de PR (groupe = son numéro) et un run de la file ne s'annulent jamais.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -306,11 +321,16 @@ jobs:
         id: library-impact
         env:
           LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        # Dans la file : le parent du groupe (merge_group.base_sha), ancêtre de
+        # HEAD, et HEAD doit être le groupe annoncé (merge_group.head_sha).
         # Sur un push : le parent, ou l'arbre vide pour un commit sans parent.
         # Le parent est lu dans l'objet commit (un clone peu profond le voit) ;
         # un parent présent mais introuvable fait échouer l'étape.
         run: |
           base="$LIBRARY_DIFF_BASE"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then test "$(git rev-parse HEAD)" = "$MERGE_GROUP_HEAD_SHA"; base=$(git rev-parse --verify "$MERGE_GROUP_BASE_SHA^{commit}"); git merge-base --is-ancestor "$base" HEAD; fi
           if [ -z "$base" ]; then
             if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
           fi
@@ -367,11 +387,16 @@ jobs:
         id: library-impact
         env:
           LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        # Dans la file : le parent du groupe (merge_group.base_sha), ancêtre de
+        # HEAD, et HEAD doit être le groupe annoncé (merge_group.head_sha).
         # Sur un push : le parent, ou l'arbre vide pour un commit sans parent.
         # Le parent est lu dans l'objet commit (un clone peu profond le voit) ;
         # un parent présent mais introuvable fait échouer l'étape.
         run: |
           base="$LIBRARY_DIFF_BASE"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then test "$(git rev-parse HEAD)" = "$MERGE_GROUP_HEAD_SHA"; base=$(git rev-parse --verify "$MERGE_GROUP_BASE_SHA^{commit}"); git merge-base --is-ancestor "$base" HEAD; fi
           if [ -z "$base" ]; then
             if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
           fi
@@ -507,16 +532,23 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Set NX base branch
+        env:
+          NX_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        # PR : origin/<base>. Dans la file : le parent du groupe
+        # (merge_group.base_sha), ancêtre de HEAD, et HEAD doit être le groupe
+        # annoncé (merge_group.head_sha). Sinon : le parent, ou l'arbre vide
+        # pour un commit sans parent. Le parent est lu dans l'objet commit (un
+        # clone peu profond le voit) ; un parent présent mais introuvable fait
+        # échouer l'étape.
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
-          else
-            # Le parent, ou l'arbre vide pour un commit sans parent. Le parent
-            # est lu dans l'objet commit (un clone peu profond le voit) ; un
-            # parent présent mais introuvable fait échouer l'étape.
+          base="$NX_DIFF_BASE"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then test "$(git rev-parse HEAD)" = "$MERGE_GROUP_HEAD_SHA"; base=$(git rev-parse --verify "$MERGE_GROUP_BASE_SHA^{commit}"); git merge-base --is-ancestor "$base" HEAD; fi
+          if [ -z "$base" ]; then
             if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
-            echo "NX_BASE=$base" >> $GITHUB_ENV
           fi
+          echo "NX_BASE=$base" >> $GITHUB_ENV
 
       # ESLint — boundaries Nx + règles Angular (ADR-0010 portail niveau Lint)
       # --max-warnings=0 est porté par targetDefaults.lint (nx.json), pas par nx CLI
@@ -614,16 +646,23 @@ jobs:
         run: bunx playwright install chromium --with-deps
 
       - name: Set NX base branch
+        env:
+          NX_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        # PR : origin/<base>. Dans la file : le parent du groupe
+        # (merge_group.base_sha), ancêtre de HEAD, et HEAD doit être le groupe
+        # annoncé (merge_group.head_sha). Sinon : le parent, ou l'arbre vide
+        # pour un commit sans parent. Le parent est lu dans l'objet commit (un
+        # clone peu profond le voit) ; un parent présent mais introuvable fait
+        # échouer l'étape.
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
-          else
-            # Le parent, ou l'arbre vide pour un commit sans parent. Le parent
-            # est lu dans l'objet commit (un clone peu profond le voit) ; un
-            # parent présent mais introuvable fait échouer l'étape.
+          base="$NX_DIFF_BASE"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then test "$(git rev-parse HEAD)" = "$MERGE_GROUP_HEAD_SHA"; base=$(git rev-parse --verify "$MERGE_GROUP_BASE_SHA^{commit}"); git merge-base --is-ancestor "$base" HEAD; fi
+          if [ -z "$base" ]; then
             if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
-            echo "NX_BASE=$base" >> $GITHUB_ENV
           fi
+          echo "NX_BASE=$base" >> $GITHUB_ENV
 
       - name: Detect React workspace browser-proof impact
         id: react-workspace-proof

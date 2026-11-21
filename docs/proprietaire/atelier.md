@@ -621,6 +621,11 @@ sinon tout est à refaire.
   linéaire, conversations résolues, aucune poussée forcée. La fusion se fait par
   squash et la branche est supprimée ensuite
   (`.github/repository-settings.json`).
+- Quand la file de fusion est active sur `main`, le relecteur ne fusionne plus
+  une PR lui-même : il l'ajoute à la file (**Merge when ready**). La file la
+  teste avec la dernière version de `main`, puis la fusionne (§ 6.6). La file a
+  sa propre méthode de fusion, choisie dans sa règle : le squash est proposé,
+  mais ce réglage n'est pas encore fait.
 - Un changement de `tsconfig.base.json`, `nx.json` ou `eslint.config.mjs` ne
   reste jamais plus de 24 h hors d'une PR ouverte (au besoin en brouillon).
 
@@ -673,9 +678,9 @@ Chaque nouveau push relance la CI et annule l'approbation précédente.
 
 ### 6.5 La CI : les jobs et ce qu'un rouge veut dire
 
-La CI (`.github/workflows/ci.yml`) tourne sur chaque PR vers `main` et sur
-`main`. Pour reproduire un contrôle en local, lance la commande `bun run …`
-écrite dans le nom de l'étape rouge.
+La CI (`.github/workflows/ci.yml`) tourne sur chaque PR vers `main`, dans la
+file de fusion (§ 6.6) et sur `main`. Pour reproduire un contrôle en local,
+lance la commande `bun run …` écrite dans le nom de l'étape rouge.
 
 | Job                                                        | Un rouge veut le plus souvent dire                                                                                                                               |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -698,6 +703,70 @@ n'est pas un échec du code : relance-le (page du run → « Re-run failed jobs 
 ou `gh run rerun <numéro-du-run> --failed`). Un même échec deux fois de suite
 n'est plus un hasard : fais-le diagnostiquer.
 
+### 6.6 Fusionner par la file de fusion
+
+`main` exige une branche à jour avant chaque fusion. Sans file de fusion, chaque
+fusion remet toutes les autres PR en retard : il faut les mettre à jour et les
+retester une par une. Quand la file de fusion est active sur `main` (règle
+`merge_queue`), elle fait ce travail à la place du relecteur :
+
+1. Le relecteur approuve la PR.
+2. Il clique **Merge when ready**, puis **Confirm merge when ready**. Il peut le
+   faire avant que la CI de la PR soit verte : GitHub ajoute la PR à la file dès
+   que ses conditions sont remplies.
+3. La file crée une branche temporaire `gh-readonly-queue/main/…`. Elle contient
+   la dernière version de `main`, les PR déjà devant dans la file, puis
+   celle-ci. La CI y rejoue tous les contrôles requis (événement `merge_group`).
+4. Si tout est vert, la file fusionne la PR dans `main`, avec la méthode de
+   fusion choisie dans sa règle (le squash est proposé, mais pas encore réglé).
+   Si un contrôle est rouge, la PR sort de la file (voir plus bas). Les PR
+   suivantes sont alors retestées sans elle.
+
+Il n'y a plus de remise à jour à la main : ne clique plus « Update branch », et
+ne relance plus la CI d'une PR parce qu'une autre vient d'être fusionnée. Les PR
+Dependabot suivent le même chemin. Pour retirer une PR de la file, utilise
+**Remove from queue** sur la PR. La file se voit depuis la page « Branches » du
+dépôt, ou depuis le lien « merge queue » au bas de la PR.
+
+**Quand une PR sort de la file.** GitHub retire une PR de la file dans ces cas :
+
+- un contrôle requis est rouge sur la branche de la file, ou la PR est en
+  conflit avec `main` ;
+- la CI n'a pas répondu à temps (délai « Status check timeout » de la règle) ;
+- quelqu'un l'a retirée (**Remove from queue**) ;
+- une règle de protection de `main` n'est plus remplie.
+
+Pour le voir : le fil de la PR écrit la raison de la sortie, et la PR n'est plus
+dans la file. Le run rouge se trouve dans l'onglet « Actions », sur une branche
+`gh-readonly-queue/main/…`. Pour la remettre dans la file :
+
+- **contrôle rouge** : lis le run rouge (§ 6.5). Si le code est en cause,
+  corrige-le sur la branche de la PR, puis pousse. Comme tout push, il annule
+  l'approbation (§ 6.4) : le relecteur approuve de nouveau, puis clique de
+  nouveau **Merge when ready** ;
+- **conflit avec `main`** : c'est le seul cas où l'on met encore la branche à
+  jour à la main, pour résoudre le conflit (bouton « Resolve conflicts » de la
+  PR, ou en local puis push). Cette mise à jour annule aussi l'approbation : le
+  relecteur approuve de nouveau, puis clique de nouveau **Merge when ready** ;
+- **délai dépassé, ou job annulé sans faute du code** (machines chargées) : il
+  n'y a rien à corriger. Le relecteur clique de nouveau **Merge when ready**. Si
+  cela se répète, fais-le diagnostiquer ;
+- **retrait volontaire** : **Merge when ready** quand la PR est prête.
+
+**Le réglage qui doit être coché.** La règle s'appelle **Require merge queue**,
+qu'on la crée dans un ruleset ou dans la protection de branche. L'un de ses
+réglages doit être coché, et le rester. Son nom dépend de l'écran :
+
+- dans un ruleset : « Require all queue entries to pass required checks » ;
+- dans la protection de branche : « Only merge non-failing pull requests ».
+
+Coché, il oblige chaque PR du groupe à passer les contrôles requis. C'est
+nécessaire ici : les contrôles par impact (Nx, preuves de bibliothèques) de
+chaque entrée ne testent que ce que cette entrée ajoute à celle qui la précède.
+`check:branch-protection-contexts` refuse un workflow qui produit un contrôle
+requis sans se déclencher sur `merge_group`. Il refuse aussi un job requis qui
+pourrait être sauté dans la file.
+
 ## 7. Les PR automatiques
 
 Dependabot (`.github/dependabot.yml`) propose des mises à jour pour trois
@@ -711,7 +780,7 @@ en cas d'écart, il ouvre une issue (§ 8.2).
 
 | Type de PR                                                                                                                             | Que faire                                                                                                                                                                                                                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mise à jour simple, CI verte                                                                                                           | Lire le titre et le journal des changements lié ; approuver ; la fusion est faite par le relecteur                                                                                                                                                                                                                           |
+| Mise à jour simple, CI verte                                                                                                           | Lire le titre et le journal des changements lié ; approuver ; la fusion est faite par le relecteur, par la file de fusion quand elle est active (**Merge when ready**, § 6.6). Si la PR sort de la file : § 6.6, « Quand une PR sort de la file »                                                                            |
 | Mise à jour d'une bibliothèque qualifiée (`@angular/material`, `@angular/cdk`, `tailwindcss`, `@tailwindcss/*`) ou d'Angular, de React | « Library integration » devient rouge : les pistes doivent être adaptées et requalifiées dans la même PR. Récupère la branche (`gh pr checkout <numéro>`), fais repasser les pistes en `candidate` par un agent (et mettre à jour leurs versions de paquets si la PR les change), requalifie (§ 5), pousse                   |
 | Nx                                                                                                                                     | Dependabot ne la propose pas : c'est la PR brouillon de `nx-migrations.yml`, déjà requalifiée ; vérifier sa CI                                                                                                                                                                                                               |
 | Nouvelle version d'une action GitHub (`ci(deps)`)                                                                                      | La relire : une action s'exécute avec le jeton du dépôt. Si `check:dependabot-policy` ou `check:ci-wiring` affiche `action non relue dans la publication`, l'action sert à la publication de `nx-migrations.yml` : la liste relue est dans `tools/nx-migration-plan.mjs`, à faire mettre à jour par un agent après relecture |
