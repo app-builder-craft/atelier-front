@@ -20,8 +20,11 @@ const RESULT_PATTERN = new RegExp(
     `<pre id="${escapeRegExp(RESULT_ID)}">([^<]*)<\\/pre>`
 );
 const BROWSER_PROFILE = `node_modules/${SIGNATURE.dir}-browser-profile`;
-// Police sentinelle de l'hôte, nommée par la signature de l'atelier.
-export const HOST_FONT = signatureName('host-sentinel');
+// Police sentinelle de l'hôte : un nom de famille À ESPACES, dérivé du nom de
+// la signature (`Atelier Host Sentinel`), comme l'était le nom d'origine. Le
+// navigateur rend un tel nom entre guillemets dans `getComputedStyle`, comme
+// l'attendu ci-dessous ; un identifiant sans espaces y serait rendu nu.
+export const HOST_FONT = `${SIGNATURE.name.charAt(0).toUpperCase()}${SIGNATURE.name.slice(1)} Host Sentinel`;
 
 const EXPECTED_TYPOGRAPHY = Object.freeze({
     fontFamily: `"${HOST_FONT}", serif`,

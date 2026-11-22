@@ -25,6 +25,7 @@ import { proveMaterialTailwindBrowser } from './runtime-oracles/material-tailwin
 import { QUALIFICATION_ORACLE_SOURCE_PATHS } from './tooling-fingerprint.mjs';
 import {
     escapeRegExp,
+    SIGNATURE,
     signatureName,
 } from '../generator-platform/core/atelier-signature.mjs';
 
@@ -417,6 +418,22 @@ test('les mutations typographiques doivent être observées sur le body et son e
             properties: ['fontSize'],
         }),
         inherited
+    );
+});
+
+test('la police sentinelle est un nom à espaces, dérivé de la signature : le navigateur la rend entre guillemets, comme l’attendu', () => {
+    // Une famille qui est un seul identifiant CSS est rendue nue par
+    // `getComputedStyle` ; l'attendu `"<nom>", serif` exige un nom à espaces.
+    assert.match(HOST_FONT, / /, 'police sentinelle à espaces');
+    assert.doesNotMatch(
+        HOST_FONT,
+        /^-?[_a-zA-Z][-_a-zA-Z0-9]*$/,
+        'police sentinelle qui n’est pas un identifiant CSS'
+    );
+    assert.equal(
+        HOST_FONT.split(' ')[0].toLowerCase(),
+        SIGNATURE.name,
+        'police sentinelle dérivée du nom de la signature'
     );
 });
 
