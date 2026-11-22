@@ -28,7 +28,11 @@ import {
 } from './test-support/external-publication-fixture.mjs';
 import { writeExternalActionDefinitions } from './test-support/external-session-fixture.mjs';
 import { describeDrift } from '../recover-application-publication.mjs';
-import { SIGNATURE, SIGNATURE_FILES } from './core/atelier-signature.mjs';
+import {
+    escapeRegExp,
+    SIGNATURE,
+    SIGNATURE_FILES,
+} from './core/atelier-signature.mjs';
 
 const CLI = join(TOOLS_ROOT, 'tools/recover-application-publication.mjs');
 
@@ -38,6 +42,15 @@ function recoverCli(args) {
         encoding: 'utf8',
         timeout: 120_000,
     });
+}
+
+// « Aucun chemin local », dérivé et sans liste de systèmes : ni la racine réelle
+// du produit, ni celle de l'atelier, ni un code d'erreur système (errno), quel
+// que soit le système qui exécute le test.
+function assertNoLocalPath(stderr, product) {
+    for (const root of [product.root, TOOLS_ROOT])
+        assert.doesNotMatch(stderr, new RegExp(escapeRegExp(root)));
+    assert.doesNotMatch(stderr, /\bE[A-Z]{2,}\b:/);
 }
 
 test('X2 préparatoire : la reprise explicite prend le verrou de l’application (V-MC)', async (t) => {
@@ -142,7 +155,7 @@ test('X2 préparatoire : recover:application-publication reprend, refuse l’amb
     assert.equal(result.status, 1);
     assert.match(result.stderr, /ambiguous interrupted publication/);
     assert.match(result.stderr, /Ownership et reprise/);
-    assert.doesNotMatch(result.stderr, /\/Users\/|\/private\//);
+    assertNoLocalPath(result.stderr, product);
     assert.deepEqual(await snapshotTree(product.root, []), altered);
     // Usage fermé : options requises, inconnues ou répétées refusées.
     for (const [argv, pattern] of [
@@ -193,7 +206,7 @@ test('X3 préparatoire : un produit sans marqueur est refusé proprement par la 
     ]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /workspace ownership marker missing/);
-    assert.doesNotMatch(result.stderr, /\/Users\/|\/private\/|ENOENT/);
+    assertNoLocalPath(result.stderr, product);
     assert.deepEqual(await snapshotTree(product.root, []), before);
     await rename(`${marker}.aside`, marker);
 });
@@ -268,7 +281,7 @@ test('MARQUE : un produit à l’ancienne disposition de la signature est refus�
     ]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /workspace ownership marker missing/);
-    assert.doesNotMatch(result.stderr, /\/Users\/|\/private\/|ENOENT/);
+    assertNoLocalPath(result.stderr, product);
     assert.deepEqual(await snapshotTree(product.root, []), old);
     await rename(join(product.root, previous), rootSignature);
     await rename(join(product.app, previous), appSignature);
@@ -357,7 +370,7 @@ test('X3 préparatoire : après un retour arrière refusé, l’écart est nomm�
         ),
         result.stderr
     );
-    assert.doesNotMatch(result.stderr, /\/Users\/|\/private\//);
+    assertNoLocalPath(result.stderr, product);
     assert.deepEqual(await snapshotTree(product.root, []), altered);
     // Marche à suivre : retirer l'altération nommée, relancer la reprise.
     await rm(join(product.app, foreign));
