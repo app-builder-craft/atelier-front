@@ -14,7 +14,10 @@
  *   1. événements : un workflow ne se déclenche que sur `REVIEWED_EVENTS`.
  *      Les règles suivantes ne valent que pour eux : sous
  *      `pull_request_target` ou `workflow_run`, `github.ref` désigne `main`
- *      alors que le code exécuté peut venir d'une PR ;
+ *      alors que le code exécuté peut venir d'une PR. Sous `merge_group`, le
+ *      code est celui d'une PR non fusionnée, mais `github.ref` est la ref du
+ *      groupe (`refs/heads/gh-readonly-queue/main/…`), jamais `main` : rien
+ *      n'y est écrit ni remis ;
  *   2. jeton : soit un bloc `permissions` racine sans écriture, soit un bloc
  *      `permissions` sur chaque job ;
  *   3. écritures : une permission `write` de job figure dans
@@ -64,6 +67,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TRUSTED_REF = "github.ref == 'refs/heads/main'";
 
 export const REVIEWED_EVENTS = [
+    // File de fusion : GITHUB_REF est la ref du groupe (docs « Events that
+    // trigger workflows », merge_group), donc la garde `main` ne s'y ouvre pas.
+    'merge_group',
     'pull_request',
     'push',
     'schedule',

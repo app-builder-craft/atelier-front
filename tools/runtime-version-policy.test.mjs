@@ -163,6 +163,12 @@ test('runtime: chaque paire source/CI refuse un pin et une assertion neutralisé
             w.on.pull_request.paths = ['package.json'];
         },
         (w) => {
+            delete w.on.merge_group;
+        },
+        (w) => {
+            w.on.merge_group.branches = ['release'];
+        },
+        (w) => {
             w.jobs.oracle.if = false;
         },
         (w) => {
@@ -182,7 +188,7 @@ test('runtime: chaque paire source/CI refuse un pin et une assertion neutralisé
     ]) {
         const bad = structuredClone(good);
         change(bad.find((e) => e.file === 'ci.yml').workflow);
-        assert.ok(runtimeWorkflowErrors(bad).length);
+        assert.ok(runtimeWorkflowErrors(bad).length, String(change));
     }
     assert.deepEqual(runtimeWorkflowErrors(good), []);
 });
