@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@cmz/source",
+      "name": "@atelier/source",
       "dependencies": {
         "@angular/aria": "catalog:",
         "@angular/cdk": "catalog:",

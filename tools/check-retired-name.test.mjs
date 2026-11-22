@@ -121,9 +121,9 @@ test('le verrou est déduit de packageManager ; un autre gestionnaire est refus�
         );
 });
 
-test('statique : fichiers suivis, chemins compris ; seul le contenu du verrou déduit est écarté', async (t) => {
+test('statique : fichiers suivis, chemins compris ; le verrou déduit est jugé hors ses seules valeurs d’intégrité', async (t) => {
     const root = await repository(t, {
-        'bun.lock': `{\n  "name": "@${M}/source",\n}\n`,
+        'bun.lock': `{\n  "name": "@${M}/source",\n  "a": ["a@1.0.0", "", {}, "sha512-x${UPPER}y="],\n}\n`,
         'yarn.lock': `${M}\n`,
         'README.md': `# titre\nnom ${UPPER}_X\n`,
         [`.agents/skills/${M}-steward/SKILL.md`]: 'neutre\n',
@@ -139,9 +139,11 @@ test('statique : fichiers suivis, chemins compris ; seul le contenu du verrou d�
         [
             `.agents/skills/${M}-steward/SKILL.md (chemin)`,
             'README.md:2',
+            'bun.lock:2',
             'yarn.lock:1',
         ].sort()
     );
+    assert.equal(result.whitened, 1);
 });
 
 test('statique : un lien symbolique est jugé sur sa cible écrite', async (t) => {

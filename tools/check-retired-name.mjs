@@ -11,12 +11,10 @@
  *   mot (`__xAppAccessContext`) ;
  * - STATIQUE : chaque fichier suivi (`git ls-files`), par son chemin et par
  *   son contenu ; un lien symbolique est jugé sur sa cible écrite, un contenu
- *   binaire (octet NUL) sur son seul chemin. Le seul contenu écarté est celui
- *   du verrou de l'atelier, DÉDUIT de `packageManager` (`bun@…` →
- *   `bun.lock`) : le nom de sa racine y est resté l'ancien nom, désynchronisé
- *   du `name` de `package.json`, et Bun 1.4.4 ne le réécrit pas, même quand
- *   il réécrit le verrou. Trou connu : un paquet transitif à l'ancien nom n'y
- *   serait pas vu. Un autre gestionnaire de paquets est refusé ;
+ *   binaire (octet NUL) sur son seul chemin. Le verrou de l'atelier, DÉDUIT
+ *   de `packageManager` (`bun@…` → `bun.lock`), est jugé après le blanchiment
+ *   de ses seules valeurs d'intégrité (voir plus bas) ; ses noms, racine
+ *   comprise, sont jugés. Un autre gestionnaire de paquets est refusé ;
  * - DYNAMIQUE : un produit sonde publié RÉELLEMENT dans un dossier jetable,
  *   par les publieurs du générateur (plan revu, puis publication liée à son
  *   identifiant, comme `--expect-plan`), dans les deux profils : espace,
@@ -34,9 +32,8 @@
  * Limites : un contenu binaire n'est jugé que par son chemin, et une image
  * qui DESSINE le motif n'est pas vue ; un nom temporaire de transaction n'est
  * vu que s'il survit (il dérive de `signatureName`, source unique gardée par
- * `check:identity-sources`) ; le contenu du verrou de l'atelier n'est pas
- * jugé (voir plus haut) ; une chaîne d'un verrou de produit qui aurait
- * exactement la forme d'une valeur d'intégrité serait blanchie.
+ * `check:identity-sources`) ; une chaîne d'un verrou qui aurait exactement
+ * la forme d'une valeur d'intégrité serait blanchie.
  *
  * Usage : bun run check:retired-name
  */
@@ -121,6 +118,12 @@ export function staticFindings(root, motif = RETIRED_NAME) {
         JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
     );
     const findings = [];
+    let whitened = 0;
+    const lockContent = (bytes) => {
+        const cleaned = withoutIntegrity(bytes, motif);
+        whitened += cleaned.carried;
+        return cleaned.bytes;
+    };
     for (const path of paths) {
         const absolute = join(root, path);
         let bytes;
@@ -137,12 +140,12 @@ export function staticFindings(root, motif = RETIRED_NAME) {
         findings.push(
             ...retiredFindings(
                 path,
-                path === lockfile ? undefined : bytes,
+                path === lockfile ? lockContent(bytes) : bytes,
                 motif
             )
         );
     }
-    return { scanned: paths.length, lockfile, findings };
+    return { scanned: paths.length, lockfile, findings, whitened };
 }
 
 /**
@@ -459,7 +462,7 @@ async function main() {
         console.error(`  fichier suivi : ${finding}`);
     for (const finding of probe.findings)
         console.error(`  produit sonde : ${finding}`);
-    const summary = `fichiers suivis : ${lock.findings.length} sur ${lock.scanned} (contenu de ${lock.lockfile} écarté, déduit de packageManager : racine non réécrite par Bun) ; produit sonde : ${probe.findings.length} sur ${probe.scanned} entrées, ${lockfiles.length} verrou(s) de produit jugés hors intégrités (${probe.whitened} valeur(s) d'intégrité portant le motif blanchie(s)) (${Object.entries(
+    const summary = `fichiers suivis : ${lock.findings.length} sur ${lock.scanned} (${lock.lockfile}, déduit de packageManager, jugé hors intégrités : ${lock.whitened} valeur(s) portant le motif blanchie(s)) ; produit sonde : ${probe.findings.length} sur ${probe.scanned} entrées, ${lockfiles.length} verrou(s) de produit jugés hors intégrités (${probe.whitened} valeur(s) d'intégrité portant le motif blanchie(s)) (${Object.entries(
         prefixes
     )
         .map(([product, prefix]) => `${product} « ${prefix} »`)

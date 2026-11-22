@@ -8,6 +8,7 @@ import {
     checkCatalogIntegrity,
     diffCatalog,
     diffNamedCatalogs,
+    diffWorkspaceNames,
     EXPECTED_CONFIG_VERSION,
     EXPECTED_LOCKFILE_VERSION,
     EXPECTED_PACKAGE_MANAGER,
@@ -161,4 +162,40 @@ test('les vrais package.json et bun.lock du dépôt satisfont le contrat', () =>
         ok: true,
         errors: [],
     });
+});
+
+test('noms des espaces : chaque nom du verrou est celui du package.json du même chemin, racine comprise', () => {
+    const names = { '': '@a/source', 'libs/core': '@a/core' };
+    const nameAt = (path) => names[path];
+    const lock = {
+        '': { name: '@a/source' },
+        'libs/core': { name: '@a/core' },
+    };
+    assert.deepEqual(diffWorkspaceNames(lock, nameAt), []);
+    // Nom de racine resté ancien (ce que Bun 1.4.4 ne réécrit pas).
+    assert.deepEqual(
+        diffWorkspaceNames({ ...lock, '': { name: '@vieux/source' } }, nameAt),
+        [
+            'workspaces."(racine)".name = "@vieux/source" dans bun.lock, "@a/source" dans package.json',
+        ]
+    );
+    // Membre resté ancien, membre sans package.json, verrou sans racine.
+    assert.deepEqual(
+        diffWorkspaceNames(
+            {
+                ...lock,
+                'libs/core': { name: '@vieux/core' },
+                'libs/x': { name: '@a/x' },
+            },
+            nameAt
+        ),
+        [
+            'workspaces."libs/core".name = "@vieux/core" dans bun.lock, "@a/core" dans package.json',
+            'workspaces."libs/x" : aucun package.json à ce chemin',
+        ]
+    );
+    assert.deepEqual(
+        diffWorkspaceNames({ 'libs/core': { name: '@a/core' } }, nameAt),
+        ['bun.lock : `workspaces` sans espace racine.']
+    );
 });

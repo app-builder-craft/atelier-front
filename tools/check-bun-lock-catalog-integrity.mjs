@@ -17,10 +17,15 @@
  * observées sous Bun 1.3.14. Une montée de format doit donc être revue avec
  * la montée de Bun, jamais acceptée silencieusement depuis un bot.
  *
+ * Noms des espaces (lot MARQUE) : le `name` de chaque espace du verrou est
+ * celui du `package.json` du même chemin, racine comprise. Dérivé, sans
+ * liste : Bun 1.4.4 ne réécrit pas le nom d'un espace renommé, même quand il
+ * réécrit le verrou ; un nom resté ancien est refusé, nommé.
+ *
  * Usage : bun run check:bun-lock-catalog-integrity
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -105,6 +110,34 @@ export function diffNamedCatalogs(expected, actual) {
     return diffs;
 }
 
+/**
+ * Noms des espaces du verrou contre les `package.json` : `nameAt(chemin)` rend
+ * le `name` du `package.json` de ce chemin (`''` : la racine), ou `undefined`
+ * s'il n'y en a pas.
+ */
+export function diffWorkspaceNames(lockWorkspaces, nameAt) {
+    if (!isPlainObject(lockWorkspaces) || !isPlainObject(lockWorkspaces[''])) {
+        return ['bun.lock : `workspaces` sans espace racine.'];
+    }
+    const diffs = [];
+    for (const path of Object.keys(lockWorkspaces).sort()) {
+        const label = path === '' ? '(racine)' : path;
+        const expected = nameAt(path);
+        const actual = lockWorkspaces[path]?.name;
+        if (expected === undefined) {
+            diffs.push(
+                `workspaces."${label}" : aucun package.json à ce chemin`
+            );
+        } else if (actual !== expected) {
+            diffs.push(
+                `workspaces."${label}".name = ${JSON.stringify(actual)} dans bun.lock, ` +
+                    `${JSON.stringify(expected)} dans package.json`
+            );
+        }
+    }
+    return diffs;
+}
+
 export function checkCatalogIntegrity(packageJson, bunLock) {
     if (!isPlainObject(packageJson)) {
         return {
@@ -176,13 +209,24 @@ function main() {
     );
     const bunLock = parseJsonc(readFileSync(BUN_LOCK_PATH, 'utf8'), 'bun.lock');
 
-    const { ok, errors } = checkCatalogIntegrity(packageJson, bunLock);
+    const { ok: catalogOk, errors: catalogErrors } = checkCatalogIntegrity(
+        packageJson,
+        bunLock
+    );
+    const nameErrors = diffWorkspaceNames(bunLock.workspaces, (path) => {
+        const file = join(ROOT, path, 'package.json');
+        if (!existsSync(file)) return undefined;
+        return parseWithoutDuplicateKeys(readFileSync(file, 'utf8'), file).name;
+    });
+    const ok = catalogOk && nameErrors.length === 0;
+    const errors = [...catalogErrors, ...nameErrors];
 
     if (ok) {
         console.log(
             `✔ bun.lock reflète exactement le catalog de package.json ` +
                 `(${Object.keys(packageJson.workspaces.catalog).length} entrée(s) + ` +
-                `${Object.keys(packageJson.workspaces.catalogs ?? {}).length} catalog(s) nommé(s)).`
+                `${Object.keys(packageJson.workspaces.catalogs ?? {}).length} catalog(s) nommé(s)) ` +
+                `et le nom de ses ${Object.keys(bunLock.workspaces).length} espace(s).`
         );
         return;
     }
@@ -191,13 +235,21 @@ function main() {
         `\n✖ bun.lock a divergé du catalog déclaré dans package.json (${errors.length} écart(s)) :\n`
     );
     for (const e of errors) console.error(`  ${e}`);
-    console.error(
-        '\nRégression connue et non corrigée chez Dependabot pour ce cas exact ' +
-            '(dependabot-core#12522 : catalog/catalogs supprimés par son updater Bun ; ' +
-            '#13623/#15848 : métadonnées ou format réécrits par une version embarquée différente).\n' +
-            'Ne jamais éditer bun.lock à la main — relancer `bun install` depuis un ' +
-            `environnement ${EXPECTED_PACKAGE_MANAGER} propre et committer le résultat.`
-    );
+    if (catalogErrors.length)
+        console.error(
+            '\nRégression connue et non corrigée chez Dependabot pour ce cas exact ' +
+                '(dependabot-core#12522 : catalog/catalogs supprimés par son updater Bun ; ' +
+                '#13623/#15848 : métadonnées ou format réécrits par une version embarquée différente).\n' +
+                'Ne jamais éditer bun.lock à la main — relancer `bun install` depuis un ' +
+                `environnement ${EXPECTED_PACKAGE_MANAGER} propre et committer le résultat.`
+        );
+    if (nameErrors.length) {
+        console.error(
+            "Nom d'espace : Bun 1.4.4 ne réécrit pas le nom d'un espace renommé, même quand il " +
+                'réécrit le verrou. Corriger la seule ligne `name` de cet espace dans bun.lock pour ' +
+                "qu'elle reprenne celle du package.json, puis valider par `bun install --frozen-lockfile`."
+        );
+    }
     process.exit(1);
 }
 

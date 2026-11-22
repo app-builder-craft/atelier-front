@@ -119,10 +119,9 @@ jobs:
         run: bun run check:identity-sources
 
       # Lot MARQUE : l'ancien nom interne ne revient ni dans un fichier suivi
-      # (seul le contenu du verrou de l'atelier, déduit de packageManager, est
-      # écarté : Bun 1.4.4 n'y réécrit pas le nom de la racine) ni dans un
-      # produit sonde publié réellement dans les deux profils (verrous jugés
-      # hors valeurs d'intégrité SRI).
+      # ni dans un produit sonde publié réellement dans les deux profils ; les
+      # verrous, déduits de packageManager, sont jugés hors valeurs d'intégrité
+      # SRI.
       - name: check:retired-name (ancien nom absent des fichiers suivis et des produits)
         run: bun run check:retired-name
 
