@@ -18,15 +18,15 @@ forbid:
 Un **composant de page / feature UI** orchestre l'affichage et les actions
 utilisateur pour un volet métier. Il lit l'état via une **façade application**
 (signaux), mappe vers un **VM** (presenter) et délègue les contrôles
-réutilisables au design system (`@cmz/shared-ui`). **Zéro** règle métier dans le
+réutilisables au design system (`shared-ui`). **Zéro** règle métier dans le
 template ou la classe : validation et mapping wire/domaine restent en
 domain/data.
 
 ## Couche
 
-`ui` → `@cmz/<module>-ui`. Dépend de `application` + `domain` (types) +
-`shared-ui` / `shared-application` (ports i18n, notification). **Jamais**
-d'import direct de `data` (DTO/HTTP) ni d'autre `scope:` métier.
+`ui` → `<module>-ui`. Dépend de `application` + `domain` (types) + `shared-ui` /
+`shared-application` (ports i18n, notification). **Jamais** d'import direct de
+`data` (DTO/HTTP) ni d'autre `scope:` métier.
 
 ## Règle mécanique
 
@@ -53,7 +53,7 @@ d'import direct de `data` (DTO/HTTP) ni d'autre `scope:` métier.
 
 ```ts
 @Component({
-    selector: 'cmz-dashboard-page',
+    selector: 'app-dashboard-page',
     imports: [DashboardSkeletonComponent],
     providers: [DashboardFilterStore],
     template: `
@@ -65,7 +65,7 @@ d'import direct de `data` (DTO/HTTP) ni d'autre `scope:` métier.
                 <!-- filtre période : role=group + aria-pressed (T12-8) -->
             </header>
             @if (loading()) {
-                <cmz-dashboard-skeleton />
+                <app-dashboard-skeleton />
             } @else if (vm(); as data) {
                 <!-- cartes stats depuis presenter -->
             }
@@ -100,10 +100,10 @@ export class DashboardPageComponent {
 > `*FormDialogComponent` suivant le nœud). Injecte la façade du module. i18n :
 > mécanisme du profil actif (Angular → attributs `i18n` / `i18n-*`, `$localize`
 > en TypeScript). Template : clés i18n, a11y (labels, aria-\*, boutons nommés),
-> `@if` / `@for` Angular control flow. Aucun import `@cmz/*-data`. Providers
-> locaux uniquement pour stores de filtre page-scoped.
+> `@if` / `@for` Angular control flow. Aucun import `*-data`. Providers locaux
+> uniquement pour stores de filtre page-scoped.
 
 **Données** : nom du volet, façade, champs filter, colonnes table, actions
 autorisées (`PermissionActionsService` si workflow-action).
 
-**Oracle** : `@cmz/<module>-ui:build` ; tests a11y archétype (T12-8) en app.
+**Oracle** : `<module>-ui:build` ; tests a11y archétype (T12-8) en app.
