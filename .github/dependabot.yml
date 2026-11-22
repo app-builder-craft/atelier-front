@@ -88,14 +88,20 @@ updates:
     commit-message:
       prefix: 'ci(deps)'
 
-  # Image nginx du relais extérieur (X4-config) : seule source de son empreinte.
-  # Le suivi du digest par le robot n'est pas documenté : la CI le vérifie
-  # contre son tag (check-nginx-digest.mjs).
+  # Image nginx du relais extérieur (X4-config) : le Dockerfile du harnais est
+  # la seule source de son empreinte. Dependabot met à jour l'empreinte d'un
+  # `FROM nginx:<tag>@sha256:…` même à tag inchangé : PR #13 du 2026-11-16 ;
+  # dependabot-core, docker/lib/dependabot/docker/update_checker.rb:244-285
+  # (@5838e62c). Il est la source primaire des mises à jour. Tous les jours à
+  # heure fixe UTC : `daily` ne couvre que du lundi au vendredi. Le workflow
+  # nginx-digest-freshness.yml passe après lui, en chien de garde (garde :
+  # check-dependabot-policy.mjs, nginxRelayPolicyErrors).
   - package-ecosystem: 'docker'
     directory: '/tools/generator-platform/nginx-harness'
     schedule:
-      interval: 'weekly'
-      day: 'monday'
+      interval: 'cron'
+      cronjob: '0 5 * * *'
+      timezone: 'UTC'
     commit-message:
       prefix: 'build(docker)'
     groups:

@@ -1,0 +1,90 @@
+name: Fraîcheur de l'image nginx du relais
+
+# NGINX-FRAICHEUR (b) : chien de garde quotidien de Dependabot. Il compare
+# l'empreinte épinglée dans tools/generator-platform/nginx-harness/Dockerfile
+# à celle que le registre publie pour son tag. Il ne tourne jamais dans la CI
+# des PR : une republication par Docker Hub ne rougit plus main ni les PR.
+# Dependabot (écosystème docker, `.github/dependabot.yml`) ouvre lui-même la
+# PR de mise à jour chaque jour à heure fixe ; ce workflow passe au moins deux
+# heures après (garde : check-dependabot-policy.mjs), pour qu'un même jour
+# donne d'abord la PR, puis seulement l'issue. En échec, le run reste rouge et
+# une issue unique est ouverte ou actualisée.
+on:
+  schedule:
+    - cron: '17 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nginx-digest-freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    name: Empreinte nginx contre le registre
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify node runtime against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+      # Script sans dépendance installée : appel direct de sa définition
+      # package.json (`check:nginx-digest`), sans Bun ni installation.
+      - name: Empreinte épinglée contre son tag au registre
+        run: node tools/generator-platform/check-nginx-digest.mjs
+
+  followup:
+    name: Issue unique de suivi (main seulement)
+    needs: [freshness]
+    if: github.ref == 'refs/heads/main' && failure()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Ouvrir ou actualiser une seule issue
+        id: followup
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="nginx du relais : empreinte épinglée à rafraîchir"
+          issues="$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search "in:title nginx empreinte" --limit 100 --json number,title,state)"
+          matches="$(printf '%s' "$issues" | jq --arg title "$title" '[.[] | select(.title == $title)]')"
+          count="$(printf '%s' "$matches" | jq length)"
+          test "$count" -le 1
+          body="$RUNNER_TEMP/nginx-digest-followup.md"
+          cat > "$body" <<EOF
+          La vérification quotidienne de fraîcheur de l'image nginx du relais est rouge.
+
+          Run : https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          Tentative : $GITHUB_RUN_ATTEMPT. Le message exact y figure :
+          ATELIER_NGINX_DIGEST_STALE (empreinte périmée) ou
+          ATELIER_NGINX_DIGEST_UNVERIFIABLE (vérification impossible).
+
+          Conduite (docs/proprietaire/atelier.md, section 8.2) :
+          1. Une PR Dependabot « build(docker): bump nginx » est ouverte : la relire et la faire fusionner.
+          2. Aucune PR Dependabot : mettre l'empreinte à jour à la main (section 8.2).
+          Fermer cette issue quand le contrôle est revenu au vert ; elle est rouverte au prochain écart.
+          EOF
+          if test "$count" -eq 0; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body" --assignee ismaelkouda
+          else
+            number="$(printf '%s' "$matches" | jq -r '.[0].number')"
+            gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --body-file "$body"
+            if test "$(printf '%s' "$matches" | jq -r '.[0].state')" = CLOSED; then
+              gh issue reopen "$number" --repo "$GITHUB_REPOSITORY"
+            fi
+          fi

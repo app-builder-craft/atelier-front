@@ -5,8 +5,10 @@
 // générée depuis la conception, est lue à l'identique par la fabrique de
 // SESSION_ENDPOINTS, le gabarit nginx, le script de validation et le proxy de
 // développement.
-import { readFileSync } from 'node:fs';
-
+import {
+    pinnedNginxImage,
+    readNginxHarnessDockerfile,
+} from '../check-nginx-image.mjs';
 import { relayEnvshPath } from '../core/external-application-paths.mjs';
 import { productForms } from '../core/product-identity.mjs';
 import { sessionServices } from './angular-application-session-renderer.mjs';
@@ -83,17 +85,12 @@ export const RELAY_FILES = Object.freeze({
 export const UPSTREAM_PATTERN =
     '^http://[a-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)*/$';
 
-// Image officielle épinglée : seule source, le Dockerfile du harnais.
-export function nginxImage() {
-    const source = readFileSync(
-        new URL('../nginx-harness/Dockerfile', import.meta.url),
-        'utf8'
-    );
-    const found = /^FROM (nginx:[a-z0-9.-]+@sha256:[a-f0-9]{64})$/m.exec(
-        source
-    );
-    if (!found) throw new Error('nginx harness: image is not pinned');
-    return found[1];
+// Image officielle épinglée : seule source, le Dockerfile du harnais, lu par
+// le seul analyseur de sa ligne FROM (NGINX-FRAICHEUR, C3).
+export function nginxImage(source = readNginxHarnessDockerfile()) {
+    const pinned = pinnedNginxImage(source);
+    if (!pinned) throw new Error('nginx harness: image is not pinned');
+    return pinned.reference;
 }
 
 const variableOf = (serviceId, ENV) =>

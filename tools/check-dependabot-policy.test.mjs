@@ -19,17 +19,16 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import {
     dependabotPolicyErrors,
     ignoredVersionPolicyErrors,
-    NGINX_RELAY_DIRECTORY,
-    nginxRelayPolicyErrors,
     requiredLockConsumers,
     SECURITY_OVERRIDE_MINIMUMS,
     securityResolutionPolicyErrors,
 } from './check-dependabot-policy.mjs';
 import { fixture } from './test-support/dependabot-policy-fixture.mjs';
 
-// check:dependabot-policy conserve ce point d’entrée ; cet import exécute
-// aussi les contre-tests PEER-GRAPH dans le même contexte CI.
+// check:dependabot-policy conserve ce point d’entrée ; ces imports exécutent
+// aussi les contre-tests PEER-GRAPH et nginx dans le même contexte CI.
 import './check-dependabot-peer-policy.test.mjs';
+import './check-dependabot-nginx-policy.test.mjs';
 import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
 test('accepte un groupe React complet et des runtimes alignés', () => {
@@ -635,6 +634,7 @@ test('B : la CLI réelle lie les exclusions au workflow et refuse une délégati
         'tools/check-workflow-privileges.mjs',
         'tools/audit-exceptions.mjs',
         'tools/runtime-version-workflow.mjs',
+        '.github/workflows/nginx-digest-freshness.yml',
     ]) {
         cpSync(join(source, path), join(root, path));
     }
@@ -743,37 +743,4 @@ test('B : la CLI réelle lie les exclusions au workflow et refuse une délégati
     );
     result = execute();
     assert.equal(result.status, 0, result.stderr);
-});
-
-// X4-config : image nginx du relais, entrée docker dédiée et groupée.
-test('exige l’entrée docker du relais nginx, groupée, et refuse son absence', () => {
-    const real = parseYaml(
-        readFileSync(
-            new URL('../.github/dependabot.yml', import.meta.url),
-            'utf8'
-        )
-    );
-    assert.deepEqual(nginxRelayPolicyErrors(real), []);
-    const without = {
-        ...real,
-        updates: real.updates.filter(
-            (update) => update.directory !== NGINX_RELAY_DIRECTORY
-        ),
-    };
-    assert.match(
-        nginxRelayPolicyErrors(without).join('\n'),
-        /attendu exactement un update Dependabot docker pour '\/tools\/generator-platform\/nginx-harness', trouvé 0/
-    );
-    const ungrouped = {
-        ...real,
-        updates: real.updates.map((update) =>
-            update.directory === NGINX_RELAY_DIRECTORY
-                ? { ...update, groups: undefined }
-                : update
-        ),
-    };
-    assert.match(
-        nginxRelayPolicyErrors(ungrouped).join('\n'),
-        /le groupe 'nginx-relay' doit couvrir l'image 'nginx'/
-    );
 });

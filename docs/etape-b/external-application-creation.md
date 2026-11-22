@@ -1306,11 +1306,25 @@ sous sa racine ou sous `apps/<app>/`, avec ou sans Git. Cette liste est la
 portée de T3 ; un secret au nom arbitraire relève du balayage anti-fuite
 général.
 
-**Image.** `tools/generator-platform/nginx-harness/Dockerfile` (`FROM
-nginx:<tag>@sha256:<digest>`) en est la seule source, suivie par Dependabot
-(écosystème `docker`, groupe `nginx-relay`). `check:nginx-digest` vérifie en CI
-que l'empreinte correspond encore au tag : concordance, empreinte périmée, ou
-vérification impossible (registre injoignable) ; jamais de vert par défaut.
+**Image.** `tools/generator-platform/nginx-harness/Dockerfile`
+(`FROM nginx:<tag>@sha256:<digest>`) en est la seule source, lue par un seul
+analyseur, `pinnedNginxImage` (`check-nginx-image.mjs`), que le relais et les
+deux contrôles consomment. `check:nginx-image` (a) en vérifie la forme dans la
+CI des PR et de `main`, sans réseau, et refuse tout autre épinglage de nginx
+dans le dépôt. Dependabot (écosystème `docker`, groupe `nginx-relay`, tous les
+jours à heure fixe UTC) met à jour l'empreinte, même à tag inchangé : c'est la
+source normale des mises à jour. `check:nginx-digest` (b) n'est que son chien de
+garde : le workflow quotidien `nginx-digest-freshness.yml` le lance au moins
+deux heures après Dependabot, jamais dans la CI des PR. Il compare l'empreinte
+au registre : concordance, empreinte périmée ou vérification impossible
+(registre injoignable), jamais de vert par défaut. En échec, le run reste rouge
+et une issue unique est ouverte ou actualisée. (b) peut être rouge sans PR
+Dependabot : index multi-architecture changé à manifestes de plate-forme
+identiques, suppression des PR d'empreinte seule activée par GitHub, ou registre
+muet pour Dependabot ; la mise à jour se fait alors à la main
+(`docs/proprietaire/atelier.md`, § 8.2). Risque accepté : une empreinte bien
+formée mais publiée pour un autre tag passe (a) et le relais ; seule (b) la
+voit, au plus tard le lendemain.
 
 **Preuves.** `external-relay.test.mjs` (table unique, gabarit et invariant,
 script de validation par `sh`, proxy de développement sur chemins réels, mode

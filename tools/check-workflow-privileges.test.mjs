@@ -16,19 +16,19 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import {
     ALLOWED_JOB_WRITES,
-    ALLOWED_SECRET_HANDOVERS,
     checkWorkflows,
-    classifySecretUse,
     eventViolations,
+    NGINX_FRESHNESS_WORKFLOW,
     permissionViolations,
-    secretViolations,
-    tokenizeExpression,
     workflowEvents,
 } from './check-workflow-privileges.mjs';
+import {
+    escapeRegExp,
+    toolEnv,
+} from './generator-platform/core/atelier-signature.mjs';
 
 const TRUSTED = "github.ref == 'refs/heads/main'";
 
-const HANDOVER = (name) => `\${{ ${TRUSTED} && secrets.${name} || '' }}`;
 const DISPATCH = '  schedule:\n    - cron: "0 0 * * *"\n  workflow_dispatch:';
 const REVIEWED = {
     'f.yml': {
@@ -40,9 +40,6 @@ const REVIEWED = {
 function readOnly(on, body) {
     return `name: F\non:\n${on}\npermissions:\n  contents: read\n${body}`;
 }
-
-// Remise relue des gabarits ci-dessous : job `a`, étape `s`, variable `T`.
-const HANDOVERS = { 'f.yml': { a: { s: { T: 'A' } } } };
 
 function runStep(value, id = 's') {
     const identity = id === null ? '' : `        id: ${id}\n`;
@@ -85,6 +82,24 @@ test('refuse un événement non relu et un `on` absent', () => {
     assert.match(eventViolations('f.yml', {})[0], /absents ou illisibles/);
     assert.deepEqual(
         eventViolations('f.yml', { on: ['push', 'schedule'] }),
+        []
+    );
+});
+
+// File de fusion : `github.ref` y est la branche de l'entrée, jamais `main`
+// (docs « Events that trigger workflows », merge_group) ; la garde `main` des
+// écritures et des secrets ne s'y ouvre donc pas.
+test('merge_group est un événement relu', () => {
+    assert.deepEqual(
+        eventViolations('ci.yml', {
+            on: {
+                pull_request: { branches: ['main'] },
+                merge_group: {
+                    types: ['checks_requested'],
+                    branches: ['main'],
+                },
+            },
+        }),
         []
     );
 });
@@ -221,301 +236,6 @@ test('refuse une écriture que ne garde pas la ref main', () => {
         );
 });
 
-// ─── Secrets ────────────────────────────────────────────────────────────────
-
-test('découpe une expression et échoue sur un caractère inconnu', () => {
-    assert.deepEqual(tokenizeExpression("a.b-c == 'it''s' && !x[0]"), [
-        'a',
-        '.',
-        'b-c',
-        '==',
-        "'it''s'",
-        '&&',
-        '!',
-        'x',
-        '[',
-        '0',
-        ']',
-    ]);
-    assert.equal(tokenizeExpression('a ? b : c'), null);
-});
-
-test('classe les usages du contexte secrets', () => {
-    const kind = (expression) => classifySecretUse(expression).kind;
-    assert.deepEqual(classifySecretUse(` ${TRUSTED} && secrets.A || '' `), {
-        kind: 'handover',
-        name: 'A',
-    });
-    assert.equal(kind("secrets.A == '' && 'true' || 'false'"), 'test');
-    assert.equal(
-        kind("(github.ref != 'refs/heads/main' || secrets.A != '') && 'x'"),
-        'test'
-    );
-    assert.equal(kind('needs.secrets.result'), 'none');
-    assert.equal(kind("steps.secrets.outputs.found == 'true'"), 'none');
-    assert.equal(kind("contains(github.ref, 'secrets')"), 'none');
-    for (const expression of [
-        'secrets.A',
-        "secrets['A']",
-        'toJSON(secrets)',
-        'SECRETS.A',
-        'secrets.*',
-        `${TRUSTED} && secrets.A || secrets.B`,
-        `${TRUSTED} && secrets.A`,
-        `${TRUSTED} && secrets.A || 'x'`,
-        `secrets.A || ${TRUSTED} && 'x'`,
-        "github.ref == 'refs/heads/main2' && secrets.A || ''",
-        "github.ref != 'refs/heads/main' && secrets.A || ''",
-        "github.base_ref == 'refs/heads/main' && secrets.A || ''",
-        "secrets.A == '' && secrets.B",
-        "'' == secrets.A",
-        "secrets.A == 'guess'",
-        'secrets.A ? 1 : 2',
-    ])
-        assert.equal(kind(expression), 'unrecognized', expression);
-});
-
-test('accepte un secret gardé dans l’env d’une étape run relue', () => {
-    assert.deepEqual(
-        check(readOnly('  push:', runStep(HANDOVER('A'))), {}, HANDOVERS),
-        []
-    );
-});
-
-test('accepte un test de vacuité n’importe où', () => {
-    assert.deepEqual(
-        check(
-            readOnly(
-                '  pull_request:',
-                `env:\n  OFF: \${{ secrets.A == '' && 'true' || 'false' }}\njobs:\n  a:\n    runs-on: x\n    if: secrets.A != ''\n    steps:\n      - run: echo ok\n`
-            )
-        ),
-        []
-    );
-});
-
-test('ne confond pas le contexte secrets avec un job ou un script du même nom', () => {
-    assert.deepEqual(
-        check(
-            readOnly(
-                '  push:',
-                "jobs:\n  secrets:\n    runs-on: x\n    steps:\n      - name: Scan secrets\n        run: node tools/check-secrets.mjs\n  after:\n    needs: secrets\n    if: needs.secrets.result == 'success'\n    runs-on: x\n    steps:\n      - run: echo ok\n"
-            )
-        ),
-        []
-    );
-});
-
-test('refuse tout usage non reconnu du contexte secrets', () => {
-    for (const value of [
-        '${{ secrets.BAD }}',
-        "${{ secrets['BAD'] }}",
-        '${{ toJSON(secrets) }}',
-        '${{ SECRETS.BAD }}',
-        `\${{ ${TRUSTED} && secrets.A || secrets.B }}`,
-    ])
-        assert.match(
-            check(readOnly('  pull_request:', runStep(value)))[0],
-            /f\.yml › jobs\.a\.steps\.0\.env\.T : usage du contexte `secrets` non reconnu/,
-            value
-        );
-    assert.match(
-        check(
-            readOnly(
-                '  pull_request:',
-                'jobs:\n  a:\n    runs-on: x\n    if: secrets.BAD\n    steps:\n      - run: echo ok\n'
-            )
-        )[0],
-        /f\.yml › jobs\.a\.if : usage du contexte `secrets` non reconnu/
-    );
-});
-
-test('refuse un secret gardé remis ailleurs que dans l’env d’une étape run', () => {
-    const misplaced = {
-        'env.T': `env:\n  T: ${HANDOVER('A')}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: echo ok\n`,
-        'jobs.a.env.T': `jobs:\n  a:\n    runs-on: x\n    env:\n      T: ${HANDOVER('A')}\n    steps:\n      - run: echo ok\n`,
-        'jobs.a.steps.0.with.token': `jobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: some/action@v1\n        with:\n          token: ${HANDOVER('A')}\n`,
-        'jobs.a.steps.0.env.T': `jobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: some/action@v1\n        env:\n          T: ${HANDOVER('A')}\n`,
-        'jobs.a.steps.0.run': `jobs:\n  a:\n    runs-on: x\n    steps:\n      - run: echo ${HANDOVER('A')}\n`,
-    };
-    for (const [path, body] of Object.entries(misplaced)) {
-        const violations = check(readOnly('  push:', body));
-        assert.equal(violations.length, 1, path);
-        assert.ok(
-            violations[0].startsWith(
-                `f.yml › ${path} : \`secrets.A\` n'est remis qu'à l'\`env\` d'une étape \`run\``
-            ),
-            violations[0]
-        );
-    }
-    assert.match(
-        check(readOnly('  push:', runStep(`prefix-${HANDOVER('A')}`)))[0],
-        /n'est remis qu'à l'`env` d'une étape `run`/
-    );
-    assert.match(
-        check(
-            readOnly(
-                '  push:',
-                `jobs:\n  a:\n    runs-on: x\n    steps:\n      - run: echo ok\n        env:\n          T:\n            - ${HANDOVER('A')}\n`
-            )
-        )[0],
-        /f\.yml › jobs\.a\.steps\.0\.env\.T\.0 : `secrets\.A` n'est remis qu'à l'`env`/
-    );
-});
-
-// ─── Liste fermée des remises ───────────────────────────────────────────────
-
-test('refuse un secret arbitraire dans une étape run, même gardé par main', () => {
-    const untrusted = readOnly(
-        '  push:',
-        `jobs:\n  build:\n    runs-on: x\n    steps:\n      - name: Install untrusted dependencies\n        id: install\n        run: bun install\n        env:\n          PRODUCTION_DATABASE_TOKEN: ${HANDOVER('PRODUCTION_DATABASE_TOKEN')}\n`
-    );
-    assert.deepEqual(check(untrusted), [
-        "f.yml › build › install › PRODUCTION_DATABASE_TOKEN › PRODUCTION_DATABASE_TOKEN : remise de secret non relue ; l'ajouter à ALLOWED_SECRET_HANDOVERS après revue.",
-    ]);
-});
-
-test('lie une remise au job, à l’étape, à la variable et au secret', () => {
-    const cases = {
-        'autre job': {
-            content: runStep(HANDOVER('A')).replace('  a:', '  b:'),
-            unreviewed: 'b › s › T › A',
-        },
-        'autre étape': {
-            content: runStep(HANDOVER('A'), 'install'),
-            unreviewed: 'a › install › T › A',
-        },
-        'autre variable': {
-            content: runStep(HANDOVER('A')).replace('T:', 'U:'),
-            unreviewed: 'a › s › U › A',
-        },
-        'autre secret': {
-            content: runStep(HANDOVER('B')),
-            unreviewed: 'a › s › T › B',
-        },
-    };
-    for (const [name, { content, unreviewed }] of Object.entries(cases))
-        assert.deepEqual(
-            check(readOnly('  push:', content), {}, HANDOVERS),
-            [
-                `f.yml › ${unreviewed} : remise de secret non relue ; l'ajouter à ALLOWED_SECRET_HANDOVERS après revue.`,
-                'f.yml : ALLOWED_SECRET_HANDOVERS cite a › s › T › A, que le workflow ne remet plus.',
-            ],
-            name
-        );
-});
-
-test('refuse une remise dans une étape sans id, ou d’id vide', () => {
-    // Une liste qui citerait l'id vide ne doit pas rouvrir la porte.
-    const emptyId = { 'f.yml': { a: { '': { T: 'A' } } } };
-    for (const [id, handovers] of [
-        [null, {}],
-        ["''", emptyId],
-    ])
-        assert.equal(
-            check(
-                readOnly('  push:', runStep(HANDOVER('A'), id)),
-                {},
-                handovers
-            )[0],
-            "f.yml › jobs.a.steps.0.env.T : l'étape qui reçoit `secrets.A` doit porter un `id` ; ALLOWED_SECRET_HANDOVERS lie chaque remise à une étape nommée.",
-            String(id)
-        );
-});
-
-test('refuse une entrée de liste que le workflow ne remet plus', () => {
-    assert.deepEqual(
-        check(readOnly('  push:', runStep("'x'")), {}, HANDOVERS),
-        [
-            'f.yml : ALLOWED_SECRET_HANDOVERS cite a › s › T › A, que le workflow ne remet plus.',
-        ]
-    );
-});
-
-test('refuse deux étapes de même id qui reçoivent la même remise', () => {
-    const twice = `${runStep(HANDOVER('A'))}      - run: bun install\n        id: s\n        env:\n          T: ${HANDOVER('A')}\n`;
-    assert.deepEqual(check(readOnly('  push:', twice), {}, HANDOVERS), [
-        'f.yml › a › s › T › A : remise présente dans deux étapes de même `id` ; une entrée relue vaut pour une seule étape.',
-    ]);
-});
-
-// Les vrais workflows, pas des gabarits : la liste fermée doit décrire le
-// dépôt tel qu'il est, et refuser qu'un jeton y change d'étape.
-function repositoryWorkflows(transform = {}) {
-    return ['ci.yml', 'nightly-integration.yml'].map((file) => {
-        const content = readFileSync(
-            new URL(`../.github/workflows/${file}`, import.meta.url),
-            'utf8'
-        );
-        return {
-            file,
-            content: transform[file] ? transform[file](content) : content,
-        };
-    });
-}
-
-test('les remises du dépôt sont exactement celles de la liste fermée', () => {
-    assert.deepEqual(
-        checkWorkflows(repositoryWorkflows(), {
-            writes: {},
-            handovers: ALLOWED_SECRET_HANDOVERS,
-        }),
-        []
-    );
-});
-
-test('refuse le jeton Nx déplacé vers Install dependencies dans ci.yml', () => {
-    const moveTokenToInstall = (content) => {
-        const workflow = parseYaml(content);
-        const { steps } = workflow.jobs.oracle;
-        const lint = steps.find((step) => step.id === 'nx-lint');
-        const install = steps.find(
-            (step) => step.name === 'Install dependencies'
-        );
-        assert.equal(install.run, 'bun install --frozen-lockfile');
-        install.env = { NX_CLOUD_ACCESS_TOKEN: lint.env.NX_CLOUD_ACCESS_TOKEN };
-        delete lint.env.NX_CLOUD_ACCESS_TOKEN;
-        return stringifyYaml(workflow);
-    };
-    const violations = checkWorkflows(
-        repositoryWorkflows({ 'ci.yml': moveTokenToInstall }),
-        { writes: {}, handovers: ALLOWED_SECRET_HANDOVERS }
-    );
-    assert.equal(violations.length, 2, violations.join('\n'));
-    assert.match(
-        violations[0],
-        /ci\.yml › jobs\.oracle\.steps\.\d+\.env\.NX_CLOUD_ACCESS_TOKEN : l'étape qui reçoit `secrets\.NX_CLOUD_ACCESS_TOKEN` doit porter un `id`/
-    );
-    assert.equal(
-        violations[1],
-        'ci.yml : ALLOWED_SECRET_HANDOVERS cite oracle › nx-lint › NX_CLOUD_ACCESS_TOKEN › NX_CLOUD_ACCESS_TOKEN, que le workflow ne remet plus.'
-    );
-});
-
-test('refuse la transmission de secrets à un workflow appelé', () => {
-    for (const secrets of ['inherit', `\n      T: ${HANDOVER('A')}`])
-        assert.match(
-            check(
-                readOnly(
-                    '  push:',
-                    `jobs:\n  call:\n    uses: ./.github/workflows/x.yml\n    secrets: ${secrets}\n`
-                )
-            ).join('\n'),
-            /f\.yml › call : `secrets:` transmet des secrets à un workflow appelé/
-        );
-});
-
-test('la garde main ne vaut rien sous pull_request_target', () => {
-    assert.match(
-        check(
-            readOnly('  pull_request_target:', runStep(HANDOVER('A'))),
-            {},
-            HANDOVERS
-        )[0],
-        /événement `pull_request_target` non relu/
-    );
-});
-
 // ─── Agrégation ─────────────────────────────────────────────────────────────
 
 test('checkWorkflows refuse un YAML illisible et un fichier cité mais absent', () => {
@@ -569,17 +289,6 @@ test('checkWorkflows refuse un audit hors de son point d’entrée (règle 6)', 
     assert.deepEqual(audit('bun audit --audit-level=high'), [
         'f.yml : job a : audit lancé hors de node tools/audit-exceptions.mjs',
     ]);
-});
-
-test('secretViolations parcourt aussi les matrices et les tableaux', () => {
-    assert.match(
-        secretViolations('f.yml', {
-            jobs: {
-                a: { strategy: { matrix: { v: ['${{ secrets.BAD }}'] } } },
-            },
-        })[0],
-        /f\.yml › jobs\.a\.strategy\.matrix\.v\.0 : usage du contexte `secrets` non reconnu/
-    );
 });
 
 test('Nx : suivi natif limité aux issues et gardé par main, sans élargir les autres jobs', () => {
@@ -669,4 +378,119 @@ fs.writeFileSync(path,JSON.stringify(state));\n`
     writeFileSync(statePath, JSON.stringify(state));
     assert.notEqual(run().status, 0);
     assert.equal(JSON.parse(readFileSync(statePath)).created, 1);
+});
+
+// NGINX-FRAICHEUR (C5) : seul le suivi écrit, seulement l'issue, depuis main.
+const nginxWorkflow = () =>
+    parseYaml(
+        readFileSync(
+            new URL(
+                `../.github/workflows/${NGINX_FRESHNESS_WORKFLOW}`,
+                import.meta.url
+            ),
+            'utf8'
+        )
+    );
+
+test('nginx : suivi par issue limité à issues, gardé par main, sans code du dépôt', () => {
+    const file = NGINX_FRESHNESS_WORKFLOW;
+    // Le garde du suivi est branché dans checkWorkflows, comme dans la CLI.
+    const check = (w, writes = ALLOWED_JOB_WRITES) =>
+        checkWorkflows([{ file, content: stringifyYaml(w) }], {
+            writes: { [file]: writes[file] },
+            handovers: {},
+        });
+    const workflow = nginxWorkflow();
+    assert.deepEqual(check(workflow), []);
+    assert.deepEqual(workflow.jobs.freshness.permissions, { contents: 'read' });
+    assert.ok(check(workflow, {}).length > 0, 'écriture non listée refusée');
+    const followupRun = (w) => w.jobs.followup.steps[0];
+    for (const mutate of [
+        (w) => (w.jobs.followup.permissions.contents = 'write'),
+        (w) => (w.jobs.followup.permissions['pull-requests'] = 'write'),
+        (w) => (w.jobs.followup.if = 'failure()'),
+        (w) =>
+            (w.jobs.followup.if =
+                "github.ref == 'refs/heads/main' || failure()"),
+        (w) =>
+            (w.jobs.followup.if =
+                "github.ref == 'refs/heads/main' && always()"),
+        (w) => (w.jobs.freshness.permissions = { issues: 'write' }),
+        (w) => (w.permissions = { issues: 'write' }),
+        (w) => (w.on.pull_request = null),
+        (w) => (w.jobs.followup.needs = ['autre']),
+        (w) => w.jobs.followup.steps.unshift({ uses: 'actions/checkout@v7' }),
+        (w) => (followupRun(w).run += '\nnode tools/x.mjs'),
+        (w) =>
+            (followupRun(w).run = followupRun(w).run.replace(
+                'gh issue edit',
+                'gh issue comment'
+            )),
+        (w) => (followupRun(w).env.GH_TOKEN = '${{ secrets.GITHUB_TOKEN }}'),
+    ]) {
+        const bad = structuredClone(workflow);
+        mutate(bad);
+        assert.ok(check(bad).length > 0, mutate.toString());
+    }
+});
+
+test('nginx : le vrai shell du suivi crée une issue, l’actualise, la rouvre, refuse un doublon', (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'nginx-issue-test-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const gh = join(root, 'gh');
+    writeFileSync(
+        gh,
+        `#!${process.execPath}\nconst fs = require('node:fs');
+const path = process.env.GH_TEST_STATE;
+const state = JSON.parse(fs.readFileSync(path));
+const [, , , command, number] = process.argv;
+const option = (name) => process.argv[process.argv.indexOf(name) + 1];
+if (command === 'list') console.log(JSON.stringify(state.issues));
+else if (command === 'create') { state.created.push({ title: option('--title'), assignee: option('--assignee'), body: fs.readFileSync(option('--body-file'), 'utf8') }); state.issues.push({ number: 7, title: option('--title'), state: 'OPEN' }); }
+else if (command === 'edit' && number === '7') state.edited++;
+else if (command === 'reopen' && number === '7') { state.reopened++; state.issues[0].state = 'OPEN'; }
+else process.exit(3);
+fs.writeFileSync(path, JSON.stringify(state));\n`
+    );
+    chmodSync(gh, 0o755);
+    const statePath = join(root, 'issues.json');
+    const save = (state) => writeFileSync(statePath, JSON.stringify(state));
+    const load = () => JSON.parse(readFileSync(statePath, 'utf8'));
+    save({ issues: [], created: [], edited: 0, reopened: 0 });
+    const script = nginxWorkflow().jobs.followup.steps[0].run;
+    const run = () =>
+        spawnSync('/bin/bash', ['-e', '-o', 'pipefail', '-c', script], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                GITHUB_REPOSITORY: 'test/repo',
+                GITHUB_RUN_ID: '123',
+                GITHUB_RUN_ATTEMPT: '1',
+                PATH: `${root}:${process.env.PATH}`,
+                RUNNER_TEMP: root,
+                GH_TEST_STATE: statePath,
+            },
+        });
+    let result = run();
+    assert.equal(result.status, 0, result.stderr);
+    result = run();
+    assert.equal(result.status, 0, result.stderr);
+    let state = load();
+    assert.equal(state.created.length, 1);
+    assert.equal(state.created[0].assignee, 'ismaelkouda');
+    assert.match(state.created[0].body, /actions\/runs\/123/);
+    assert.match(
+        state.created[0].body,
+        new RegExp(escapeRegExp(toolEnv('NGINX_DIGEST_STALE')))
+    );
+    assert.equal(state.edited, 1);
+    state.issues[0].state = 'CLOSED';
+    save(state);
+    assert.equal(run().status, 0);
+    state = load();
+    assert.deepEqual([state.edited, state.reopened], [2, 1]);
+    state.issues.push({ ...state.issues[0], number: 8 });
+    save(state);
+    assert.notEqual(run().status, 0);
+    assert.equal(load().created.length, 1);
 });

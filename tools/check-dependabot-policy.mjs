@@ -20,6 +20,7 @@ import semver from 'semver';
 import { parse as parseYaml } from 'yaml';
 
 import { parseJsonc } from './check-library-setup-deps.mjs';
+import { NGINX_FRESHNESS_WORKFLOW } from './check-workflow-privileges.mjs';
 import { delegatedIgnorePolicy } from './nx-migration-plan.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -359,14 +360,27 @@ export function dependabotPolicyErrors(config, pkg, lock) {
     return errors;
 }
 
-// X4-config : l'image nginx du relais extérieur a une seule source, le
-// Dockerfile du harnais réduit à `FROM`, suivi par l'écosystème `docker`
-// dans un groupe dédié. Le suivi de l'empreinte par le robot n'est pas
-// documenté : check-nginx-digest.mjs reste le filet.
+// X4-config, NGINX-FRAICHEUR : l'image nginx du relais extérieur a une seule
+// source, le Dockerfile du harnais réduit à `FROM`, suivi par l'écosystème
+// `docker` dans un groupe dédié. Dependabot met à jour son empreinte même à
+// tag inchangé (PR #13 du 2026-11-16 ; dependabot-core,
+// docker/lib/dependabot/docker/update_checker.rb:244-285 @5838e62c) : il est
+// la source primaire. Il passe tous les jours à heure fixe UTC (`daily` ne
+// couvre que du lundi au vendredi, doc « Dependabot options reference ») ;
+// check-nginx-digest.mjs, son chien de garde quotidien, passe au moins
+// NGINX_FRESHNESS_DELAY_MINUTES après lui, pour que la PR précède l'issue.
 export const NGINX_RELAY_DIRECTORY = '/tools/generator-platform/nginx-harness';
 export const NGINX_RELAY_GROUP = 'nginx-relay';
+export const NGINX_FRESHNESS_DELAY_MINUTES = 120;
+const DAILY_CRON = /^([1-5]?[0-9]) (1?[0-9]|2[0-3]) \* \* \*$/;
 
-export function nginxRelayPolicyErrors(config) {
+// Minute UTC du jour d'un cron quotidien `M H * * *`, sinon `null`.
+function dailyCronMinute(cron) {
+    const found = DAILY_CRON.exec(typeof cron === 'string' ? cron : '');
+    return found ? Number(found[2]) * 60 + Number(found[1]) : null;
+}
+
+export function nginxRelayPolicyErrors(config, freshnessWorkflow) {
     const entries = (config?.updates ?? []).filter(
         (update) =>
             update?.['package-ecosystem'] === 'docker' &&
@@ -376,12 +390,40 @@ export function nginxRelayPolicyErrors(config) {
         return [
             `attendu exactement un update Dependabot docker pour '${NGINX_RELAY_DIRECTORY}', trouvé ${entries.length}`,
         ];
+    const errors = [];
     const patterns = entries[0].groups?.[NGINX_RELAY_GROUP]?.patterns;
     if (!Array.isArray(patterns) || !patterns.includes('nginx'))
-        return [
-            `le groupe '${NGINX_RELAY_GROUP}' doit couvrir l'image 'nginx' de '${NGINX_RELAY_DIRECTORY}'`,
-        ];
-    return [];
+        errors.push(
+            `le groupe '${NGINX_RELAY_GROUP}' doit couvrir l'image 'nginx' de '${NGINX_RELAY_DIRECTORY}'`
+        );
+    const schedule = entries[0].schedule ?? {};
+    const dependabotAt = dailyCronMinute(schedule.cronjob);
+    if (
+        schedule.interval !== 'cron' ||
+        dependabotAt === null ||
+        schedule.timezone !== 'UTC'
+    )
+        errors.push(
+            `'${NGINX_RELAY_DIRECTORY}' : schedule attendu { interval: 'cron', cronjob: 'M H * * *', timezone: 'UTC' }, tous les jours à heure fixe ; trouvé ${JSON.stringify(schedule)} ('weekly', 'monthly', et 'daily' qui saute le week-end, laissent des jours sans mise à jour)`
+        );
+    const crons =
+        freshnessWorkflow?.on?.schedule ?? freshnessWorkflow?.true?.schedule;
+    const freshnessAt =
+        Array.isArray(crons) && crons.length === 1
+            ? dailyCronMinute(crons[0]?.cron)
+            : null;
+    if (freshnessAt === null)
+        errors.push(
+            'workflow de fraîcheur nginx : un seul cron quotidien `M H * * *` attendu'
+        );
+    else if (
+        dependabotAt !== null &&
+        freshnessAt - dependabotAt < NGINX_FRESHNESS_DELAY_MINUTES
+    )
+        errors.push(
+            `workflow de fraîcheur nginx : il doit passer au moins ${NGINX_FRESHNESS_DELAY_MINUTES} min après Dependabot, le même jour UTC (Dependabot ${schedule.cronjob}, fraîcheur ${crons[0].cron})`
+        );
+    return errors;
 }
 
 /**
@@ -667,11 +709,25 @@ function main() {
             process.exit(2);
         }
     }
+    let freshnessWorkflow;
+    try {
+        freshnessWorkflow = parseYaml(
+            readFileSync(
+                join(ROOT, '.github/workflows', NGINX_FRESHNESS_WORKFLOW),
+                'utf8'
+            )
+        );
+    } catch (error) {
+        console.error(
+            `✖ Workflow de fraîcheur nginx illisible : ${error.message}`
+        );
+        process.exit(2);
+    }
     const errors = [
         ...dependabotPolicyErrors(config, pkg, lock),
         ...ignoredDependencyPolicyErrors(config, pkg, lock, migrationWorkflow),
         ...securityResolutionPolicyErrors(pkg, lock),
-        ...nginxRelayPolicyErrors(config),
+        ...nginxRelayPolicyErrors(config, freshnessWorkflow),
     ];
 
     if (errors.length > 0) {

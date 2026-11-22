@@ -16,12 +16,27 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # File de fusion : les contextes requis de `main` doivent aussi être rapportés
+  # sur le commit du groupe (branche gh-readonly-queue/main/…), sinon la file
+  # attend un contrôle qui n'arrive jamais. Actions ne prend en charge que
+  # `checks_requested` ; `merge_group` filtre par `branches` ou
+  # `branches-ignore`, jamais par `paths`. La base de diff d'une entrée est son
+  # parent (`merge_group.base_sha`) : chaque entrée doit donc passer ses
+  # propres contrôles (réglage de file ALLGREEN, « Require all queue entries to
+  # pass required checks »). Garde : check:branch-protection-contexts
+  # (merge_group, aucun job requis sauté, groupes de concurrence distincts).
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   # Le workflow d'auto-réparation crée sa PR avec GITHUB_TOKEN. GitHub ne
   # redéclenche pas pull_request dans ce cas ; ce dispatch explicite attache
   # exactement les mêmes checks requis au SHA de la branche automatisée.
   workflow_dispatch:
 
 # Audit G-8 : un seul run actif par PR / branche — annule le précédent.
+# Dans la file, `pull_request` est vide et `github.ref` est la branche
+# temporaire de l'entrée (refs/heads/gh-readonly-queue/main/…, une par PR) :
+# un run de PR (groupe = son numéro) et un run de la file ne s'annulent jamais.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -318,8 +333,21 @@ jobs:
       - name: Contrat rapide — impact de la preuve d'isolation
         id: library-impact
         env:
-          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
-        run: node tools/library-ci-impact.mjs --base "$LIBRARY_DIFF_BASE" >> "$GITHUB_OUTPUT"
+          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        # Dans la file : le parent du groupe (merge_group.base_sha), ancêtre de
+        # HEAD, et HEAD doit être le groupe annoncé (merge_group.head_sha).
+        # Sur un push : le parent, ou l'arbre vide pour un commit sans parent.
+        # Le parent est lu dans l'objet commit (un clone peu profond le voit) ;
+        # un parent présent mais introuvable fait échouer l'étape.
+        run: |
+          base="$LIBRARY_DIFF_BASE"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then test "$(git rev-parse HEAD)" = "$MERGE_GROUP_HEAD_SHA"; base=$(git rev-parse --verify "$MERGE_GROUP_BASE_SHA^{commit}"); git merge-base --is-ancestor "$base" HEAD; fi
+          if [ -z "$base" ]; then
+            if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
+          fi
+          node tools/library-ci-impact.mjs --base "$base" >> "$GITHUB_OUTPUT"
 
       - uses: oven-sh/setup-bun@v2
         if: steps.library-impact.outputs.isolation == 'true'
@@ -371,8 +399,21 @@ jobs:
       - name: Contrat rapide — impact de la preuve d'intégration
         id: library-impact
         env:
-          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
-        run: node tools/library-ci-impact.mjs --base "$LIBRARY_DIFF_BASE" >> "$GITHUB_OUTPUT"
+          LIBRARY_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        # Dans la file : le parent du groupe (merge_group.base_sha), ancêtre de
+        # HEAD, et HEAD doit être le groupe annoncé (merge_group.head_sha).
+        # Sur un push : le parent, ou l'arbre vide pour un commit sans parent.
+        # Le parent est lu dans l'objet commit (un clone peu profond le voit) ;
+        # un parent présent mais introuvable fait échouer l'étape.
+        run: |
+          base="$LIBRARY_DIFF_BASE"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then test "$(git rev-parse HEAD)" = "$MERGE_GROUP_HEAD_SHA"; base=$(git rev-parse --verify "$MERGE_GROUP_BASE_SHA^{commit}"); git merge-base --is-ancestor "$base" HEAD; fi
+          if [ -z "$base" ]; then
+            if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
+          fi
+          node tools/library-ci-impact.mjs --base "$base" >> "$GITHUB_OUTPUT"
 
       - uses: oven-sh/setup-bun@v2
         if: steps.library-impact.outputs.integration == 'true'
@@ -504,12 +545,23 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Set NX base branch
+        env:
+          NX_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        # PR : origin/<base>. Dans la file : le parent du groupe
+        # (merge_group.base_sha), ancêtre de HEAD, et HEAD doit être le groupe
+        # annoncé (merge_group.head_sha). Sinon : le parent, ou l'arbre vide
+        # pour un commit sans parent. Le parent est lu dans l'objet commit (un
+        # clone peu profond le voit) ; un parent présent mais introuvable fait
+        # échouer l'étape.
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
-          else
-            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
+          base="$NX_DIFF_BASE"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then test "$(git rev-parse HEAD)" = "$MERGE_GROUP_HEAD_SHA"; base=$(git rev-parse --verify "$MERGE_GROUP_BASE_SHA^{commit}"); git merge-base --is-ancestor "$base" HEAD; fi
+          if [ -z "$base" ]; then
+            if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
           fi
+          echo "NX_BASE=$base" >> $GITHUB_ENV
 
       # ESLint — boundaries Nx + règles Angular (ADR-0010 portail niveau Lint)
       # --max-warnings=0 est porté par targetDefaults.lint (nx.json), pas par nx CLI
@@ -607,18 +659,35 @@ jobs:
         run: bunx playwright install chromium --with-deps
 
       - name: Set NX base branch
+        env:
+          NX_DIFF_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        # PR : origin/<base>. Dans la file : le parent du groupe
+        # (merge_group.base_sha), ancêtre de HEAD, et HEAD doit être le groupe
+        # annoncé (merge_group.head_sha). Sinon : le parent, ou l'arbre vide
+        # pour un commit sans parent. Le parent est lu dans l'objet commit (un
+        # clone peu profond le voit) ; un parent présent mais introuvable fait
+        # échouer l'étape.
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "NX_BASE=origin/${{ github.base_ref }}" >> $GITHUB_ENV
-          else
-            echo "NX_BASE=HEAD~1" >> $GITHUB_ENV
+          base="$NX_DIFF_BASE"
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then test "$(git rev-parse HEAD)" = "$MERGE_GROUP_HEAD_SHA"; base=$(git rev-parse --verify "$MERGE_GROUP_BASE_SHA^{commit}"); git merge-base --is-ancestor "$base" HEAD; fi
+          if [ -z "$base" ]; then
+            if git cat-file -p HEAD | grep -q '^parent '; then base=$(git rev-parse --verify HEAD~1); else base=$(git hash-object -t tree /dev/null); fi
           fi
+          echo "NX_BASE=$base" >> $GITHUB_ENV
 
       - name: Detect React workspace browser-proof impact
         id: react-workspace-proof
         run: |
-          if bunx nx show projects --affected --base=${{ env.NX_BASE }} | grep -qx workspace-react-proof \
-            || ! git diff --quiet ${{ env.NX_BASE }}...HEAD -- \
+          # `base...HEAD` exige un commit : un arbre (commit sans parent) est
+          # comparé tel quel, comme le fait `nx affected`.
+          from="$NX_BASE"
+          if [ "$(git cat-file -t "$from")" != tree ]; then
+            from="$(git merge-base "$from" HEAD)"
+          fi
+          if bunx nx show projects --affected --base="$NX_BASE" | grep -qx workspace-react-proof \
+            || ! git diff --quiet "$from" HEAD -- \
               tools/e2e-static-server.mjs; then
             echo "run=true" >> $GITHUB_OUTPUT
           else
@@ -707,11 +776,12 @@ jobs:
   # pour les paquets installés. Il refuse et nomme tout plancher dont le paquet
   # est absent de packages dans bun.lock : ce plancher doit être retiré.
   # Aucun de ces cinq GHSA n'est ignoré.
-  # Le 2026-11-17, GHSA-fc5q-39xc-vjpf (picomatch<=4.0.7, ReDoS, high) n'a
+  # Le 2026-11-17, GHSA-fc5q-39xc-vjpf (picomatch<=4.0.7, ReDoS, high) n'avait
   # aucune version corrigée. Décision « B » du propriétaire : exception ciblée
-  # de 14 jours au plus, dans AUDIT_IGNORES (tools/audit-exceptions.mjs),
-  # outillage de build et de dev seulement. Elle devient rouge seule à son
-  # expiration, dès que l'avis disparaît ou dès qu'une version corrigée paraît.
+  # de 14 jours au plus, dans AUDIT_IGNORES (tools/audit-exceptions.mjs). Le
+  # 2026-11-18, GitHub a retiré l'avis (withdrawn_at), toujours sans version
+  # corrigée : l'exception, devenue périmée, est retirée. AUDIT_IGNORES est
+  # vide : aucun avis high/critical n'est ignoré.
   # Le 2026-10-06, le flux d'avis a signalé après fusion deux nouvelles
   # transitives : proxy-addr<2.0.8 (critical) via @nx/react/express et
   # source-map-js<1.2.2 (high) via les outils CSS/build/test. Elles sont
@@ -857,14 +927,16 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Tests des chemins, plans, ownership et reprise
         run: bun run test:external-application-shells
+      # NGINX-FRAICHEUR (a) : forme de l'image du relais, sans réseau. Une
+      # seule source, le Dockerfile du harnais, et aucun autre épinglage. La
+      # fraîcheur contre le registre (b) ne tourne qu'au quotidien
+      # (nginx-digest-freshness.yml) : une republication ne rougit plus les PR.
+      - name: Structure de l'image nginx du relais (X4-config)
+        run: bun run check:nginx-image
       # X4-config : relais nginx sur l'image officielle épinglée (en-têtes,
       # amont, redirections, cookies, arrêts sans valeur, contre-mutations).
       - name: Relais nginx de même origine (X4-config)
         run: bun run check:nginx-relay
-      # Filet d'empreinte : l'image épinglée correspond-elle encore à son tag ?
-      # Trois issues fermées ; un registre injoignable rougit l'étape.
-      - name: Empreinte de l'image nginx du relais (X4-config)
-        run: bun run check:nginx-digest
       - name: Racine physique de la preuve hors atelier
         id: external-proof-root
         shell: bash
