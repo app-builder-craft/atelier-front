@@ -13,6 +13,7 @@ import {
     retiredFindings,
     staticFindings,
     treeFindings,
+    withoutIntegrity,
 } from './check-retired-name.mjs';
 import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
@@ -202,7 +203,7 @@ test('arbre entier : entrées cachées, noms, contenus et liens', async (t) => {
     assert.deepEqual((await treeFindings(clean)).findings, []);
 });
 
-test('produits sonde : seul le contenu du verrou déduit du packageManager de CHAQUE produit est écarté', async (t) => {
+test('produits sonde : le verrou de CHAQUE produit, reconnu par son packageManager, est jugé hors ses seules valeurs d’intégrité', async (t) => {
     const root = await scratch(t);
     for (const [product, packageManager] of [
         ['p', 'bun@1.4.4'],
@@ -214,22 +215,52 @@ test('produits sonde : seul le contenu du verrou déduit du packageManager de CH
             `${JSON.stringify({ name: `@sonde/${product}`, packageManager })}\n`
         );
     }
+    // Les faux positifs réels : une intégrité SRI dont le base64 porte le motif.
     await writeFile(
         join(root, 'p', 'bun.lock'),
-        `{"integrity": "sha512-${UPPER}x"}\n`
+        `{\n  "packages": {\n    "a": ["a@1.0.0", "", {}, "sha512-ab${UPPER}x+/9=="],\n    "b": ["b@1.0.0", "", {}, "sha384-${M}Q"],\n  }\n}\n`
     );
     await writeFile(join(root, 'p', 'yarn.lock'), `${M}\n`);
     const lockfiles = await productLockfiles(root, ['p']);
     assert.deepEqual(lockfiles, ['p/bun.lock']);
-    assert.deepEqual((await treeFindings(root, lockfiles)).findings, [
+    const clean = await treeFindings(root, lockfiles);
+    assert.deepEqual(clean.findings, ['p/yarn.lock:1']);
+    assert.equal(clean.whitened, 2);
+    assert.deepEqual((await treeFindings(root)).findings.sort(), [
+        'p/bun.lock:3',
+        'p/bun.lock:4',
         'p/yarn.lock:1',
     ]);
-    assert.deepEqual((await treeFindings(root)).findings.sort(), [
-        'p/bun.lock:1',
+    // Un vrai nom à l’ancien nom dans le verrou d’un produit est refusé.
+    await writeFile(
+        join(root, 'p', 'bun.lock'),
+        `{\n  "workspaces": {\n    "": { "name": "@${M}/source" },\n  },\n  "packages": {\n    "@${M}/x": ["@${M}/x@1.0.0", "", {}, "sha512-abc="],\n  }\n}\n`
+    );
+    assert.deepEqual((await treeFindings(root, lockfiles)).findings, [
+        'p/bun.lock:3',
+        'p/bun.lock:6',
         'p/yarn.lock:1',
     ]);
     await assert.rejects(
         productLockfiles(root, ['p', 'q']),
         /gestionnaire de paquets non pris en charge/
     );
+});
+
+test('intégrité : seules des chaînes JSON entières de la grammaire SRI sont blanchies', () => {
+    const text = [
+        `"sha512-${M}AA=="`,
+        `"sha256-x${UPPER}"`,
+        `"note sha512-${M}AA=="`,
+        `"sha1-${M}AA=="`,
+        `"sha512-${M}"x`,
+        `sha512-${M}AA==`,
+    ].join('\n');
+    const { bytes, carried } = withoutIntegrity(Buffer.from(text));
+    assert.equal(carried, 3);
+    assert.deepEqual(retiredFindings('v.lock', bytes), [
+        'v.lock:3',
+        'v.lock:4',
+        'v.lock:6',
+    ]);
 });

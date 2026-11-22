@@ -12,9 +12,11 @@
  * - STATIQUE : chaque fichier suivi (`git ls-files`), par son chemin et par
  *   son contenu ; un lien symbolique est jugé sur sa cible écrite, un contenu
  *   binaire (octet NUL) sur son seul chemin. Le seul contenu écarté est celui
- *   du fichier de verrouillage du gestionnaire de paquets, DÉDUIT de
- *   `packageManager` (`bun@…` → `bun.lock`) : ses empreintes base64 portent
- *   le motif par hasard. Un autre gestionnaire est refusé ;
+ *   du verrou de l'atelier, DÉDUIT de `packageManager` (`bun@…` →
+ *   `bun.lock`) : le nom de sa racine y est resté l'ancien nom, désynchronisé
+ *   du `name` de `package.json`, et Bun 1.4.4 ne le réécrit pas, même quand
+ *   il réécrit le verrou. Trou connu : un paquet transitif à l'ancien nom n'y
+ *   serait pas vu. Un autre gestionnaire de paquets est refusé ;
  * - DYNAMIQUE : un produit sonde publié RÉELLEMENT dans un dossier jetable,
  *   par les publieurs du générateur (plan revu, puis publication liée à son
  *   identifiant, comme `--expect-plan`), dans les deux profils : espace,
@@ -23,16 +25,18 @@
  *   fixture ; coques Angular et React d'une conception ; contrats backend et
  *   conceptions compilés. Puis l'arbre ENTIER du dossier jetable est balayé,
  *   noms et contenus, fichiers et dossiers cachés compris (verrous, journaux
- *   et racines de transaction vivent à côté du produit). Le contenu du verrou
- *   de chaque produit, déduit de SON `packageManager`, n'est pas jugé : ses
- *   noms viennent du `package.json` du produit, balayé
- *   (`projectProductLock`), ses empreintes base64 du verrou de l'atelier.
+ *   et racines de transaction vivent à côté du produit). Le verrou de chaque
+ *   produit, reconnu par SON `packageManager`, est jugé après le blanchiment
+ *   de ses seules valeurs d'intégrité : une chaîne JSON entière de la
+ *   grammaire SRI du W3C (`sha256|sha384|sha512-<base64>`), dont le base64
+ *   porte le motif par hasard. Ses noms, eux, sont jugés.
  *
  * Limites : un contenu binaire n'est jugé que par son chemin, et une image
  * qui DESSINE le motif n'est pas vue ; un nom temporaire de transaction n'est
  * vu que s'il survit (il dérive de `signatureName`, source unique gardée par
- * `check:identity-sources`) ; le contenu d'un verrou n'est pas jugé (celui de
- * l'atelier garde le nom de sa racine tel que Bun l'a écrit).
+ * `check:identity-sources`) ; le contenu du verrou de l'atelier n'est pas
+ * jugé (voir plus haut) ; une chaîne d'un verrou de produit qui aurait
+ * exactement la forme d'une valeur d'intégrité serait blanchie.
  *
  * Usage : bun run check:retired-name
  */
@@ -74,6 +78,23 @@ export function retiredFindings(label, bytes, motif = RETIRED_NAME) {
     for (const [index, line] of bytes.toString('utf8').split('\n').entries())
         if (pattern.test(line)) findings.push(`${label}:${index + 1}`);
     return findings;
+}
+
+/**
+ * Valeurs d'intégrité d'un verrou : chaînes JSON ENTIÈRES de la grammaire
+ * SRI (W3C), seules blanchies. Rend les octets blanchis et le nombre de
+ * valeurs blanchies qui portaient le motif.
+ */
+export function withoutIntegrity(bytes, motif = RETIRED_NAME) {
+    const pattern = new RegExp(escapeRegExp(motif), 'i');
+    let carried = 0;
+    const text = bytes
+        .toString('utf8')
+        .replace(/"sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2}"/g, (value) => {
+            if (pattern.test(value)) carried += 1;
+            return '""';
+        });
+    return { bytes: Buffer.from(text, 'utf8'), carried };
 }
 
 /** Fichier de verrouillage, déduit de `packageManager` ; fermé sinon. */
@@ -126,13 +147,21 @@ export function staticFindings(root, motif = RETIRED_NAME) {
 
 /**
  * Balayage d'un arbre entier : noms et contenus, entrées cachées comprises.
- * `lockfiles` : chemins relatifs dont seul le nom est jugé (verrous déduits
- * du `packageManager` de chaque produit).
+ * `lockfiles` : chemins relatifs des verrous (déduits du `packageManager` de
+ * chaque produit), jugés hors valeurs d'intégrité.
  */
 export async function treeFindings(root, lockfiles = [], motif = RETIRED_NAME) {
-    const skipped = new Set(lockfiles);
+    const locks = new Set(lockfiles);
     const findings = [];
     let scanned = 0;
+    let whitened = 0;
+    const contentOf = async (path, absolute) => {
+        const bytes = await readFile(absolute);
+        if (!locks.has(path)) return bytes;
+        const cleaned = withoutIntegrity(bytes, motif);
+        whitened += cleaned.carried;
+        return cleaned.bytes;
+    };
     const visit = async (relative) => {
         const entries = await readdir(join(root, relative));
         for (const name of entries.sort()) {
@@ -155,16 +184,14 @@ export async function treeFindings(root, lockfiles = [], motif = RETIRED_NAME) {
                 findings.push(
                     ...retiredFindings(
                         path,
-                        skipped.has(path)
-                            ? undefined
-                            : await readFile(absolute),
+                        await contentOf(path, absolute),
                         motif
                     )
                 );
         }
     };
     await visit('');
-    return { scanned, findings };
+    return { scanned, findings, whitened };
 }
 
 /** Verrous des produits sonde, chacun déduit du `packageManager` du produit. */
@@ -432,7 +459,7 @@ async function main() {
         console.error(`  fichier suivi : ${finding}`);
     for (const finding of probe.findings)
         console.error(`  produit sonde : ${finding}`);
-    const summary = `fichiers suivis : ${lock.findings.length} sur ${lock.scanned} (contenu de ${lock.lockfile} écarté, déduit de packageManager) ; produit sonde : ${probe.findings.length} sur ${probe.scanned} entrées, contenu de ${lockfiles.length} verrou(s) de produit écarté (${Object.entries(
+    const summary = `fichiers suivis : ${lock.findings.length} sur ${lock.scanned} (contenu de ${lock.lockfile} écarté, déduit de packageManager : racine non réécrite par Bun) ; produit sonde : ${probe.findings.length} sur ${probe.scanned} entrées, ${lockfiles.length} verrou(s) de produit jugés hors intégrités (${probe.whitened} valeur(s) d'intégrité portant le motif blanchie(s)) (${Object.entries(
         prefixes
     )
         .map(([product, prefix]) => `${product} « ${prefix} »`)
