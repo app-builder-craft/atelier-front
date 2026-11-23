@@ -29,6 +29,7 @@ import { fixture } from './test-support/dependabot-policy-fixture.mjs';
 // aussi les contre-tests PEER-GRAPH et nginx dans le même contexte CI.
 import './check-dependabot-peer-policy.test.mjs';
 import './check-dependabot-nginx-policy.test.mjs';
+import './check-dependabot-assignees.test.mjs';
 import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
 test('accepte un groupe React complet et des runtimes alignés', () => {
@@ -629,6 +630,7 @@ test('B : la CLI réelle lie les exclusions au workflow et refuse une délégati
         'package.json',
         'bun.lock',
         'tools/check-dependabot-policy.mjs',
+        'tools/check-dependabot-assignees.mjs',
         'tools/check-library-setup-deps.mjs',
         'tools/nx-migration-plan.mjs',
         'tools/check-workflow-privileges.mjs',
@@ -725,6 +727,15 @@ test('B : la CLI réelle lie les exclusions au workflow et refuse une délégati
             writeFileSync(
                 join(root, '.github/dependabot.yml'),
                 stringifyYaml(extra)
+            );
+        },
+        // Une entrée sans assigné : le garde des assignees est bien branché.
+        () => {
+            const unassigned = structuredClone(config);
+            delete unassigned.updates.at(-1).assignees;
+            writeFileSync(
+                join(root, '.github/dependabot.yml'),
+                stringifyYaml(unassigned)
             );
         },
     ]) {
