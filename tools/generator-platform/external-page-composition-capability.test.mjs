@@ -446,9 +446,45 @@ test('X5 : un nœud nommé comme la racine réservée absentText est refusé', (
 // fichier ne remplace l'`ErrorHandler` d'Angular. Invariant de coque : le
 // gestionnaire par défaut journalise et ne relance pas, donc un écouteur qui
 // lève rend encore `false` (O-S-V, comportements 2 et 3).
+// Produit composé fictif : coque avec session, commande publiée, plan et
+// composition de la page d'entrée, chacun sous plan relu (runner injecté).
+async function composedProduct(t, domain) {
+    const { sessionApp } =
+        await import('./test-support/external-publication-fixture.mjs');
+    const { writeExternalActionDefinitions } =
+        await import('./test-support/external-session-fixture.mjs');
+    const actions = await import('./core/external-action-request.mjs');
+    const pagePlan = await import('./core/external-page-plan.mjs');
+    const composition = await import('./core/external-page-composition.mjs');
+    const product = await sessionApp(t, domain);
+    const { enter } = await writeExternalActionDefinitions(
+        product.root,
+        domain
+    );
+    const page = { ...product.base, pageId: product.input.entryPage.id };
+    for (const [plan, publish, options] of [
+        [
+            actions.planExternalActionRequest,
+            actions.publishExternalActionRequest,
+            { ...product.base, definitionPath: enter },
+        ],
+        [pagePlan.planExternalPagePlan, pagePlan.publishExternalPagePlan, page],
+        [
+            composition.planExternalPageComposition,
+            composition.publishExternalPageComposition,
+            page,
+        ],
+    ]) {
+        const reviewed = await plan(options);
+        await publish(
+            { ...options, expectedPlanId: reviewed.plan_id },
+            { run: () => undefined }
+        );
+    }
+    return product;
+}
+
 test('O-S : aucun réglage synchrone de rxjs ni ErrorHandler remplacé, dans tout le produit composé', async (t) => {
-    const { composedProduct } =
-        await import('./test-support/external-realization-product.mjs');
     const { readdir, readFile } = await import('node:fs/promises');
     const { join, relative } = await import('node:path');
     const product = await composedProduct(t, 'observatory');

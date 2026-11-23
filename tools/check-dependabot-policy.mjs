@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import semver from 'semver';
 import { parse as parseYaml } from 'yaml';
 
+import { assigneePolicyErrors } from './check-dependabot-assignees.mjs';
 import { parseJsonc } from './check-library-setup-deps.mjs';
 import { NGINX_FRESHNESS_WORKFLOW } from './check-workflow-privileges.mjs';
 import { delegatedIgnorePolicy } from './nx-migration-plan.mjs';
@@ -728,6 +729,7 @@ function main() {
         ...ignoredDependencyPolicyErrors(config, pkg, lock, migrationWorkflow),
         ...securityResolutionPolicyErrors(pkg, lock),
         ...nginxRelayPolicyErrors(config, freshnessWorkflow),
+        ...assigneePolicyErrors(config),
     ];
 
     if (errors.length > 0) {

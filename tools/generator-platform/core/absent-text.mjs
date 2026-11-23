@@ -30,3 +30,49 @@ export function absentTextError(text) {
         return 'PAGE_ABSENT_TEXT_INVALID: absent_text must use the allowed letters, digits, punctuation and single inner spaces, with at least one letter';
     return undefined;
 }
+
+// Forme d'un texte d'absence déclaré sur une liaison du plan : liaison de
+// lecture seulement, texte valide. Refus nommé, ou undefined (texte absent
+// compris).
+export function absentTextBindingError(binding, kind) {
+    if (!Object.hasOwn(binding, 'absent_text')) return undefined;
+    if (kind !== 'query')
+        return `PAGE_ABSENT_TEXT_INVALID: ${binding.id} absent_text applies to read bindings only`;
+    const invalid = absentTextError(binding.absent_text);
+    return invalid ? `${binding.id} ${invalid}` : undefined;
+}
+
+// Texte d'absence OBLIGATOIRE, garantie du socle vérifiée à la compilation du
+// plan : un champ lu qui peut manquer (nullable ou facultatif, d'après le
+// modèle de lecture compilé) exige `absent_text` sur chaque liaison de liste
+// de sa lecture ; une lecture sans liaison de liste est refusée de même.
+// `queryPairs` : lectures de la page résolues par le plan
+// (`{ source: { id }, resolved: { operation: { read_model } } }`) ;
+// `outputBindings` : liaisons compilées. Premier refus nommé, ou undefined.
+export function missingAbsentTextError(queryPairs, outputBindings) {
+    const pairs = [...queryPairs].sort((left, right) =>
+        left.source.id.localeCompare(right.source.id)
+    );
+    for (const { source, resolved } of pairs) {
+        const absentFields = resolved.operation.read_model.fields
+            .filter((field) => field.nullable || !field.required)
+            .map((field) => field.name)
+            .sort();
+        if (absentFields.length === 0) continue;
+        const bindings = outputBindings
+            .filter(
+                (binding) =>
+                    binding.producer_node_id === source.id &&
+                    binding.output.kind === 'list'
+            )
+            .sort((left, right) => (left.id < right.id ? -1 : 1));
+        const [missing] = bindings.length
+            ? bindings.filter(
+                  (binding) => !Object.hasOwn(binding, 'absent_text')
+              )
+            : [{ id: `for ${source.id}` }];
+        if (missing)
+            return `PAGE_ABSENT_TEXT_MISSING: data binding ${missing.id} needs absent_text for ${absentFields.join(', ')}`;
+    }
+    return undefined;
+}

@@ -1,3 +1,9 @@
+// Corpus des refus de l'atelier 1 (lot 10), DONNÉES gardées après le retrait
+// de la grammaire : les 127 sondes des passages suivants du validateur.
+// Origine, à l'octet, au commit dbe0846a5f6522eb74f7484f6351dbdcb27b8287 :
+// tools/generator-platform/test-support/external-realization-second-probes.mjs.
+// Les commentaires d'origine qui suivent décrivent les mécanismes d'hier.
+
 // X4-sécurité 2 : les 127 nouvelles pages du validateur (agent E,
 // validation-X4-securite.md, `nouvelles-sondes*.mjs`), recopiées à l'octet
 // près ; chaque fichier garde sa portée. Format du validateur :

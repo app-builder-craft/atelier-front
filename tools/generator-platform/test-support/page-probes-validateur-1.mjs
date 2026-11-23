@@ -1,3 +1,10 @@
+// Corpus des refus de l'atelier 1 (lot 10), DONNÉES gardées après le retrait
+// de la grammaire : les 77 sondes du premier passage du validateur (données
+// seules ; ses fonctions d'injection et de mesure ne sont pas reprises).
+// Origine, à l'octet, au commit dbe0846a5f6522eb74f7484f6351dbdcb27b8287 :
+// tools/generator-platform/test-support/external-realization-probes.mjs.
+// Les commentaires d'origine qui suivent décrivent les mécanismes d'hier.
+
 // X4-sécurité : les 77 sondes du validateur (agent E, validation X4 : 3
 // témoins et 74 pages interdites), chacune avec le mécanisme qui la bloque.
 //   static        : refusée par verify:page-realization avant tout plan ;
@@ -397,60 +404,3 @@ export const VALIDATOR_PROBES = Object.freeze(
         Object.freeze({ id, file, text, mechanism, mode: mode ?? 'append' })
     )
 );
-
-// Fichiers d'une page de référence dont un seul fichier porte la sonde ;
-// `replace` insère le texte après son ancre, qui doit être unique.
-export function probedFiles(files, probe) {
-    const original = files[probe.file];
-    if (probe.mode === 'replace' && original.split(probe.find).length !== 2)
-        throw new Error(`probe anchor is not unique: ${probe.id}`);
-    return {
-        ...files,
-        [probe.file]:
-            probe.mode === 'prepend'
-                ? probe.text + original
-                : probe.mode === 'replace'
-                  ? original.replace(probe.find, () => probe.find + probe.text)
-                  : original + probe.text,
-    };
-}
-
-// Forme mesurable dans le navigateur d'une sonde acceptée par les règles : la
-// même règle appliquée à un élément affiché (le sélecteur `.probe` du
-// validateur ne vise aucun élément de la page), l'hôte fictif remplacé par une
-// seconde origine locale et le chemin par l'identifiant de la sonde.
-export function measurableProbe(probe, foreignOrigin) {
-    const target = (text) =>
-        text
-            .replaceAll(
-                '//exemple.invalid/',
-                `${foreignOrigin.replace(/^https?:/, '')}/${probe.id}/`
-            )
-            .replace('url(/x.png)', `url(/${probe.id}.png)`)
-            .replace('url(x.png)', `url(${probe.id}.png)`);
-    if (probe.file === SCSS) {
-        const css = target(probe.text)
-            .replaceAll('.probe::before', `#${probe.id}::before`)
-            .replaceAll('.probe', `#${probe.id}`)
-            .replace(
-                'font-family:p;',
-                `font-family:${probe.id.replaceAll('-', '')};`
-            );
-        const usesFont = probe.id === 'S-font-face';
-        return {
-            css,
-            html: `<div id="${probe.id}"${usesFont ? ` style="font-family:${probe.id.replaceAll('-', '')}"` : ''}>${probe.id}</div>`,
-        };
-    }
-    if (probe.id === 'H-style-attr-url')
-        return {
-            css: '',
-            html: target(probe.text).replace('<div ', `<div id="${probe.id}" `),
-        };
-    // `[style.background-image]` passe par le CSSOM : même effet qu'Angular.
-    return {
-        css: '',
-        html: `<div id="${probe.id}"></div>`,
-        script: `document.getElementById(${JSON.stringify(probe.id)}).style.backgroundImage = 'url(${foreignOrigin}/${probe.id}/x.png)';`,
-    };
-}

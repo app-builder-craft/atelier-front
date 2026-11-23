@@ -177,11 +177,6 @@ jobs:
       - name: check:application-designs (contrats de conception)
         run: bun run check:application-designs
 
-      # Un rôle n'existe que s'il a un producteur IR, un consommateur réel et
-      # une forme cible validée. La première tranche verticale couvre `screen`.
-      - name: check:target-archetype-coverage (rôles réellement consommés)
-        run: bun run check:target-archetype-coverage
-
       # J-2 (audit-workspace-2026-08-03.md, chantier J) — ADR-0010 fait de
       # conventions/angular-22.profile.json la source unique lisible par
       # machine des conventions de code ; J-1 l'a rendu vérifiable
@@ -950,10 +945,6 @@ jobs:
       # politique sans violation, service worker).
       - name: Coque servie par le relais nginx (X4-config)
         run: bun run check:nginx-relay-browser "${{ env.ATELIER_EXTERNAL_APPLICATION_PROOF_ROOT }}"
-      # X4-sécurité-3, N4 (O-S-V) : trois témoins natifs de (submit), construits
-      # par les outils du produit de la preuve et mesurés dans son Chromium.
-      - name: Témoins natifs de la soumission (X4-sécurité-3)
-        run: bun run check:page-submit-witnesses "${{ env.ATELIER_EXTERNAL_APPLICATION_PROOF_ROOT }}"
       - name: Reçu texte sans environnement
         if: always()
         uses: actions/upload-artifact@v7

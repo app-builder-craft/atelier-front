@@ -12,7 +12,11 @@ import {
     assertQueryOutputBinding,
 } from './data-binding-projection.mjs';
 import { validateListQueryV2ExecutionModel } from './list-query-v2-compiler.mjs';
-import { absentTextError } from './absent-text.mjs';
+import {
+    absentTextBindingError,
+    absentTextError,
+    missingAbsentTextError,
+} from './absent-text.mjs';
 import {
     duplicateValues,
     parsePageArtifact as parseArtifact,
@@ -371,16 +375,9 @@ function compileOutputBinding(binding, producers) {
         };
     }
     // X5 C5 (B+) : le texte d'absence entre au plan SCELLÉ, d'où la
-    // composition le publie. Absent de la conception, absent du plan : un
-    // plan sans texte d'absence reste identique à l'octet.
-    if (Object.hasOwn(binding, 'absent_text')) {
-        if (kind !== 'query')
-            fail(
-                `PAGE_ABSENT_TEXT_INVALID: ${binding.id} absent_text applies to read bindings only`
-            );
-        const absent = absentTextError(binding.absent_text);
-        if (absent) fail(`${binding.id} ${absent}`);
-    }
+    // composition le publie ; sa forme est jugée par `absent-text.mjs`.
+    const invalid = absentTextBindingError(binding, kind);
+    if (invalid) fail(invalid);
     return {
         id: binding.id,
         producer_node_id: node.id,
@@ -753,6 +750,8 @@ export function compilePageExecutionPlan({
     const outputBindings = page.data_bindings
         .map((binding) => compileOutputBinding(binding, producers))
         .sort((left, right) => left.id.localeCompare(right.id));
+    const missingText = missingAbsentTextError(queryPairs, outputBindings);
+    if (missingText) fail(missingText);
     const session = compilePageSessionBinding(pageArtifact.value, commandPairs);
     const requiredCapabilities = [
         'composition.independent-node-state@1',

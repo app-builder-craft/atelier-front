@@ -25,7 +25,10 @@ export const externalCspDirectives = (prefix) =>
         ['manifest-src', "'self'"],
         ['frame-src', "'none'"],
         ['object-src', "'none'"],
-        ['form-action', "'self'"],
+        // Aucune soumission native d'un formulaire, même vers l'application
+        // (décision L10-2 = B) : les commandes passent par le socle. Un
+        // formulaire `method="dialog"` ne navigue pas et reste permis.
+        ['form-action', "'none'"],
         // 'none' refuserait <base href="/"> et casserait le routeur.
         ['base-uri', "'self'"],
         // Trusted Types : ferme innerHTML, insertAdjacentHTML et les scripts par

@@ -97,49 +97,50 @@ export async function proveNativePublication(session, shell) {
         targetRoot: root,
         appName: shellPlan.app_name,
     };
-    const page = input.design.pages.find(
-        (entry) => entry.access.mode === 'authorized'
-    );
-    assert.ok(page, 'Page autorisée de fixture absente');
-    const pagePath = `src/app/pages/${page.id}/page.component.ts`;
-    const placeholder = shellPlan.files[pagePath];
-    const marker = 'Cette page doit être réalisée depuis son contrat validé.';
-    assert.ok(placeholder.includes(marker));
     // 1. Une sortie de générateur dans la zone generated/.
+    const generated = `export const X1_NOTICE = 'Publication X1 fictive (${domain}).';\n`;
     await publishNative(
         session,
         `X1/${domain}/generated`,
         {
             ...base,
             tool: 'generate:action-request',
-            files: {
-                [NOTICE]: `export const X1_NOTICE = 'Publication X1 fictive (${domain}).';\n`,
-            },
+            files: { [NOTICE]: generated },
         },
         root
     );
-    // 2. Remplacement déclaré de la page d'attente, qui consomme cette sortie.
-    const replaced = placeholder
-        .replace(
-            "import { ChangeDetectionStrategy, Component } from '@angular/core';",
-            "import { ChangeDetectionStrategy, Component } from '@angular/core';\n\nimport { X1_NOTICE } from '../../generated/x1-proof/notice';"
-        )
-        .replace(marker, '{{ notice }}')
-        .replace(
-            'export class PageComponent {}',
-            'export class PageComponent {\n    protected readonly notice = X1_NOTICE;\n}'
-        );
-    assert.notEqual(replaced, placeholder);
+    // 2. Remplacement déclaré sous plan : la même sortie, republiée par le
+    //    même outil avec un contenu changé (`replaced`, empreinte d'avant liée
+    //    à l'étape 1). Aucune publication n'écrit plus de page de la coque.
+    const republished = `export const X1_NOTICE = 'Publication X1 fictive republiée (${domain}).';\n`;
     const final = await publishNative(
         session,
-        `X1/${domain}/page`,
-        { ...base, tool: 'page-realization', files: { [pagePath]: replaced } },
+        `X1/${domain}/republished`,
+        {
+            ...base,
+            tool: 'generate:action-request',
+            files: { [NOTICE]: republished },
+        },
         root
     );
     const appRoot = final.outputAbsolute;
     const manifest = JSON.parse(final.files[MANIFEST]);
     verifyApplicationOwnership(manifest, manifest.ownership.workspace_id);
     assert.equal(manifest.ownership.publications.length, 2);
+    const [, record] = manifest.ownership.publications;
+    assert.equal(record.tool, 'generate:action-request');
+    assert.deepEqual(record.files, [
+        {
+            path: NOTICE,
+            change: 'replaced',
+            sha256: sha256(republished),
+            bytes: Buffer.byteLength(republished),
+            before: {
+                sha256: sha256(generated),
+                bytes: Buffer.byteLength(generated),
+            },
+        },
+    ]);
     // 3. Contre-épreuves sur le produit réellement installé.
     const next = {
         ...base,
