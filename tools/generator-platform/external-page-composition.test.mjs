@@ -570,7 +570,7 @@ test('X3 : commande republiée après le plan ou la composition, pages dépendan
     await revise('Synthetic fixture, revised once.');
     let plan = await planExternalActionRequest(product.action);
     assert.deepEqual(plan.dependent_pages, [
-        { page_id: product.pageId, composition: false, realization: false },
+        { page_id: product.pageId, composition: false },
     ]);
     await publishExternalActionRequest(
         { ...product.action, expectedPlanId: plan.plan_id },
@@ -581,9 +581,7 @@ test('X3 : commande republiée après le plan ou la composition, pages dépendan
     await publishComposition(product.options);
     await revise('Synthetic fixture, revised twice.');
     plan = await planExternalActionRequest(product.action);
-    const expected = [
-        { page_id: product.pageId, composition: true, realization: false },
-    ];
+    const expected = [{ page_id: product.pageId, composition: true }];
     assert.deepEqual(
         publicExternalActionRequestPlan(plan).dependent_pages,
         expected

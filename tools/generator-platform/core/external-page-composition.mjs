@@ -395,8 +395,8 @@ async function renderExternalPageComposition(options, internal = {}) {
 }
 
 // X4-sécurité-3 (Π2) : fichiers que le générateur courant publierait pour la
-// composition de cette page. Un bon de travail n'est préparé que si la
-// composition publiée leur est identique, octet pour octet.
+// composition de cette page, à comparer octet pour octet à la composition
+// publiée.
 export async function expectedExternalPageCompositionFiles(
     options,
     internal = {}

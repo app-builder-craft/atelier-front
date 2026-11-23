@@ -197,7 +197,7 @@ test('C4 (E6) : page à lecture planifiée ; sa lecture republiée la nomme comm
     await writeFile(definitionPath, JSON.stringify(definition, null, 2) + '\n');
     const second = await planExternalListQuery(product.options);
     assert.deepEqual(publicExternalListQueryPlan(second).dependent_pages, [
-        { page_id: page.id, composition: false, realization: false },
+        { page_id: page.id, composition: false },
     ]);
 });
 

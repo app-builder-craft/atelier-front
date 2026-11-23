@@ -724,7 +724,7 @@ voie pour changer cet inventaire :
   avec l’empreinte d’avant ;
 - aucun autre chemin, aucune suppression, aucun outil hors de la liste fermée
   (`compile:page-execution-plan`, `generate:action-request`,
-  `generate:list-query`, `generate:page-composition`, `page-realization`).
+  `generate:list-query`, `generate:page-composition`).
 
 La publication exige le plan relu. Elle recalcule ce plan sous verrou et prépare
 un candidat complet à côté de l’application. Elle le compile avec les binaires

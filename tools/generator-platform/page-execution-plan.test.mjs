@@ -758,3 +758,14 @@ test('texte d’absence : une lecture à champ facultatif sans liaison de liste 
         /^Error: page execution planner: PAGE_ABSENT_TEXT_MISSING: data binding for load-stores needs absent_text for label$/
     );
 });
+
+test('texte d’absence : sa forme est jugée au plan', () => {
+    const invalid = page();
+    invalid.data_bindings.find(
+        (binding) => binding.id === 'store-options'
+    ).absent_text = '12';
+    assert.throws(
+        () => compile({ pageContract: pageContract(invalid) }),
+        /^Error: page execution planner: store-options PAGE_ABSENT_TEXT_INVALID: .*at least one letter/
+    );
+});

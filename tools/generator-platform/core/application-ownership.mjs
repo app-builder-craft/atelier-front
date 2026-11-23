@@ -33,7 +33,6 @@ export const PUBLICATION_TOOLS = Object.freeze([
     'generate:action-request',
     'generate:list-query',
     'generate:page-composition',
-    'page-realization',
 ]);
 
 const HEX = /^[a-f0-9]{64}$/;

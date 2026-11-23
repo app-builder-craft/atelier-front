@@ -13,9 +13,9 @@ const EMPTY_INPUT = 'Readonly<Record<string, never>>';
 // `hasInput` : la façade attend l'entrée typée de la lecture.
 export function externalQueryMember(descriptor, member, kind, hasInput) {
     const facade = `this.${descriptor.propertyName}Facade`;
-    // Paramètre toujours nommé `input` : la page passe un seul littéral objet
-    // (grammaire, forme 6). Sans entrée, il est consommé par `void input;` :
-    // le lint du PRODUIT refuse un paramètre inutilisé, même préfixé `_`.
+    // Paramètre toujours nommé `input` : la page passe un seul littéral objet.
+    // Sans entrée, il est consommé par `void input;` : le lint du PRODUIT
+    // refuse un paramètre inutilisé, même préfixé `_`.
     const command = (parameter, call, used) =>
         `(${parameter}): Observable<undefined> => defer(() => { ${used ? '' : 'void input; '}${call}; return of(undefined); })`;
     const patterns = {

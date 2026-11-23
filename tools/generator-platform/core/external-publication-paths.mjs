@@ -12,7 +12,6 @@ export const ACTION_REQUEST_TOOL = 'generate:action-request';
 export const LIST_QUERY_TOOL = 'generate:list-query';
 export const PAGE_PLAN_TOOL = 'compile:page-execution-plan';
 export const PAGE_COMPOSITION_TOOL = 'generate:page-composition';
-export const REALIZATION_TOOL = 'page-realization';
 
 export const actionOutputRoot = (actionId) =>
     `src/app/generated/actions/${actionId}`;
@@ -69,8 +68,7 @@ export function publishingTool(manifest, path) {
 
 // I-1 : pages dont le plan publié référence le modèle de cette commande (ou de
 // cette lecture, X5 C3a). Une nouvelle publication les rend périmées : le plan, puis la
-// composition, sont à recompiler après elle (X2 → plan → composition), puis,
-// pour une page réalisée, le bon de travail à préparer et vérifier à nouveau.
+// composition, sont à recompiler après elle (X2 → plan → composition).
 // X5 C3a : même règle pour une lecture, par ses nœuds de lecture.
 async function pagesConsuming(app, appName, modelPath, nodesKey) {
     const uri = `apps/${appName}/${modelPath}`;
@@ -87,16 +85,11 @@ async function pagesConsuming(app, appName, modelPath, nodesKey) {
         )
             continue;
         const composition = `${pageCompositionRoot(match[1])}/generation-manifest.json`;
-        // I-3 : une page réalisée garde son bon de travail, que la commande
-        // republiée périme ; ses règles sont à rejouer.
-        const page = `src/app/pages/${match[1]}/page.component.ts`;
         pages.push({
             page_id: match[1],
             composition:
                 publishingTool(app.manifest, composition) ===
                 PAGE_COMPOSITION_TOOL,
-            realization:
-                publishingTool(app.manifest, page) === REALIZATION_TOOL,
         });
     }
     return pages.sort((left, right) =>

@@ -88,7 +88,7 @@ export function externalCompositionApi(plan) {
                 entries.push({ path: `${name}.${member}`, kind });
         }
     // X5 C5 (B+) : un texte d'absence par liaison qui en déclare un, publié en
-    // constante. La valeur vient du plan scellé, jamais du bon de travail.
+    // constante. La valeur vient du plan scellé.
     const liaisons = new Set();
     for (const binding of absentTextBindings(plan)) {
         const name = camelCase(binding.id);
