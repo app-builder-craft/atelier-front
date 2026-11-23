@@ -9,7 +9,7 @@
       "requirements": {
         "node": ">=26.12.0 <27",
         "bun": ">=1.3.14 <2",
-        "nx": ">=24.0.3 <25",
+        "nx": ">=24.0.6 <25",
         "framework": ">=19.3.0 <20"
       },
       "packages": {
@@ -21,17 +21,17 @@
       "reason": "Piste officielle Tailwind 4 via le plugin Vite, qualifiée pour React 19 et Vite 8.",
       "verification": {
         "schema_version": "1.3.0",
-        "commit": "d0e865815c584bd80ff591b8055dc5472dc6a78b",
-        "source_context_sha256": "0d49e3216790766e2b77d53d506fc5a1c53832a87c683d08dbac11c848bbe638",
+        "commit": "d1d4e5734ee11e78db51e1b3e7cbbf974d233c4e",
+        "source_context_sha256": "accc27e10cb21e4ea7131477854b8e768d783a4799eb6a495eb0f4715acef85f",
         "app": "library-qualification-react",
-        "plan_id": "library-plan:79e4d2464f284631119ed25c3ac677940c3d05835364b93e0f39b0fbcb458d51",
+        "plan_id": "library-plan:0f4cc38b3b32040076e1773e157c21f1950cc76251f9da8c500a2d9ca4afe6d2",
         "change_set_id": "changes:aa8590e5ecd975570b17a22e90ef09b9cadc753a5199a0aad944cff980bdbee2",
         "app_tree_sha256": "54d5073efa04942ba140fe2592655556a6670f444ef8c9229eb4d186b57fa967",
-        "track_sha256": "bb1f0e720b1efcd48bae3f531f595ba3f49901dd3c785dc5f0190994bae19f5f",
+        "track_sha256": "2ec7dc0bf60c0ec4180d15c823e28bfd5fa55f85bf70f58022ad341c78ddd150",
         "tested_versions": {
           "node": "26.13.1",
           "bun": "1.4.4",
-          "nx": "24.0.3",
+          "nx": "24.0.6",
           "framework": "19.3.1",
           "packages": {
             "@tailwindcss/vite": "4.3.3",
@@ -40,7 +40,7 @@
         },
         "dependency_state_sha256": {
           "initial": "78d9d928d454d673bd21ad497639fb402035de66e8849c7150af76c28a9bdec7",
-          "final": "51308bdefe26780032e8c7ad7f40d668f83d74a8fd75ee06a531827b67a09db4"
+          "final": "f1b8721d5df2019ef9ebf0c086efe35c9c6f0b98ae0a08037e7549083001a90b"
         },
         "proofs": [
           "offline-production-build",
@@ -98,7 +98,7 @@
             "tools/scaffold-tailwind.mjs": "e12cd0be13839fc2177930d56fdfe1032ec5acdddfe8b0c34e9f134bc071200d"
           }
         },
-        "evidence_sha256": "78963228bfa6833dbdb444c0313a719b4197efec4c07baea9f07cd137b4c30f0"
+        "evidence_sha256": "4a91222122399e1d1c8a4119ae4a2c06f044a484202c412b6f5ea3c41ab2fa78"
       }
     }
   ]
