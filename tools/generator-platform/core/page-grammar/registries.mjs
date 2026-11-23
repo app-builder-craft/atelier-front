@@ -6,30 +6,13 @@ import * as angular from '@angular/compiler';
 import * as cssTree from 'css-tree';
 import ts from 'typescript';
 
-// Noms de prototype : noms propres d'Object.prototype et de
-// Function.prototype, plus `prototype`, `constructor` et `__proto__`, moins
-// une exclusion nommée (arbitrage du pilote, 2026-11-11) : `length` et
-// `name`. Raison : la grammaire interdit tout appel sur une donnée, donc lire
-// `x.length` ou `x.name` ne donne aucune capacité ; ce sont des données
-// courantes (compte d'une liste, nom d'une entité). Les autres noms propres
-// (`call`, `apply`, `bind`, `caller`, `arguments`, `constructor`…) restent
-// refusés.
-export const PROTOTYPE_DATA_NAMES = Object.freeze(['length', 'name']);
-export const PROTOTYPE_NAMES = Object.freeze(
-    [
-        ...new Set([
-            ...Object.getOwnPropertyNames(Object.prototype),
-            ...Object.getOwnPropertyNames(Function.prototype),
-            'prototype',
-            'constructor',
-            '__proto__',
-        ]),
-    ]
-        .filter((name) => !PROTOTYPE_DATA_NAMES.includes(name))
-        .sort()
-);
-const PROTOTYPE = new Set(PROTOTYPE_NAMES);
-export const isPrototypeName = (name) => PROTOTYPE.has(name);
+// Noms de prototype : table du socle (`../prototype-names.mjs`), réexportée
+// pour la grammaire tant qu'elle existe.
+export {
+    PROTOTYPE_DATA_NAMES,
+    PROTOTYPE_NAMES,
+    isPrototypeName,
+} from '../prototype-names.mjs';
 
 // Genres TypeScript : valeurs numériques distinctes de `SyntaxKind`, chacune
 // nommée par son premier nom non marqueur (`First*`, `Last*`, `Count`).

@@ -692,3 +692,69 @@ test('plan 1.0 : une commande conserve au moins une liaison de corps', () => {
         []
     );
 });
+
+// Texte d'absence obligatoire, garantie du socle vérifiée au plan : un champ
+// lu qui peut manquer (nullable ou facultatif) exige `absent_text` sur chaque
+// liaison de liste de sa lecture.
+function storesWithLabel(edit) {
+    const model = structuredClone(storesModel);
+    edit(
+        model.queries[0].read_model.fields.find(
+            (field) => field.name === 'label'
+        )
+    );
+    return documentArtifact(stores.uri, model);
+}
+
+test('texte d’absence : un champ lu nullable ou facultatif l’exige au plan', () => {
+    for (const edit of [
+        (field) => {
+            field.nullable = true;
+        },
+        (field) => {
+            field.required = false;
+        },
+    ]) {
+        const optional = storesWithLabel(edit);
+        assert.throws(
+            () => compile({ listQueryModels: [optional, requestTypes] }),
+            /^Error: page execution planner: PAGE_ABSENT_TEXT_MISSING: data binding store-options needs absent_text for label$/
+        );
+        const withText = page();
+        withText.data_bindings.find(
+            (binding) => binding.id === 'store-options'
+        ).absent_text = 'Non renseigné';
+        const plan = compile({
+            pageContract: pageContract(withText),
+            listQueryModels: [optional, requestTypes],
+        });
+        assert.equal(
+            plan.output_bindings.find(
+                (binding) => binding.id === 'store-options'
+            ).absent_text,
+            'Non renseigné'
+        );
+    }
+});
+
+test('texte d’absence : une lecture à champ facultatif sans liaison de liste est refusée', () => {
+    const optional = storesWithLabel((field) => {
+        field.nullable = true;
+    });
+    const withoutRows = page();
+    withoutRows.data_bindings = withoutRows.data_bindings.filter(
+        (binding) => binding.id !== 'store-options'
+    );
+    for (const element of withoutRows.regions[0].elements)
+        element.data_binding_ids = element.data_binding_ids.filter(
+            (id) => id !== 'store-options'
+        );
+    assert.throws(
+        () =>
+            compile({
+                pageContract: pageContract(withoutRows),
+                listQueryModels: [optional, requestTypes],
+            }),
+        /^Error: page execution planner: PAGE_ABSENT_TEXT_MISSING: data binding for load-stores needs absent_text for label$/
+    );
+});

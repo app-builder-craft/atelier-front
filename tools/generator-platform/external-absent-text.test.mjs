@@ -96,15 +96,12 @@ test('B+ : texte scellé au plan, constante de composition, chemin seul au bon d
     }
 });
 
-test('B+ : un champ lu nullable sans texte d’absence, refus nommé au bon de travail', async (t) => {
+// Le refus est au PLAN de la page : `planExternalPagePlan`, cœur de
+// `compile:page-execution-plan`, appelé par `queryPage`.
+test('B+ : un champ lu nullable sans texte d’absence, refus nommé au plan de la page', async (t) => {
     const domain = SESSION_FIXTURE_DOMAINS[0];
-    const { options } = await queryPage(
-        t,
-        domain,
-        nullableLabel(domain, undefined)
-    );
     await assert.rejects(
-        () => workOrderOf(options),
-        /PAGE_ABSENT_TEXT_MISSING: data binding catalogue-rows needs absent_text for label/
+        () => queryPage(t, domain, nullableLabel(domain, undefined)),
+        /page plan refused \(page execution planner: PAGE_ABSENT_TEXT_MISSING: data binding catalogue-rows needs absent_text for label\)/
     );
 });
