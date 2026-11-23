@@ -13,11 +13,11 @@
 // Le profil se décrit lui-même dans le modèle : `ignore` n'est valide
 // qu'avec TOUTE cette politique. Le profil interne garde `reject`.
 
-import { isPrototypeName } from './page-grammar/registries.mjs';
+import { isPrototypeName } from './prototype-names.mjs';
 import { canonicalOperationPath } from './application-design-session.mjs';
 
 // X5 C5 (B-C5-1) : états d'une lecture extérieure, SOURCE UNIQUE du type
-// d'état de la façade et des états déclarés du bon de travail.
+// d'état de la façade.
 export const EXTERNAL_QUERY_STATES = Object.freeze([
     'idle',
     'loading',
@@ -56,14 +56,15 @@ export function externalExecutionError(execution) {
 }
 
 // E5 : chaque colonne reste lisible par la page. Un nom de champ lu ne peut pas
-// être un nom de prototype que la grammaire de page refuse (source unique :
-// isPrototypeName).
+// être un nom de prototype : il entrerait en collision avec un membre de
+// prototype dans les objets du décodeur généré (source unique :
+// isPrototypeName, `prototype-names.mjs`).
 export function externalReadFieldError(readModel) {
     const field = (readModel?.fields ?? []).find((entry) =>
         isPrototypeName(entry.name)
     );
     return field
-        ? `LIST_QUERY_EXTERNAL_READ_NAME: read field ${field.name} is a prototype name refused by the page grammar`
+        ? `LIST_QUERY_EXTERNAL_READ_NAME: read field ${field.name} is a prototype name refused by the socle decoder`
         : undefined;
 }
 

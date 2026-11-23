@@ -54,8 +54,7 @@ Ne commence jamais à construire toutes les pages en une seule fois.
 L’utilisateur valide les décisions et fournit les faits métier. Il ne rédige ni
 JSON, ni YAML, ni TypeScript, ni HTML, ni configuration. L'agent peut exécuter
 les commandes locales réversibles dans l'autorité accordée ; la LLM de
-conception écrit les artefacts source, la LLM de réalisation écrit l’interface
-dans le périmètre borné de chaque page, et les scripts calculent les plans,
+conception écrit les artefacts source, et les scripts calculent les plans,
 publient et vérifient.
 
 Chaque produit vit dans **sa propre racine**, hors de l’atelier. L’atelier ne
@@ -71,9 +70,6 @@ entretien produit
 → coque Angular
 → lectures et actions
 → plan et composition d’une page
-→ bon de travail d’une page
-→ réalisation UI par la LLM
-→ oracles
 → page suivante
 ```
 
@@ -147,26 +143,13 @@ Une page peut porter plusieurs lectures et plusieurs actions indépendantes
 dépendance ordonnée entre nœuds n’est pas prise en charge. Une autre composition
 n’est jamais simulée.
 
-### 6. Réaliser une page par LLM
+### 6. Interface d’une page
 
-```bash
-bun run prepare:page-realization -- --target-root <racine> --app <app> --page <page_id> --dry-run
-bun run prepare:page-realization -- --target-root <racine> --app <app> --page <page_id> --apply <plan_id>
-```
-
-La LLM lit le bon de travail publié, y compris le nœud de rôle `screen`, le
-profil de l'application et le contrat d'archétype haché (`shape` + `forbid`),
-puis écrit uniquement les fichiers autorisés. Elle est libre de l’interface
-dans ce cadre. Elle ne fait aucun appel HTTP direct et mappe chaque identifiant
-du contrat vers un sélecteur `data-atelier-id` exact. Ensuite :
-
-```bash
-bun run verify:page-realization -- --target-root <racine> --app <app> --page <page_id> --dry-run
-```
-
-En cas d’échec, la LLM corrige seulement cette page et relance le même oracle.
-Le rapport exécute compilation, build de production, lint et tests. Le passage à
-la page suivante exige un nouveau bon de travail.
+L’atelier ne réalise plus l’interface d’une page : le bon de travail, la
+grammaire fermée et les preuves de réalisation sont retirés
+([ADR 0104](./docs/adr/0104-retrait-de-la-grammaire-heritee.md), « Retrait de
+la grammaire héritée »). Jusqu’à l’arrivée de l’interface libre et de ses
+contrôles, la chaîne s’arrête au plan et à la composition de la page.
 
 Le fonctionnement de cette chaîne est prouvé par des produits fictifs dans le
 job CI requis External application shells. Il ne valide jamais les champs ou
@@ -420,8 +403,7 @@ et sa propre provenance. Présente explicitement l’une de ces options :
 - utiliser temporairement un mock clairement isolé.
 
 La conception produit reste agnostique de la cible. Les lectures, actions,
-compositions et réalisations de page des produits extérieurs sont Angular avec
-session. Deux variantes d’une même application partagent le domaine, mais
+compositions de page des produits extérieurs sont Angular avec session. Deux variantes d’une même application partagent le domaine, mais
 déclarent séparément audiences, capacités, routes et permissions ; une page
 validée pour une variante ne l’est pas implicitement pour une autre.
 
@@ -440,8 +422,7 @@ propose une évolution séparée du générateur ; ne simule jamais une composit
 Détermine ensuite :
 
 - les lectures et actions à générer ;
-- le plan d’exécution de la page ;
-- les fichiers que la LLM de réalisation écrira dans le bon de travail.
+- le plan d’exécution de la page.
 
 ## 7. Présenter le contrat de page
 
@@ -483,15 +464,11 @@ Une fois la page validée :
 2. vérifie l’état Git du produit et préserve les changements existants ;
 3. génère les lectures et actions avec un `--dry-run`, puis applique le plan relu ;
 4. compile le plan d’exécution et génère la composition de la page ;
-5. prépare le bon de travail borné de la page ;
-6. laisse la LLM de réalisation écrire l’interface et ses tests dans les seuls
-   fichiers autorisés ;
-7. exécute `verify:page-realization` et fais corriger la page en boucle ;
-8. présente le résultat avant de passer à la suivante.
+5. présente le résultat avant de passer à la suivante.
 
-Ne modifie pas manuellement les fichiers générés. La LLM de réalisation écrit
-l’interface sous contrôle du bon de travail ; l’utilisateur n’a jamais à coder
-lui-même.
+Ne modifie pas manuellement les fichiers générés ; l’utilisateur n’a jamais à
+coder lui-même. L’interface de la page n’est plus réalisée par l’atelier
+([ADR 0104](./docs/adr/0104-retrait-de-la-grammaire-heritee.md)).
 
 ## 9. Vérifier chaque page
 

@@ -545,7 +545,7 @@ test('X1 suivi : limite connue, une forge complète qui recalcule le sceau passe
     // Outil et plan inventés : ils sont déclaratifs, jamais revérifiés.
     manifest.ownership.publications.push({
         plan_id: '0'.repeat(64),
-        tool: 'page-realization',
+        tool: 'generate:action-request',
         files: [{ ...entry, change: 'added' }],
     });
     manifest.ownership.seal_sha256 = computeOwnershipSeal(manifest);
@@ -559,6 +559,39 @@ test('X1 suivi : limite connue, une forge complète qui recalcule le sceau passe
         publication(product, { [NOTICE]: 'export {};\n' })
     );
     await planExternalApplicationShell({ ...product.shell, appName: 'other' });
+});
+
+// Lot 10 : l'outil `page-realization` a quitté la liste fermée des publieurs.
+// Un registre qui porte une publication de cet outil est refusé, même
+// rescellé ; le même enregistrement sous un outil admis passe (témoin : seul
+// l'outil change).
+test('X1 suivi : une publication de l’outil retiré page-realization est refusée, même rescellée', async (t) => {
+    const product = await sessionApp(t, 'observatory');
+    const manifest = await readManifest(product.app);
+    const text = 'export const forged = 1;\n';
+    const entry = {
+        path: 'src/app/generated/forge.ts',
+        bytes: Buffer.byteLength(text),
+        sha256: sha256(text),
+    };
+    manifest.generated_files = [...manifest.generated_files, entry].sort(
+        (left, right) => left.path.localeCompare(right.path)
+    );
+    manifest.tree_sha256 = inventoryTreeSha(manifest.generated_files);
+    const record = {
+        plan_id: '0'.repeat(64),
+        tool: 'page-realization',
+        files: [{ ...entry, change: 'added' }],
+    };
+    manifest.ownership.publications.push(record);
+    manifest.ownership.seal_sha256 = computeOwnershipSeal(manifest);
+    assert.throws(
+        () => verifyApplicationOwnership(manifest, product.workspaceId),
+        /publication record is invalid/
+    );
+    record.tool = 'generate:action-request';
+    manifest.ownership.seal_sha256 = computeOwnershipSeal(manifest);
+    verifyApplicationOwnership(manifest, product.workspaceId);
 });
 
 test('X1 suivi : une publication interrompue bloque toute autre commande jusqu’à sa reprise (I-1)', async (t) => {

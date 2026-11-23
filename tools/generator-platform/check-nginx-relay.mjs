@@ -47,7 +47,7 @@ const FILTER = filterOf(HARNESS_PREFIX);
 const SECRET = signatureName('harness-secret');
 // Dossier de l'hôte qui porte les fichiers montés dans le dossier nginx du
 // produit : un nom neutre, sans lien avec la signature ni le préfixe.
-const HOST_CONF = 'nginx-conf';
+export const HOST_CONF = 'nginx-conf';
 const BUNDLE = '/main-ABC123.js';
 
 function docker(args, { timeout = 60_000 } = {}) {

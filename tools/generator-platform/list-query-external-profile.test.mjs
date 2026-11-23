@@ -302,7 +302,7 @@ test('E5 : un nom lu de prototype est refusé à la compilation et à la validat
         validateListQueryV2ExecutionModel(forged).join('\n'),
         /LIST_QUERY_EXTERNAL_READ_NAME: read field toString/
     );
-    // Exclusion nommée de la grammaire : `name` et `length` restent lisibles.
+    // Exclusion nommée : `name` et `length` restent lisibles.
     const named = await inputs({ execution: external() });
     named.definition.operations[0].read_model.fields[0].name = 'name';
     assert.equal(

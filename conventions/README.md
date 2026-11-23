@@ -69,10 +69,7 @@ reflète `platform` + version majeure ; `version_pin` dit où la version est
 | ------------------------------------------------------ | ---------- | ------------ |
 | [`angular-22.profile.json`](./angular-22.profile.json) | Angular    | v22.2.0      |
 
-Le profil dit _comment_ écrire. Les **archétypes** d'une cible — la forme
-imposée d'un rôle, comme la page `screen` réalisée par l'IA — sont un jeu par
-stack sous [`archetypes/<stack>/`](./archetypes/angular/README.md). Ils ne sont
-pas neutres : la neutralité vit dans les contrats et les plans.
+Le profil dit _comment_ écrire ; il n'impose la forme d'aucune page.
 
 ## Recettes de setup de bibliothèque — `libraries/`
 

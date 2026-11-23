@@ -295,14 +295,10 @@ const PLAN = `src/app/generated/pages/${PAGE}/plan/page-execution-plan.json`;
 
 test('D.4 : enregistrement forgé et rescellé, refusé par la zone structurelle', () => {
     let { manifest, files } = published();
-    // Derniers écrivains de chaque genre : lecture, plan, réalisation.
+    // Derniers écrivains de chaque genre : lecture, plan.
     for (const [tool, change] of [
         ['generate:list-query', added(QUERY, '{"q":1}\n')],
         ['compile:page-execution-plan', added(PLAN, '{"plan":1}\n')],
-        [
-            'page-realization',
-            replaced(PAGE_FILE, files[PAGE_FILE], 'export class Real {}\n'),
-        ],
     ])
         manifest = publishedManifest(
             manifest,
@@ -313,14 +309,12 @@ test('D.4 : enregistrement forgé et rescellé, refusé par la zone structurelle
         ...files,
         [QUERY]: '{"q":1}\n',
         [PLAN]: '{"plan":1}\n',
-        [PAGE_FILE]: 'export class Real {}\n',
     };
     const pageContract = `${SIGNATURE_FILES.pages}/${PAGE}.json`;
     const cases = [
         ['commande', [replaced(MODEL, files[MODEL], '{"p":"qz"}\n')]],
         ['lecture', [replaced(QUERY, files[QUERY], '{"q":2}\n')]],
         ['plan', [replaced(PLAN, files[PLAN], '{"plan":2}\n')]],
-        ['réalisation', [replaced(PAGE_FILE, files[PAGE_FILE], 'x\n')]],
         [
             'dossier de signature',
             [replaced(pageContract, files[pageContract], '[]\n')],

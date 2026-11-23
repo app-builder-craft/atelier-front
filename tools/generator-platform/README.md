@@ -48,20 +48,19 @@ Postman reste toujours une observation `reference`.
 
 ## Chaîne extérieure
 
-| Étape             | Commande                                               | Module principal                         |
-| ----------------- | ------------------------------------------------------ | ---------------------------------------- |
-| Racine du produit | `prepare:application-workspace`                        | `core/application-workspace.mjs`         |
-| Coque             | `create-app --target-root`                             | `core/application-shell-publication.mjs` |
-| Lecture           | `generate:list-query --target-root`                    | `core/external-list-query.mjs`           |
-| Action            | `generate:action-request --target-root`                | `core/external-action-request.mjs`       |
-| Plan de page      | `compile:page-execution-plan`                          | `core/external-page-plan.mjs`            |
-| Composition       | `generate:page-composition --target-root`              | `core/external-page-composition.mjs`     |
-| Réalisation       | `prepare:page-realization` / `verify:page-realization` | `core/external-page-realization.mjs`     |
-| Reprise           | `recover:application-publication`                      | `core/application-publication.mjs`       |
+| Étape             | Commande                                  | Module principal                         |
+| ----------------- | ----------------------------------------- | ---------------------------------------- |
+| Racine du produit | `prepare:application-workspace`           | `core/application-workspace.mjs`         |
+| Coque             | `create-app --target-root`                | `core/application-shell-publication.mjs` |
+| Lecture           | `generate:list-query --target-root`       | `core/external-list-query.mjs`           |
+| Action            | `generate:action-request --target-root`   | `core/external-action-request.mjs`       |
+| Plan de page      | `compile:page-execution-plan`             | `core/external-page-plan.mjs`            |
+| Composition       | `generate:page-composition --target-root` | `core/external-page-composition.mjs`     |
+| Reprise           | `recover:application-publication`         | `core/application-publication.mjs`       |
 
 Les profils pris en charge pour la racine et la coque sont `angular-pwa` et
-`react-spa`. Les lectures, actions, compositions et réalisations de page sont
-Angular avec session.
+`react-spa`. Les lectures, actions et compositions de page sont Angular avec
+session.
 
 La coque Angular fournit la session, le relais nginx de même origine et la
 politique de sécurité de contenu. Sept sources génériques de
@@ -69,17 +68,14 @@ politique de sécurité de contenu. Sept sources génériques de
 recopiées octet pour octet dans chaque produit
 (`renderers/angular-application-session-renderer.mjs`).
 
-## Réalisation d'une page par l'IA
+## Interface d'une page
 
-`prepare:page-realization` lie un contrat de page, le plan d'exécution et
-l'inventaire protégé du produit à un bon de travail. L'IA écrit exactement les
-fichiers listés ; elle est libre de l'interface dans ce cadre. Le bon de travail
-porte aussi le nœud de rôle `screen`, le profil et le contrat d'archétype haché
-(`shape` + `forbid`). `verify:page-realization` refuse une dérive de
-l'inventaire protégé, un fichier non autorisé ou absent, un appel réseau direct,
-un littéral d'endpoint ou une correspondance `data-atelier-id` manquante, puis
-exécute compilation, build de production, lint et tests dans un candidat jetable
-et confiné.
+L'atelier ne réalise plus l'interface d'une page : le bon de travail, la
+grammaire fermée et les preuves de réalisation sont retirés
+([ADR 0104](../../docs/adr/0104-retrait-de-la-grammaire-heritee.md), « Retrait
+de la grammaire héritée »). Le corpus des refus de l'atelier 1 reste, comme
+données (`test-support/page-probes*.mjs`,
+`test-support/page-probe-classes.mjs`).
 
 ## Validation
 
@@ -89,8 +85,7 @@ bun run check:generator-platform
 ```
 
 - `test:external-application-shells` exécute les tests de chemins, plans,
-  propriété, reprise, lectures, actions, compositions, grammaire et réalisation
-  de l'étape B.
+  propriété, reprise, lectures, actions et compositions de l'étape B.
 - `check:generator-platform:core` exécute tous les tests `node:test` de ce
   répertoire.
 - `check:generator-platform:angular` prépare les deux produits de session

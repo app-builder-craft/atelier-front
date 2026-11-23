@@ -109,7 +109,6 @@ __screenshots__/
 /apps/.*.create-app-candidate-*
 /apps/.*.generation-lock/
 /.atelier/retire-app-transactions/
-/.atelier/page-realization-work-orders/
 /.atelier/application-shell-integration/
 
 vite.config.*.timestamp*
