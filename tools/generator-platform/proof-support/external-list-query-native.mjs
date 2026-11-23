@@ -6,6 +6,7 @@
 // s'exécutent avec le vitest RÉEL du produit. Aucun backend n'est appelé.
 import assert from 'node:assert/strict';
 
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import {
     planExternalListQuery,
     publishExternalListQuery,
@@ -24,7 +25,7 @@ import { writeExternalQueryDefinition } from '../test-support/external-session-f
 import { publishNative } from './external-page-composition-native.mjs';
 
 function onlyProductImports(plan) {
-    const manifest = JSON.parse(plan.files['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
     assertProductOnlyImports(
         Object.fromEntries(
             plan.changes.map(({ path }) => [path, plan.files[path]])

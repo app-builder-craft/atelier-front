@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "kind": "backend-contract",
   "contract": {
-    "id": "cmz-request-action-types",
+    "id": "fixture-request-action-types",
     "title": "Request action types fictional contract",
     "version": "1.0.0",
     "status": "implemented",

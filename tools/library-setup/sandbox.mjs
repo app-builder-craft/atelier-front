@@ -2,6 +2,11 @@ import { spawnSync } from 'node:child_process';
 import { lstatSync, realpathSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 
+import {
+    SIGNATURE,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
+
 const CREDENTIAL_PATTERN =
     /(TOKEN|SECRET|PASSWORD|PASSWD|AUTH|COOKIE|SSH|GIT_|NPM_)/i;
 const EXTRA_ENV_ALLOWLIST = new Set(['CI', 'NX_NO_CLOUD']);
@@ -25,10 +30,18 @@ const DOCKER_PROBE_TIMEOUTS_MS = Object.freeze([5_000, 10_000, 20_000]);
  * `/workspace` dans le conteneur — d'où le paramètre.
  */
 const NX_WRITABLE_SUBDIRECTORIES = {
-    NX_CACHE_DIRECTORY: 'node_modules/.cmz-nx-cache',
-    NX_WORKSPACE_DATA_DIRECTORY: 'node_modules/.cmz-nx-workspace-data',
-    NX_NATIVE_FILE_CACHE_DIRECTORY: 'node_modules/.cmz-nx-native-file-cache',
+    NX_CACHE_DIRECTORY: `node_modules/${SIGNATURE.dir}-nx-cache`,
+    NX_WORKSPACE_DATA_DIRECTORY: `node_modules/${SIGNATURE.dir}-nx-workspace-data`,
+    NX_NATIVE_FILE_CACHE_DIRECTORY: `node_modules/${SIGNATURE.dir}-nx-native-file-cache`,
 };
+
+// Points de montage du conteneur, nommés par la signature de l'atelier.
+const CONTAINER_MOUNTS = Object.freeze({
+    readonly: `/${signatureName('readonly')}`,
+    repository: `/${signatureName('repository')}`,
+    home: `/${signatureName('home')}`,
+    cache: `/${signatureName('cache')}`,
+});
 
 /**
  * Nx isole par défaut chaque plugin dans un worker qui dialogue par socket
@@ -190,7 +203,7 @@ function repositoryReadOnlyDirectories(repository, paths = []) {
 /**
  * Les deux backends n'ont PAS la même arborescence : sur macOS le processus voit
  * les chemins de l'hôte, dans le conteneur il voit `/workspace` et
- * `/cmz-readonly-<n>`. Tout appelant qui écrit un chemin ABSOLU dans `argv`
+ * `<montage lecture seule>-<n>` (`CONTAINER_MOUNTS.readonly`). Tout appelant qui écrit un chemin ABSOLU dans `argv`
  * fabrique donc une commande juste sur un backend et fausse sur l'autre —
  * défaut réel : l'oracle navigateur émettait des chemins hôte dans le
  * conteneur, invisible aux tests mockés qui ne vérifiaient que des drapeaux.
@@ -216,7 +229,7 @@ function sandboxTokenMapping(backend, paths, readOnlyPaths) {
     readOnlyPaths.forEach((path, index) => {
         mapping[`readonly:${index}`] =
             backend === 'docker'
-                ? `/cmz-readonly-${index}`
+                ? `${CONTAINER_MOUNTS.readonly}-${index}`
                 : realpathSync(resolve(path));
     });
     return mapping;
@@ -663,23 +676,23 @@ export function runConfined({
         ]),
         ...repositoryPaths.flatMap((path, index) => [
             '--mount',
-            `type=bind,src=${path},dst=/cmz-repository-${index},readonly`,
+            `type=bind,src=${path},dst=${CONTAINER_MOUNTS.repository}-${index},readonly`,
         ]),
         '--mount',
-        `type=bind,src=${paths.home},dst=/cmz-home${profile === 'resolution' ? '' : ',readonly'}`,
+        `type=bind,src=${paths.home},dst=${CONTAINER_MOUNTS.home}${profile === 'resolution' ? '' : ',readonly'}`,
         // Même frontière que sur macOS : le moteur de rendu est monté en
         // LECTURE SEULE, hors du candidat, et son contenu a déjà été vérifié
         // par empreinte sha256 avant extraction.
         ...readOnlyPaths.flatMap((path, index) => [
             '--mount',
-            `type=bind,src=${realpathSync(resolve(path))},dst=/cmz-readonly-${index},readonly`,
+            `type=bind,src=${realpathSync(resolve(path))},dst=${CONTAINER_MOUNTS.readonly}-${index},readonly`,
         ]),
         '--tmpfs',
         '/tmp:rw,noexec,nosuid,nodev,size=128m',
         '--workdir',
         '/workspace',
         '--env',
-        'HOME=/cmz-home',
+        `HOME=${CONTAINER_MOUNTS.home}`,
         '--env',
         'CI=1',
         '--env',
@@ -710,9 +723,9 @@ export function runConfined({
     if (profile === 'resolution') {
         dockerArgs.push(
             '--mount',
-            `type=bind,src=${paths.cache},dst=/cmz-cache`,
+            `type=bind,src=${paths.cache},dst=${CONTAINER_MOUNTS.cache}`,
             '--env',
-            'BUN_INSTALL_CACHE_DIR=/cmz-cache'
+            `BUN_INSTALL_CACHE_DIR=${CONTAINER_MOUNTS.cache}`
         );
     }
     dockerArgs.push(image, ...resolvedArgv);

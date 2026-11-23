@@ -14,19 +14,24 @@
  *
  * Prérequis :
  *   1. `gh auth login` (scope `repo` / admin sur le dépôt)
- *   2. remote GitHub configuré, ou `CMZ_GITHUB_REPO=owner/name`
+ *   2. remote GitHub configuré, ou la variable `toolEnv('GITHUB_REPO')`
+ *      valant `owner/name`
  *   3. les checks listés ont déjà tourné au moins une fois sur le dépôt
  *      (sinon GitHub refuse de les enregistrer comme required)
  *
  * Usage :
  *   bun run protect:main
  *   bun run protect:main -- --dry-run
- *   CMZ_GITHUB_REPO=org/cmz-platform bun run protect:main
+ *   <variable toolEnv('GITHUB_REPO')>=owner/name bun run protect:main
  */
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { toolEnv } from './generator-platform/core/atelier-signature.mjs';
+
+const REPOSITORY_VARIABLE = toolEnv('GITHUB_REPO');
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const CONFIG_PATH = join(ROOT, '.github/branch-protection.main.json');
@@ -55,8 +60,8 @@ function gh(args, { input, ignoreFail = false } = {}) {
 }
 
 function resolveRepo() {
-    if (process.env.CMZ_GITHUB_REPO) {
-        return process.env.CMZ_GITHUB_REPO.trim();
+    if (process.env[REPOSITORY_VARIABLE]) {
+        return process.env[REPOSITORY_VARIABLE].trim();
     }
     try {
         const out = gh([
@@ -71,7 +76,7 @@ function resolveRepo() {
     } catch {
         throw new Error(
             'Dépôt GitHub introuvable. Configurez un remote (`gh repo set-default`)\n' +
-                'ou exportez CMZ_GITHUB_REPO=owner/name, après `gh auth login`.'
+                `ou exportez ${REPOSITORY_VARIABLE}=owner/name, après \`gh auth login\`.`
         );
     }
 }

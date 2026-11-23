@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { sessionRenderConfiguration } from '../core/application-design-session.mjs';
+import { productForms } from '../core/product-identity.mjs';
 
 export const SESSION_NATIVE_SOURCES = Object.freeze({
     'auth-context.token.ts':
@@ -536,8 +537,8 @@ ${config.routes.map((route) => `    { path: ${JSON.stringify(route.path === '/' 
 `;
 }
 
-function sessionWorker() {
-    return `const CACHE = 'cmz-session-static-v1';
+function sessionWorker(prefix) {
+    return `const CACHE = '${productForms(prefix).kebab}session-static-v1';
 const STATIC = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 self.addEventListener('install', (event) => { event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC))); });
 self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()); });
@@ -594,7 +595,11 @@ describe('applicationSessionGuard sans session', () => {
 `;
 }
 
-export async function renderAngularApplicationSession({ design, experience }) {
+export async function renderAngularApplicationSession({
+    design,
+    experience,
+    prefix,
+}) {
     const config = sessionRenderConfiguration(design, experience);
     const support = await renderSessionHostSupport();
     return {
@@ -624,7 +629,7 @@ import { applicationSessionInterceptor } from './session/session.interceptor';
 
 export const appConfig: ApplicationConfig = { providers: [provideBrowserGlobalErrorListeners(), provideHttpClient(withInterceptors([applicationSessionInterceptor])), provideRouter(appRoutes), { provide: APPLICATION_SESSION, useExisting: ApplicationSession }] };
 `,
-        'public/sw.js': sessionWorker(),
+        'public/sw.js': sessionWorker(prefix),
         'src/app/session/index.ts':
             support['index.ts'] +
             "export * from './session.store';\nexport * from './session.projection';\nexport * from './service-endpoints';\n",

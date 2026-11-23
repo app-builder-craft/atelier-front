@@ -21,6 +21,7 @@ import {
     parseWithoutDuplicateKeys,
 } from '../check-library-setup-deps.mjs';
 import { gitBlobOid, verifyMaterializedTree } from './git-tree.mjs';
+import { SIGNATURE } from '../generator-platform/core/atelier-signature.mjs';
 
 const OVERLAY_PATHS = ['package.json', 'bun.lock'];
 
@@ -464,7 +465,10 @@ export function replaceRegularFile(workspace, path, content) {
             `${path}: cible overlay non régulière ou mode différent de 100644`
         );
     }
-    const temporary = join(dirname(target), `.${basename(path)}.cmz-tmp`);
+    const temporary = join(
+        dirname(target),
+        `.${basename(path)}${SIGNATURE.dir}-tmp`
+    );
     let fd;
     try {
         fd = openSync(

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/angular-page-host-bindings.schema.json",
-  "title": "CMZ Angular page composition host bindings",
+  "$id": "https://atelier.local/schemas/generator-platform/angular-page-host-bindings.schema.json",
+  "title": "Atelier Angular page composition host bindings",
   "oneOf": [
     {
       "type": "object",

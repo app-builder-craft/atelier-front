@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/page-execution-plan.schema.json",
-  "title": "CMZ Target-neutral Page Execution Plan",
+  "$id": "https://atelier.local/schemas/generator-platform/page-execution-plan.schema.json",
+  "title": "Atelier Target-neutral Page Execution Plan",
   "oneOf": [
     {
       "$ref": "#/$defs/plan10"

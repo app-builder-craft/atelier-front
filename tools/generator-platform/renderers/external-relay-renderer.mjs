@@ -1,6 +1,6 @@
 // X4-config : relais de même origine de la coque extérieure (topologie A,
 // conception v3). Le navigateur ne connaît que `/api/<service_id>/` ; les
-// adresses des services ne vivent que dans les variables `CMZ_UPSTREAM_*` de
+// adresses des services ne vivent que dans les variables `<P>_UPSTREAM_*` de
 // l'opérateur, lues par nginx au démarrage. Une seule table de chemins,
 // générée depuis la conception, est lue à l'identique par la fabrique de
 // SESSION_ENDPOINTS, le gabarit nginx, le script de validation et le proxy de
@@ -9,12 +9,71 @@ import {
     pinnedNginxImage,
     readNginxHarnessDockerfile,
 } from '../check-nginx-image.mjs';
+import { relayEnvshPath } from '../core/external-application-paths.mjs';
+import { productForms } from '../core/product-identity.mjs';
 import { sessionServices } from './angular-application-session-renderer.mjs';
+
+export { relayEnvshPath };
+
+// Noms du relais dérivés du préfixe du produit : variables de l'opérateur
+// (`<P>_`), variables nginx et fonctions shell (`<p>_`), dossier nginx, script
+// d'entrée (source unique : `core/external-application-paths.mjs`).
+function relayNames(prefix) {
+    const forms = productForms(prefix);
+    const envsh = relayEnvshPath(prefix);
+    return {
+        ENV: forms.env,
+        SNAKE: forms.snake,
+        NGINX_DIR: forms.nginxDir,
+        ENVSH: envsh.slice(envsh.lastIndexOf('/') + 1),
+    };
+}
+
+// Préfixes réservés par le relais et son mandataire de développement : chacun
+// nomme le mécanisme qui crée la collision et la variable concernée (règle :
+// espace de noms vivant du processus lecteur, ou famille dynamique de nginx).
+export const RELAY_RESERVED_PREFIXES = Object.freeze([
+    Object.freeze({
+        prefix: 'nginx',
+        mechanism:
+            "l'entrypoint de l'image nginx lit et possède l'espace NGINX_* ; le relais y exporterait <P>_UPSTREAMS_VALIDATED et l'opérateur y poserait <P>_UPSTREAM_*",
+        variable: 'NGINX_ENVSUBST_FILTER',
+    }),
+    Object.freeze({
+        prefix: 'http',
+        mechanism:
+            'famille dynamique $http_<en-tête> de nginx : $<p>_cache_control deviendrait un en-tête de requête',
+        variable: '$http_cache_control',
+    }),
+    Object.freeze({
+        prefix: 'arg',
+        mechanism:
+            'famille dynamique $arg_<nom> de nginx : $<p>_cache_control deviendrait un paramètre de requête',
+        variable: '$arg_cache_control',
+    }),
+    Object.freeze({
+        prefix: 'cookie',
+        mechanism:
+            'famille dynamique $cookie_<nom> de nginx : $<p>_relay_guard deviendrait un cookie',
+        variable: '$cookie_relay_guard',
+    }),
+    Object.freeze({
+        prefix: 'ng',
+        mechanism:
+            "le processus du CLI Angular, qui lit <P>_DEV_PROXY_FILE, possède l'espace NG_*",
+        variable: 'NG_PERSISTENT_BUILD_CACHE',
+    }),
+    Object.freeze({
+        prefix: 'node',
+        mechanism:
+            "le même processus Node, qui lit <P>_DEV_PROXY_FILE, possède l'espace NODE_*",
+        variable: 'NODE_OPTIONS',
+    }),
+]);
 
 export const RELAY_FILES = Object.freeze({
     template: 'deploy/nginx/templates/default.conf.template',
     headers: 'deploy/security-headers.conf',
-    envsh: 'deploy/nginx/docker-entrypoint.d/15-cmz-upstreams.envsh',
     readme: 'deploy/README.md',
     endpoints: 'src/app/session/relay-endpoints.ts',
     devProxy: 'proxy.conf.mjs',
@@ -34,11 +93,12 @@ export function nginxImage(source = readNginxHarnessDockerfile()) {
     return pinned.reference;
 }
 
-const variableOf = (serviceId) =>
-    `CMZ_UPSTREAM_${serviceId.toUpperCase().replaceAll('-', '_')}`;
+const variableOf = (serviceId, ENV) =>
+    `${ENV}UPSTREAM_${serviceId.toUpperCase().replaceAll('-', '_')}`;
 
 // Table des chemins, ordonnée, depuis les services de la session.
-export function relayServiceTable(config) {
+export function relayServiceTable(config, prefix) {
+    const { ENV } = relayNames(prefix);
     const table = [...sessionServices(config)]
         .map(([serviceId, contractId]) => {
             if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(serviceId))
@@ -49,7 +109,7 @@ export function relayServiceTable(config) {
                 service_id: serviceId,
                 contract_id: contractId,
                 path: `/api/${serviceId}/`,
-                variable: variableOf(serviceId),
+                variable: variableOf(serviceId, ENV),
             };
         })
         .sort((left, right) => left.service_id.localeCompare(right.service_id));
@@ -59,9 +119,9 @@ export function relayServiceTable(config) {
 }
 
 // Invariant d'échappement (§ 3.5) : seules les variables de l'opérateur, en
-// majuscules `CMZ_*`, sont écrites `${…}` ; nginx garde ses variables en
+// majuscules `<P>_*`, sont écrites `${…}` ; nginx garde ses variables en
 // minuscules, jamais entre accolades.
-function serviceBlock(entry) {
+function serviceBlock(entry, SNAKE) {
     const prefix = entry.path.slice(0, -1);
     return `    location ^~ ${entry.path} {
         proxy_pass \${${entry.variable}};
@@ -69,7 +129,7 @@ function serviceBlock(entry) {
         proxy_set_header Connection "";
         proxy_cookie_path / ${entry.path};
         proxy_set_header Host $proxy_host;
-        proxy_set_header X-Forwarded-Proto $cmz_forwarded_proto;
+        proxy_set_header X-Forwarded-Proto $${SNAKE}forwarded_proto;
         proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Prefix ${prefix};
@@ -78,12 +138,13 @@ function serviceBlock(entry) {
 `;
 }
 
-export function renderNginxTemplate(table) {
+export function renderNginxTemplate(table, prefix) {
+    const { ENV, SNAKE, NGINX_DIR } = relayNames(prefix);
     return `# Généré par la coque extérieure (X4-config), possédé et scellé.
 # Rendu au démarrage par l'image officielle (/etc/nginx/templates, filtre
-# NGINX_ENVSUBST_FILTER=^CMZ_) : seules les variables CMZ_* de l'opérateur
+# NGINX_ENVSUBST_FILTER=^${ENV}) : seules les variables ${ENV}* de l'opérateur
 # sont substituées. Aucune location ne porte d'add_header (un seul niveau).
-map $uri $cmz_cache_control {
+map $uri $${SNAKE}cache_control {
     default "no-cache";
     /index.html "no-cache";
     /sw.js "no-cache";
@@ -92,7 +153,7 @@ map $uri $cmz_cache_control {
     "~*\\.(?:js|css|svg|png|woff2)$" "public, max-age=31536000, immutable";
 }
 
-map $http_x_forwarded_proto $cmz_forwarded_proto {
+map $http_x_forwarded_proto $${SNAKE}forwarded_proto {
     default $scheme;
     https https;
 }
@@ -105,14 +166,14 @@ server {
     client_max_body_size 10m;
     # Garde : sans le script de validation, la variable n'est pas substituée et
     # nginx refuse une variable inconnue. Les noms de variables nginx ignorent
-    # la casse : la cible du set ne doit jamais être cmz_upstreams_validated.
-    set $cmz_relay_guard "\${CMZ_UPSTREAMS_VALIDATED}";
+    # la casse : la cible du set ne doit jamais être ${SNAKE}upstreams_validated.
+    set $${SNAKE}relay_guard "\${${ENV}UPSTREAMS_VALIDATED}";
 
-    include /etc/nginx/cmz/content-security-policy.conf;
-    include /etc/nginx/cmz/security-headers.conf;
-    add_header Cache-Control $cmz_cache_control always;
+    include ${NGINX_DIR}content-security-policy.conf;
+    include ${NGINX_DIR}security-headers.conf;
+    add_header Cache-Control $${SNAKE}cache_control always;
 
-${table.map(serviceBlock).join('\n')}
+${table.map((entry) => serviceBlock(entry, SNAKE)).join('\n')}
     location ^~ /api/ {
         return 404;
     }
@@ -141,27 +202,28 @@ add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyro
 
 // Sourcé par l'entrypoint officiel avant 20-envsubst-on-templates.sh. Il
 // n'écrit jamais une valeur, seulement le nom de la variable en défaut, et
-// n'exporte CMZ_UPSTREAMS_VALIDATED qu'en cas de succès.
-export function renderUpstreamsEnvsh(table) {
+// n'exporte `<P>_UPSTREAMS_VALIDATED` qu'en cas de succès.
+export function renderUpstreamsEnvsh(table, prefix) {
+    const { ENV, SNAKE } = relayNames(prefix);
     return `# Généré par la coque extérieure (X4-config), possédé et scellé.
 # Sourcé par l'entrypoint officiel de nginx avant le rendu des gabarits.
 # N'écrit jamais une valeur : seulement le nom de la variable en défaut.
-cmz_fail() {
+${SNAKE}fail() {
     echo "$1" >&2
     exit 1
 }
-[ "\${NGINX_ENVSUBST_FILTER-}" = '^CMZ_' ] || cmz_fail CMZ_ENVSUBST_FILTER_INVALID
-cmz_check() {
-    eval "cmz_state=\\\${$1+set}"
-    [ "$cmz_state" = set ] || cmz_fail "$1_MISSING"
-    eval "cmz_value=\\\${$1}"
-    [ -n "$cmz_value" ] || cmz_fail "$1_EMPTY"
-    [ "$(printf '%s' "$cmz_value" | wc -l)" -eq 0 ] || cmz_fail "$1_INVALID"
-    printf '%s' "$cmz_value" | grep -Eqx '${UPSTREAM_PATTERN}' || cmz_fail "$1_INVALID"
+[ "\${NGINX_ENVSUBST_FILTER-}" = '^${ENV}' ] || ${SNAKE}fail ${ENV}ENVSUBST_FILTER_INVALID
+${SNAKE}check() {
+    eval "${SNAKE}state=\\\${$1+set}"
+    [ "$${SNAKE}state" = set ] || ${SNAKE}fail "$1_MISSING"
+    eval "${SNAKE}value=\\\${$1}"
+    [ -n "$${SNAKE}value" ] || ${SNAKE}fail "$1_EMPTY"
+    [ "$(printf '%s' "$${SNAKE}value" | wc -l)" -eq 0 ] || ${SNAKE}fail "$1_INVALID"
+    printf '%s' "$${SNAKE}value" | grep -Eqx '${UPSTREAM_PATTERN}' || ${SNAKE}fail "$1_INVALID"
 }
-${table.map((entry) => `cmz_check ${entry.variable}`).join('\n')}
-unset cmz_state cmz_value
-export CMZ_UPSTREAMS_VALIDATED=1
+${table.map((entry) => `${SNAKE}check ${entry.variable}`).join('\n')}
+unset ${SNAKE}state ${SNAKE}value
+export ${ENV}UPSTREAMS_VALIDATED=1
 `;
 }
 
@@ -195,7 +257,8 @@ export const RELAY_ENDPOINTS: Provider = { provide: SESSION_ENDPOINTS, useFactor
 `;
 }
 
-export function renderRelayReadme({ appName, table }) {
+export function renderRelayReadme({ appName, table, prefix }) {
+    const { ENV, NGINX_DIR, ENVSH } = relayNames(prefix);
     const variables = table
         .map((entry) => `    --env ${entry.variable} \\\n`)
         .join('');
@@ -221,11 +284,11 @@ variables viennent d'un fichier d'environnement **hors du produit**.
 \`\`\`sh
 docker run --rm -p 8080:8080 \\
     --env-file <fichier hors du produit> \\
-    --env NGINX_ENVSUBST_FILTER='^CMZ_' \\
+    --env NGINX_ENVSUBST_FILTER='^${ENV}' \\
 ${variables}    -v "$PWD/apps/${appName}/deploy/nginx/templates:/etc/nginx/templates:ro" \\
-    -v "$PWD/apps/${appName}/deploy/content-security-policy.conf:/etc/nginx/cmz/content-security-policy.conf:ro" \\
-    -v "$PWD/apps/${appName}/deploy/security-headers.conf:/etc/nginx/cmz/security-headers.conf:ro" \\
-    -v "$PWD/apps/${appName}/deploy/nginx/docker-entrypoint.d/15-cmz-upstreams.envsh:/docker-entrypoint.d/15-cmz-upstreams.envsh:ro" \\
+    -v "$PWD/apps/${appName}/deploy/content-security-policy.conf:${NGINX_DIR}content-security-policy.conf:ro" \\
+    -v "$PWD/apps/${appName}/deploy/security-headers.conf:${NGINX_DIR}security-headers.conf:ro" \\
+    -v "$PWD/apps/${appName}/deploy/nginx/docker-entrypoint.d/${ENVSH}:/docker-entrypoint.d/${ENVSH}:ro" \\
     -v "$PWD/dist/apps/${appName}/browser:/usr/share/nginx/html:ro" \\
     ${nginxImage()}
 \`\`\`
@@ -237,13 +300,14 @@ X4-config ne reçoit ces fichiers qu'en recréant son application.
 ## Développement local
 
 \`nx serve ${appName}\` relaie les mêmes chemins par \`proxy.conf.mjs\`, avec
-les cibles lues dans le fichier désigné par \`CMZ_DEV_PROXY_FILE\`, **hors du
+les cibles lues dans le fichier désigné par \`${ENV}DEV_PROXY_FILE\`, **hors du
 produit** (forme : \`proxy.local.example.json\`). Différence connue : le proxy
 de développement ne réécrit pas un \`Location\` absolu renvoyé par un service.
 `;
 }
 
-export function renderDevProxy(table) {
+export function renderDevProxy(table, prefix) {
+    const { ENV } = relayNames(prefix);
     const services = table.map(({ service_id, path }) => ({
         service_id,
         path,
@@ -251,7 +315,7 @@ export function renderDevProxy(table) {
     return `// Généré par la coque extérieure (X4-config), possédé et scellé. Proxy du
 // serveur de développement : même table de chemins et même forme d'amont que
 // le relais nginx. Les cibles viennent du fichier désigné par
-// CMZ_DEV_PROXY_FILE, hors du produit ; sans lui, aucun service n'est relayé.
+// ${ENV}DEV_PROXY_FILE, hors du produit ; sans lui, aucun service n'est relayé.
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -260,14 +324,14 @@ const SERVICES = ${JSON.stringify(services)};
 const UPSTREAM = new RegExp(${JSON.stringify(UPSTREAM_PATTERN)});
 
 function fail(message) {
-    throw new Error('CMZ_DEV_PROXY ' + message);
+    throw new Error('${ENV}DEV_PROXY ' + message);
 }
 
 export function devProxyConfig(file, productRoot) {
     // Sans fichier, le serveur de développement démarre sans relayer aucun
     // service : on avertit sans bloquer. Un fichier refusé, lui, bloque.
     if (!file) {
-        process.stderr.write('CMZ_DEV_PROXY aucun service relayé : définir CMZ_DEV_PROXY_FILE (voir proxy.local.example.json)\\n');
+        process.stderr.write('${ENV}DEV_PROXY aucun service relayé : définir ${ENV}DEV_PROXY_FILE (voir proxy.local.example.json)\\n');
         return {};
     }
     const real = realpathSync(file);
@@ -299,7 +363,7 @@ export function devProxyConfig(file, productRoot) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-export default devProxyConfig(process.env.CMZ_DEV_PROXY_FILE, resolve(here, '..', '..'));
+export default devProxyConfig(process.env.${ENV}DEV_PROXY_FILE, resolve(here, '..', '..'));
 `;
 }
 
@@ -319,17 +383,17 @@ export function renderDevProxyExample(table) {
 }
 
 // Fichiers du relais pour une coque extérieure avec session.
-export function renderExternalRelayFiles({ appName, config }) {
-    const table = relayServiceTable(config);
+export function renderExternalRelayFiles({ appName, config, prefix }) {
+    const table = relayServiceTable(config, prefix);
     return {
         table,
         files: {
-            [RELAY_FILES.template]: renderNginxTemplate(table),
+            [RELAY_FILES.template]: renderNginxTemplate(table, prefix),
             [RELAY_FILES.headers]: renderSecurityHeaders(),
-            [RELAY_FILES.envsh]: renderUpstreamsEnvsh(table),
-            [RELAY_FILES.readme]: renderRelayReadme({ appName, table }),
+            [relayEnvshPath(prefix)]: renderUpstreamsEnvsh(table, prefix),
+            [RELAY_FILES.readme]: renderRelayReadme({ appName, table, prefix }),
             [RELAY_FILES.endpoints]: renderRelayEndpoints(table),
-            [RELAY_FILES.devProxy]: renderDevProxy(table),
+            [RELAY_FILES.devProxy]: renderDevProxy(table, prefix),
             [RELAY_FILES.devExample]: renderDevProxyExample(table),
         },
     };

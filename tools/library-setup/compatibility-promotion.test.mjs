@@ -41,6 +41,7 @@ import {
     fixtureGit as git,
     initFixtureRepo,
 } from '../test-support/fixture-git.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
 const HEAD = execFileSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], {
@@ -176,8 +177,8 @@ function verification(root = ROOT) {
 }
 
 function fixture(t) {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-promotion-'));
-    t.after(() => removeTemporaryFixture(root, 'cmz-promotion-'));
+    const root = mkdtempSync(join(tmpdir(), signatureName('promotion-')));
+    t.after(() => removeTemporaryFixture(root, signatureName('promotion-')));
     cpSync(join(ROOT, 'conventions'), join(root, 'conventions'), {
         recursive: true,
     });
@@ -331,8 +332,10 @@ test('l’empreinte source survit au squash et aux changements sans rapport', (t
     assert.equal(git(source, ['rev-parse', 'HEAD^{tree}']), branchTree);
     git(source, ['update-ref', '-d', 'refs/heads/qualification', branchTip]);
 
-    const squashed = mkdtempSync(join(tmpdir(), 'cmz-promotion-'));
-    t.after(() => removeTemporaryFixture(squashed, 'cmz-promotion-'));
+    const squashed = mkdtempSync(join(tmpdir(), signatureName('promotion-')));
+    t.after(() =>
+        removeTemporaryFixture(squashed, signatureName('promotion-'))
+    );
     git(source, [
         'clone',
         '--quiet',

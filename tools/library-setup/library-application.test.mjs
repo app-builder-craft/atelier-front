@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 
 import { libraryApplicationInternals } from './library-application.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
 
@@ -40,6 +41,9 @@ test('la voie courante traverse l’adaptateur pur sans brique de qualification'
         graph.map((path) => basename(path)),
         [
             'add-library.mjs',
+            // Lot MARQUE : source unique de la signature, module pur sans
+            // dépendance, importée par l'adaptateur.
+            'atelier-signature.mjs',
             'library-application.mjs',
             'qualified-adapters.mjs',
             'scaffold-tailwind-core.mjs',
@@ -84,7 +88,9 @@ test('le plan courant est stable, explicite et ne contient aucun état de sandbo
 });
 
 test('la voie courante reconnaît une app React/Vite Nx sans target build explicite', () => {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-library-react-platform-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('library-react-platform-'))
+    );
     try {
         mkdirSync(join(root, 'apps', 'demo', 'src'), { recursive: true });
         writeFileSync(
@@ -123,7 +129,9 @@ test('la voie courante reconnaît une app React/Vite Nx sans target build explic
 });
 
 test('une app Nx avec un vite.config non React reste refusée', () => {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-library-unknown-platform-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('library-unknown-platform-'))
+    );
     try {
         mkdirSync(join(root, 'apps', 'demo', 'src'), { recursive: true });
         writeFileSync(
@@ -174,7 +182,9 @@ test('les checks courants utilisent aussi les targets inférées par Nx', () => 
 });
 
 test('le change set atteste les fichiers créés autant que les fichiers modifiés', () => {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-library-change-set-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('library-change-set-'))
+    );
     try {
         mkdirSync(join(root, 'apps', 'demo'), { recursive: true });
         writeFileSync(join(root, 'apps', 'demo', 'existing.txt'), 'before\n');
@@ -186,9 +196,9 @@ test('le change set atteste les fichiers créés autant que les fichiers modifi�
                 '-C',
                 root,
                 '-c',
-                'user.name=CMZ Test',
+                `user.name=${signatureName('test')}`,
                 '-c',
-                'user.email=cmz-test@example.invalid',
+                `user.email=${signatureName('test')}@example.invalid`,
                 'commit',
                 '--quiet',
                 '-m',

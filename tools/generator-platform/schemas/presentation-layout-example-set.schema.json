@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/presentation-layout-example-set.schema.json",
-  "title": "CMZ Presentation Layout Example Set",
+  "$id": "https://atelier.local/schemas/generator-platform/presentation-layout-example-set.schema.json",
+  "title": "Atelier Presentation Layout Example Set",
   "type": "object",
   "additionalProperties": false,
   "required": [

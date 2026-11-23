@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { validateConventionProfiles } from './check-convention-profile.mjs';
+import { INTERNAL } from './generator-platform/core/atelier-signature.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA_SRC = join(REPO_ROOT, 'conventions/profile.schema.json');
@@ -105,7 +106,7 @@ test("rejette un packages[] qui nomme un wrapper d'abstraction", () => {
     const root = scratchRoot();
     try {
         const profile = structuredClone(baseAngular);
-        profile.conventions.i18n.packages = ['@cmz/i18n-port'];
+        profile.conventions.i18n.packages = [`${INTERNAL.scope}/i18n-port`];
         writeProfile(root, 'angular-22.profile.json', profile);
         const { ok, errors } = validateConventionProfiles(root);
         assert.equal(ok, false);

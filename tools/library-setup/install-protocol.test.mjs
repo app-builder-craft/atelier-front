@@ -20,6 +20,7 @@ import {
     synchronizePublishedDependencies,
     verifyInstalledPackages,
 } from './install-protocol.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const realRoot = new URL('../..', import.meta.url).pathname;
 
@@ -37,7 +38,7 @@ async function put(root, path, content) {
 
 test('exécute base, génération et vérification neuve sans script de cycle de vie', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-install-protocol-'))
+        await mkdtemp(join(tmpdir(), signatureName('install-protocol-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const repository = join(root, 'repo');
@@ -200,7 +201,7 @@ test('exécute base, génération et vérification neuve sans script de cycle de
 
 test('synchronise node_modules publié sans muter manifeste ni lockfile', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-published-dependencies-'))
+        await mkdtemp(join(tmpdir(), signatureName('published-dependencies-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const repository = join(root, 'repo');
@@ -256,7 +257,7 @@ test('synchronise node_modules publié sans muter manifeste ni lockfile', async 
 
 test('refuse une synchronisation locale qui réécrit le lockfile gelé', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-published-drift-'))
+        await mkdtemp(join(tmpdir(), signatureName('published-drift-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const repository = join(root, 'repo');
@@ -302,7 +303,7 @@ test('refuse une synchronisation locale qui réécrit le lockfile gelé', async 
 
 test('restaure manifeste et lockfile même si Bun échoue après les avoir écrits', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-published-failed-write-'))
+        await mkdtemp(join(tmpdir(), signatureName('published-failed-write-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const repository = join(root, 'repo');
@@ -346,7 +347,7 @@ test('restaure manifeste et lockfile même si Bun échoue après les avoir écri
 
 test('refuse un paquet direct absent, faux ou résolu hors du node_modules candidat', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-installed-packages-'))
+        await mkdtemp(join(tmpdir(), signatureName('installed-packages-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'workspace');

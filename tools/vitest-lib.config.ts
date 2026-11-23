@@ -4,7 +4,7 @@
  * Usage Nx (`project.json`) :
  * ```
  * bunx vitest run --config tools/vitest-lib.config.ts
- * env: { CMZ_VITEST_LIB_ROOT: "libs/<module>/<layer>" }
+ * env: { ATELIER_VITEST_LIB_ROOT: "libs/<module>/<layer>" }
  * ```
  *
  * Le builder `@angular/build:unit-test` cible les apps Angular complètes
@@ -53,30 +53,33 @@ export function defineLibTestConfig(libRoot: string) {
 }
 
 /**
- * Alias `@cmz/*` → sources TypeScript, pour que les tests résolvent sans
+ * Alias `@atelier/*` → sources TypeScript, pour que les tests résolvent sans
  * build préalable des libs dépendantes.
  */
 function buildAliases(): Record<string, string> {
     const root = workspaceRoot;
     return {
-        '@cmz/shared-domain': resolve(root, 'libs/shared/domain/src/index.ts'),
-        '@cmz/core': resolve(root, 'libs/core/src/index.ts'),
+        '@atelier/shared-domain': resolve(
+            root,
+            'libs/shared/domain/src/index.ts'
+        ),
+        '@atelier/core': resolve(root, 'libs/core/src/index.ts'),
     };
 }
 
-/** Config Vitest — exige `CMZ_VITEST_LIB_ROOT` quand lancé par Vitest/Nx. */
+/** Config Vitest — exige `ATELIER_VITEST_LIB_ROOT` quand lancé par Vitest/Nx. */
 export default () => {
-    const libRootEnv = process.env.CMZ_VITEST_LIB_ROOT;
+    const libRootEnv = process.env.ATELIER_VITEST_LIB_ROOT;
     if (!libRootEnv) {
         // Hors cible Nx (knip, analyse IDE) le fichier de config partagé est
         // chargé sans env. Ne pas throw : ce n'est pas une exécution de tests.
-        // Vitest via project.json injecte toujours CMZ_VITEST_LIB_ROOT.
+        // Vitest via project.json injecte toujours ATELIER_VITEST_LIB_ROOT.
         const underVitest =
             process.env.VITEST === 'true' ||
             process.argv.some((a) => /(^|[\\/])vitest(\.m?js)?$/.test(a));
         if (underVitest) {
             throw new Error(
-                'CMZ_VITEST_LIB_ROOT manquant — définir le chemin de la lib ' +
+                'ATELIER_VITEST_LIB_ROOT manquant — définir le chemin de la lib ' +
                     '(ex. libs/shared/domain) via project.json options.env.'
             );
         }

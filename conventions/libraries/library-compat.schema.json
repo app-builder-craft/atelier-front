@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/conventions/library-compat.schema.json",
-  "title": "CMZ library compatibility matrix",
+  "$id": "https://atelier.local/schemas/conventions/library-compat.schema.json",
+  "title": "Atelier library compatibility matrix",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "library", "platform", "tracks"],

@@ -1,4 +1,6 @@
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
+import { productForms } from '../core/product-identity.mjs';
 import {
     EXTERNAL_CSP_HEADER_PATH,
     renderCspHeaderTemplate,
@@ -6,10 +8,10 @@ import {
 } from './external-content-security-policy.mjs';
 
 // Disposition unique du produit extérieur, consommée aussi par ses preuves et gardes.
-export const EXTERNAL_WORKSPACE_CMZ = Object.freeze({
-    manifest: '.cmz/application-workspace.json',
-    support: '.cmz/support',
-    proof: '.cmz/proof',
+export const EXTERNAL_WORKSPACE_SIGNATURE = Object.freeze({
+    manifest: SIGNATURE_FILES.workspaceManifest,
+    support: SIGNATURE_FILES.support,
+    proof: SIGNATURE_FILES.proof,
 });
 
 export const SHELL_PACKAGES = Object.freeze({
@@ -135,7 +137,7 @@ async function verifiedSnapshot(path, expectedHash) {
 
 export async function checkWorkspace() {
     const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
-    const manifest = JSON.parse(await readFile(resolve(root, '${EXTERNAL_WORKSPACE_CMZ.manifest}'), 'utf8'));
+    const manifest = JSON.parse(await readFile(resolve(root, '${EXTERNAL_WORKSPACE_SIGNATURE.manifest}'), 'utf8'));
     const declared = { ...pkg.dependencies, ...pkg.devDependencies };
     assert.equal(manifest.kind, 'application-workspace-manifest');
     assert.deepEqual(Object.keys(declared).sort(), Object.keys(manifest.packages).sort(), 'Fermeture des packages');
@@ -175,7 +177,7 @@ export async function checkWorkspace() {
                     consumers.add(consumer);
                     if (path.includes('/src/')) {
                         const appRoot = path.slice(0, path.indexOf('/src/'));
-                        const app = JSON.parse(ts.sys.readFile(resolve(appRoot, '.cmz/app-manifest.json')) ?? '{}');
+                        const app = JSON.parse(ts.sys.readFile(resolve(appRoot, '${SIGNATURE_FILES.appManifest}')) ?? '{}');
                         if (app.profile === 'angular-pwa') assert.ok(!/^react(?:$|-|\\/)/.test(name), 'Import React dans Angular');
                         if (app.profile === 'react-spa') assert.ok(!name.startsWith('@angular/'), 'Import Angular dans React');
                     }
@@ -189,7 +191,7 @@ export async function checkWorkspace() {
     for (const entry of await readdir(resolve(root, 'apps'), { withFileTypes: true })) {
         if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
         const appRoot = resolve(root, 'apps', entry.name);
-        const app = JSON.parse(await readFile(resolve(appRoot, '.cmz/app-manifest.json'), 'utf8'));
+        const app = JSON.parse(await readFile(resolve(appRoot, '${SIGNATURE_FILES.appManifest}'), 'utf8'));
         profiles.add(app.profile);
         const design = JSON.parse((await verifiedSnapshot(app.design_ref.path, app.design_ref.sha256)).toString('utf8'));
         for (const source of design.sources ?? []) await verifiedSnapshot(source.snapshot_uri, source.sha256);
@@ -320,7 +322,7 @@ export async function renderApplicationWorkspace(options) {
             overrides: options.packageOverrides,
             workspaces: ['apps/*'],
             scripts: {
-                'check:workspace': `node ${EXTERNAL_WORKSPACE_CMZ.support}/check-workspace.mjs`,
+                'check:workspace': `node ${EXTERNAL_WORKSPACE_SIGNATURE.support}/check-workspace.mjs`,
                 build: 'node node_modules/nx/dist/bin/nx.js run-many -t build --configuration=production --skipNxCache',
                 lint: 'node node_modules/nx/dist/bin/nx.js run-many -t lint --skipNxCache',
                 test: 'node node_modules/nx/dist/bin/nx.js run-many -t test --skipNxCache',
@@ -417,20 +419,21 @@ export default [
         'README.md': `# Workspace applicatif\n\nProfils natifs : ${profiles.join(', ')}.\n\nDépôt : ${githubRepository}. Relecture : @${reviewOwner}.\n\nInstaller les dépendances avec bun install --frozen-lockfile --ignore-scripts depuis cette racine ; le verrou candidat attend sa qualification native.\nLes entrées approuvées vivent ici. Aucun lien vers les outils de création.\nLes contrôles production T19–T28 attendent leur qualification avant publication.\n`,
         'AGENTS.md':
             '# Règles du produit\n\nEntrées et contrats approuvés uniquement. Angular et React restent natifs et séparés.\nAucun secret, HAR, environnement réel, appel serveur implicite ni publication sans accord.\nCompiler, linter sans avertissement et tester chaque cible après modification.\n',
-        [`${EXTERNAL_WORKSPACE_CMZ.support}/check-workspace.mjs`]:
+        [`${EXTERNAL_WORKSPACE_SIGNATURE.support}/check-workspace.mjs`]:
             productCheck(),
-        [`${EXTERNAL_WORKSPACE_CMZ.support}/browser-smoke.mjs`]: browserSmoke(),
+        [`${EXTERNAL_WORKSPACE_SIGNATURE.support}/browser-smoke.mjs`]:
+            browserSmoke(),
     };
     if (profiles.includes('angular-pwa')) {
         files[
-            `${EXTERNAL_WORKSPACE_CMZ.support}/angular-unit-test.config.mjs`
+            `${EXTERNAL_WORKSPACE_SIGNATURE.support}/angular-unit-test.config.mjs`
         ] = "export default { server: { host: '127.0.0.1' } };\n";
     }
     return canonicalizeGeneratedFiles(files);
 }
 
 // Coque extérieure : le service worker s'enregistre sous Trusted Types par la
-// politique `cmz-sw`, créée avant tout autre code et locale au module.
+// politique `<préfixe>-sw`, créée avant tout autre code et locale au module.
 const WORKSHOP_MAIN = `import { bootstrapApplication } from '@angular/platform-browser';
 
 import { App } from './app/app';
@@ -445,7 +448,9 @@ bootstrapApplication(App, appConfig)
     .catch((error: unknown) => console.error(error));
 `;
 
-function externalMain(workshop) {
+function externalMain(workshop, prefix) {
+    // Politique Trusted Types du service worker, au préfixe du produit.
+    const forms = productForms(prefix);
     if (workshop !== WORKSHOP_MAIN)
         throw new Error('application shell: main.ts is not the shell main');
     return `import { bootstrapApplication } from '@angular/platform-browser';
@@ -454,7 +459,7 @@ import { App } from './app/app';
 import { appConfig } from './app/app.config';
 
 // Politique Trusted Types du service worker (politique de la coque) :
-// \`register\` est un puits TrustedScriptURL. \`cmz-sw\` est créée avant tout
+// \`register\` est un puits TrustedScriptURL. \`${forms.kebab}sw\` est créée avant tout
 // autre code, n'accepte que l'URL exacte du service worker et reste locale à ce
 // module. Si Trusted Types existe et que la création échoue, l'erreur remonte :
 // aucun repli. Sans Trusted Types dans le navigateur, il n'y a pas de puits :
@@ -471,10 +476,10 @@ interface TrustedTypesFactory {
 const SERVICE_WORKER_URL = '/sw.js';
 const serviceWorkerPolicy = (
     globalThis as { trustedTypes?: TrustedTypesFactory }
-).trustedTypes?.createPolicy('cmz-sw', {
+).trustedTypes?.createPolicy('${forms.kebab}sw', {
     createScriptURL: (input) => {
         if (input !== SERVICE_WORKER_URL)
-            throw new TypeError('cmz-sw: service worker URL refused');
+            throw new TypeError('${forms.kebab}sw: service worker URL refused');
         return input;
     },
 });
@@ -515,7 +520,7 @@ function externalWorker(worker) {
     );
 }
 
-export function adaptExternalShellFiles(files, { profile, appName }) {
+export function adaptExternalShellFiles(files, { profile, appName, prefix }) {
     const root = `apps/${appName}`;
     const project = JSON.parse(files['project.json']);
     const angular = profile === 'angular-pwa';
@@ -527,7 +532,7 @@ export function adaptExternalShellFiles(files, { profile, appName }) {
         },
     };
     if (angular) {
-        project.targets.test.options.runnerConfig = `${EXTERNAL_WORKSPACE_CMZ.support}/angular-unit-test.config.mjs`;
+        project.targets.test.options.runnerConfig = `${EXTERNAL_WORKSPACE_SIGNATURE.support}/angular-unit-test.config.mjs`;
         for (const [path, content] of Object.entries(files)) {
             if (!path.endsWith('.ts') || !content.includes('@Component({'))
                 continue;
@@ -563,8 +568,8 @@ export default ts.config(
 );
 `;
         // X4-sécurité : politique de sécurité de contenu générée, scellée.
-        files['src/index.html'] = withCspMeta(files['src/index.html']);
-        files[EXTERNAL_CSP_HEADER_PATH] = renderCspHeaderTemplate();
+        files['src/index.html'] = withCspMeta(files['src/index.html'], prefix);
+        files[EXTERNAL_CSP_HEADER_PATH] = renderCspHeaderTemplate(prefix);
         // L'inlining du CSS critique ajoute un gestionnaire `onload` en ligne,
         // refusé par `script-src 'self'` ; l'inlining des polices joindrait le
         // réseau au build. Les deux sont coupés explicitement.
@@ -573,7 +578,7 @@ export default ts.config(
             styles: { minify: true, inlineCritical: false },
             fonts: false,
         };
-        files['src/main.ts'] = externalMain(files['src/main.ts']);
+        files['src/main.ts'] = externalMain(files['src/main.ts'], prefix);
         files['public/sw.js'] = externalWorker(files['public/sw.js']);
     } else {
         project.targets.build = {

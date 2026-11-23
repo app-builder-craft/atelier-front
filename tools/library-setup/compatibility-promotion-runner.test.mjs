@@ -33,6 +33,7 @@ import {
     fixtureGit as git,
     initFixtureRepo,
 } from '../test-support/fixture-git.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const SOURCE = new URL('../..', import.meta.url).pathname;
 const LIVE_START = 'Mon Sep  8 00:00:00 2026';
@@ -44,7 +45,7 @@ function sha256(value) {
 
 function repository(t) {
     const root = realpathSync(
-        mkdtempSync(join(tmpdir(), 'cmz-promotion-runner-'))
+        mkdtempSync(join(tmpdir(), signatureName('promotion-runner-')))
     );
     t.after(() => {
         // Le verrou est le seul résidu métier susceptible de survivre au
@@ -53,11 +54,13 @@ function repository(t) {
         // `fs.rm` absorbent uniquement les ENOTEMPTY transitoires observés sur
         // le filesystem du runner Linux pendant le teardown de `.git`.
         assert.equal(
-            existsSync(join(root, '.git/cmz-library-promotion.lock')),
+            existsSync(
+                join(root, `.git/${signatureName('library-promotion.lock')}`)
+            ),
             false,
             'le verrou de promotion doit être libéré avant le teardown'
         );
-        removeTemporaryFixture(root, 'cmz-promotion-runner-');
+        removeTemporaryFixture(root, signatureName('promotion-runner-'));
     });
     for (const path of [
         'conventions',

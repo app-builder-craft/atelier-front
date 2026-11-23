@@ -26,6 +26,17 @@ import {
     packageToolInvocations,
     workflowRunCommands,
 } from './check-ci-wiring.mjs';
+import {
+    escapeRegExp,
+    signatureIdentifier,
+    signatureName,
+    toolEnv,
+} from './generator-platform/core/atelier-signature.mjs';
+
+// Noms d'outils de la CI, dérivés des sources uniques de l'atelier.
+const PROOF_ROOT = toolEnv('EXTERNAL_APPLICATION_PROOF_ROOT');
+const PROOF_DIRECTORY = signatureName('external-application-proof');
+const LINT_PROBE = signatureIdentifier('UndefinedLintProbe');
 
 test('Nx : calcul Linux sur l’image de l’Oracle et artefact Linux du même run', () => {
     const workflow = parse(
@@ -263,11 +274,11 @@ test('la configuration de lint des outils refuse les identifiants non liés', as
             expected: [],
         },
         {
-            code: 'process.stdout.write(cmzUndefinedLintProbe);\n',
+            code: `process.stdout.write(${LINT_PROBE});\n`,
             expected: [{ ruleId: 'no-undef', severity: 2 }],
         },
         {
-            code: 'process.stdout.write(typeof cmzUndefinedLintProbe);\n',
+            code: `process.stdout.write(typeof ${LINT_PROBE});\n`,
             expected: [{ ruleId: 'no-undef', severity: 2 }],
         },
     ];
@@ -373,7 +384,9 @@ test('borne le miroir APT avant l’installation officielle Playwright', () => {
     );
     const commands = workflowRunCommands(ci, '.github/workflows/ci.yml');
     const aptPolicyIndex = commands.findIndex((command) =>
-        command.includes('/etc/apt/apt.conf.d/80-cmz-ci-network')
+        command.includes(
+            `/etc/apt/apt.conf.d/80-${signatureName('ci-network')}`
+        )
     );
     const playwrightIndex = commands.findIndex((command) =>
         commandInvokes(command, 'bunx playwright install chromium --with-deps')
@@ -437,8 +450,11 @@ test('T17 : preuve extérieure réelle, versions installées et rapports texte s
     assert.throws(() =>
         requireExternalProof(ci.replace(invocation, '# ' + invocation))
     );
-    assert.match(ci, /CMZ_EXTERNAL_APPLICATION_PROOF_ROOT/);
-    assert.doesNotMatch(ci, /CMZ_EXTERNAL_APPLICATION_PROOF_ROOT[^\n]*\*\*/);
+    assert.match(ci, new RegExp(escapeRegExp(PROOF_ROOT)));
+    assert.doesNotMatch(
+        ci,
+        new RegExp(`${escapeRegExp(PROOF_ROOT)}[^\\n]*\\*\\*`)
+    );
 });
 
 function requireCanonicalExternalProof(workflow, t) {
@@ -457,10 +473,12 @@ function requireCanonicalExternalProof(workflow, t) {
     );
     const argument = proof?.run.match(/--proof-root "([^"]+)"/)?.[1];
     const artifact = upload?.with?.path;
-    assert.equal(argument, '${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}');
+    assert.equal(argument, '${{ env.' + PROOF_ROOT + ' }}');
     assert.equal(artifact, argument + '/report.txt');
     assert.ok(setup?.run);
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'cmz-proof-path-')));
+    const root = realpathSync(
+        mkdtempSync(join(tmpdir(), signatureName('proof-path-')))
+    );
     t.after(() => rmSync(root, { recursive: true, force: true }));
     mkdirSync(join(root, 'physical/checkout'), { recursive: true });
     symlinkSync(join(root, 'physical'), join(root, 'alias'));
@@ -483,12 +501,12 @@ function requireCanonicalExternalProof(workflow, t) {
         .trim()
         .split('\n');
     assert.equal(lines.length, 1);
-    assert.ok(lines[0].startsWith('CMZ_EXTERNAL_APPLICATION_PROOF_ROOT='));
-    const path = lines[0].slice('CMZ_EXTERNAL_APPLICATION_PROOF_ROOT='.length);
+    assert.ok(lines[0].startsWith(`${PROOF_ROOT}=`));
+    const path = lines[0].slice(`${PROOF_ROOT}=`.length);
     assert.ok(isAbsolute(path));
     assert.equal(path, resolve(path), 'chemin canonique requis, sans ..');
     assert.equal(dirname(path), realpathSync(join(root, 'physical')));
-    assert.equal(path, join(root, 'physical/cmz-external-application-proof'));
+    assert.equal(path, join(root, 'physical', PROOF_DIRECTORY));
 }
 
 test('T17 v10 : preuve et artefact canoniques, hors checkout même via un lien', (t) => {
@@ -497,7 +515,7 @@ test('T17 v10 : preuve et artefact canoniques, hors checkout même via un lien',
         'utf8'
     );
     requireCanonicalExternalProof(workflow, t);
-    const root = '${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}';
+    const root = '${{ env.' + PROOF_ROOT + ' }}';
     assert.throws(() =>
         requireCanonicalExternalProof(
             workflow.replace(
@@ -520,8 +538,8 @@ test('T17 v10 : preuve et artefact canoniques, hors checkout même via un lien',
         () =>
             requireCanonicalExternalProof(
                 workflow.replace(
-                    '%s/cmz-external-application-proof',
-                    '%s/../cmz-external-application-proof'
+                    `%s/${PROOF_DIRECTORY}`,
+                    `%s/../${PROOF_DIRECTORY}`
                 ),
                 t
             ),

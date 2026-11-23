@@ -8,9 +8,9 @@
   },
   "backend_contract": {
     "uri": "tools/generator-platform/fixtures/list-query-v1.backend-contract.json",
-    "id": "cmz-editorial-api",
+    "id": "fixture-editorial-api",
     "version": "1.0.0",
-    "sha256": "4bc8cb2bfca83f9ab42951a83ce2e741ea7d35ef363eaef6c4c3346bf57eae8f"
+    "sha256": "b8b93a09d3e5bad9263bff1de967231adadc1aec36d1b4524acd8d272830d27a"
   },
   "operations": [
     {

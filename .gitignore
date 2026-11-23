@@ -105,12 +105,12 @@ __screenshots__/
 .nx/polygraph
 
 # Verrou et transactions durables de l'atelier (retire-app) — jamais versionnés
-/.cmz/retire-module-transactions/
+/.atelier/retire-module-transactions/
 /apps/.*.create-app-candidate-*
 /apps/.*.generation-lock/
-/.cmz/retire-app-transactions/
-/.cmz/page-realization-work-orders/
-/.cmz/application-shell-integration/
+/.atelier/retire-app-transactions/
+/.atelier/page-realization-work-orders/
+/.atelier/application-shell-integration/
 
 vite.config.*.timestamp*
 vitest.config.*.timestamp*

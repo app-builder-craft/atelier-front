@@ -33,12 +33,18 @@ import {
     verifyGeneratedTree,
 } from './core/external-application-paths.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import {
     fixtureParent,
     shellFixture,
     snapshotTree,
     TOOLS_ROOT,
 } from './test-support/external-application-fixture.mjs';
+import {
+    SIGNATURE_FILES,
+    INTERNAL,
+    escapeRegExp,
+} from './core/atelier-signature.mjs';
 
 test('CLI extérieure : plan obligatoire, options uniques et valeurs complètes', () => {
     const args = [
@@ -678,7 +684,7 @@ test('v11 : préserve les quatre déclencheurs conservateurs hors imports', () =
     }
 });
 
-test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et aucune dépendance cmz implicite', async (t) => {
+test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et aucune dépendance implicite à l’atelier', async (t) => {
     const data = await createApplicationSessionFixture({
         domain: 'equipment-hire',
     });
@@ -691,13 +697,14 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
         designSha256: data.pages.values().next().value.pageContract.design_ref
             .sha256,
         externalWorkspace: true,
+        prefix: FIXTURE_PREFIX,
     });
     const source = Object.entries(rendered.files).filter(([path]) =>
         path.endsWith('.ts')
     );
     assert.doesNotMatch(
         source.map(([, content]) => content).join('\n'),
-        /from ['"]@cmz\//
+        new RegExp(`from ['"]${escapeRegExp(INTERNAL.scope)}/`)
     );
     assert.equal(
         source.filter(([, content]) => /export const SKIP_AUTH =/.test(content))
@@ -706,7 +713,7 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
     );
     const session = JSON.parse(
         rendered.files[
-            `.cmz/pages/${data.design.experiences[0].entry_page_id}.json`
+            `${SIGNATURE_FILES.pages}/${data.design.experiences[0].entry_page_id}.json`
         ]
     ).experience.session;
     assert.equal(session.storage, 'memory');
@@ -716,7 +723,7 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
     );
     assert.equal(data.networkVerified, false);
     const generatedFiles = Object.entries(rendered.files)
-        .filter(([path]) => path !== '.cmz/app-manifest.json')
+        .filter(([path]) => path !== SIGNATURE_FILES.appManifest)
         .map(([path, content]) => ({
             path,
             bytes: Buffer.byteLength(content),

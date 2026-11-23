@@ -22,6 +22,7 @@ import {
     publishCandidateCommit,
     recoverLibraryPublication,
 } from './publication-transaction.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const START = 'Fri Sep  4 00:00:00 2026';
 
@@ -42,7 +43,9 @@ function entry(path, content) {
 }
 
 async function fixture(t) {
-    const root = await realpath(await mkdtemp(join(tmpdir(), 'cmz-publish-')));
+    const root = await realpath(
+        await mkdtemp(join(tmpdir(), signatureName('publish-')))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     const repository = join(root, 'repo');
     const candidate = join(root, 'candidate');
@@ -236,7 +239,10 @@ test('la récupération refuse d’écraser une édition humaine après SIGKILL'
 test('un journal sans verrou est ambigu et n’est jamais repris', async (t) => {
     const value = await fixture(t);
     await writeFile(
-        join(value.repository, '.git/cmz-library-transaction.json'),
+        join(
+            value.repository,
+            `.git/${signatureName('library-transaction.json')}`
+        ),
         '{}\n',
         { mode: 0o600 }
     );
@@ -279,10 +285,15 @@ test('conserve la transaction si la finalisation post-publication échoue puis l
     assert.equal(git(value.repository, 'rev-parse', 'HEAD'), created.commit);
     assert.equal(git(value.repository, 'status', '--porcelain'), '');
     await assert.doesNotReject(
-        access(join(value.repository, '.git/cmz-library.lock'))
+        access(join(value.repository, `.git/${signatureName('library.lock')}`))
     );
     await assert.doesNotReject(
-        access(join(value.repository, '.git/cmz-library-transaction.json'))
+        access(
+            join(
+                value.repository,
+                `.git/${signatureName('library-transaction.json')}`
+            )
+        )
     );
     // Le verrou et le journal doivent réellement survivre. Le premier appel
     // sans finaliseur est donc refusé, jamais blanchi comme "completed".
@@ -306,11 +317,18 @@ test('conserve la transaction si la finalisation post-publication échoue puis l
     assert.equal(recovered.action, 'completed-post-publish');
     assert.deepEqual(recovered.postPublishResult, { synchronized: true });
     await assert.rejects(
-        readFile(join(value.repository, '.git/cmz-library.lock')),
+        readFile(
+            join(value.repository, `.git/${signatureName('library.lock')}`)
+        ),
         /ENOENT/
     );
     await assert.rejects(
-        readFile(join(value.repository, '.git/cmz-library-transaction.json')),
+        readFile(
+            join(
+                value.repository,
+                `.git/${signatureName('library-transaction.json')}`
+            )
+        ),
         /ENOENT/
     );
 });
@@ -337,7 +355,7 @@ test('refuse une finalisation non gouvernée avant toute publication', async (t)
     assert.equal(git(value.repository, 'rev-parse', 'HEAD'), value.base);
     assert.equal(git(value.repository, 'status', '--porcelain'), '');
     await assert.rejects(
-        access(join(value.repository, '.git/cmz-library.lock')),
+        access(join(value.repository, `.git/${signatureName('library.lock')}`)),
         /ENOENT/
     );
 });

@@ -15,9 +15,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { sessionRenderConfiguration } from './core/application-design-session.mjs';
+import { escapeRegExp, signatureName } from './core/atelier-signature.mjs';
+import { relayEnvshPath } from './core/external-application-paths.mjs';
+import { prefixInitials, productForms } from './core/product-identity.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import {
-    EXTERNAL_CSP_HEADER,
+    externalCspHeader,
     renderCspHeaderTemplate,
 } from './renderers/external-content-security-policy.mjs';
 import {
@@ -27,7 +30,24 @@ import {
 } from './renderers/external-relay-renderer.mjs';
 import { createApplicationSessionFixture } from './test-support/application-session-fixture.mjs';
 
-const SECRET = 'cmz-harness-secret';
+// Préfixe du produit fictif du harnais : les initiales de son appli, comme le
+// préfixe proposé par défaut. Les fonctions exportées prennent le préfixe du
+// produit servi (harnais du navigateur) ; par défaut, celui-ci.
+const APP = 'relay-harness';
+export const HARNESS_PREFIX = prefixInitials(APP);
+const forms = productForms(HARNESS_PREFIX);
+// Script d'entrée du relais : source unique, `core/external-application-paths.mjs`.
+const envshName = (prefix) => {
+    const path = relayEnvshPath(prefix);
+    return path.slice(path.lastIndexOf('/') + 1);
+};
+const ENVSH = envshName(HARNESS_PREFIX);
+const filterOf = (prefix) => `^${productForms(prefix).env}`;
+const FILTER = filterOf(HARNESS_PREFIX);
+const SECRET = signatureName('harness-secret');
+// Dossier de l'hôte qui porte les fichiers montés dans le dossier nginx du
+// produit : un nom neutre, sans lien avec la signature ni le préfixe.
+const HOST_CONF = 'nginx-conf';
 const BUNDLE = '/main-ABC123.js';
 
 function docker(args, { timeout = 60_000 } = {}) {
@@ -69,7 +89,7 @@ export function get(port, path, headers = {}) {
 }
 
 // Fichiers du relais et site statique fictif.
-export async function relayFixture() {
+export async function relayFixture({ prefix = HARNESS_PREFIX } = {}) {
     const data = await createApplicationSessionFixture({
         domain: 'observatory',
     });
@@ -78,21 +98,24 @@ export async function relayFixture() {
         const shell = await renderAngularPwaShell({
             design: data.design,
             experienceId: experience.id,
-            appName: 'relay-harness',
+            appName: APP,
             designPath: 'design/observatory.json',
             designSha256: 'a'.repeat(64),
             externalWorkspace: true,
+            prefix,
         });
         const table = relayServiceTable(
-            sessionRenderConfiguration(data.design, experience)
+            sessionRenderConfiguration(data.design, experience),
+            prefix
         );
         return {
             table,
+            prefix,
             files: {
                 template: shell.files[RELAY_FILES.template],
                 headers: shell.files[RELAY_FILES.headers],
-                envsh: shell.files[RELAY_FILES.envsh],
-                csp: renderCspHeaderTemplate(),
+                envsh: shell.files[relayEnvshPath(prefix)],
+                csp: renderCspHeaderTemplate(prefix),
             },
         };
     } finally {
@@ -113,9 +136,14 @@ const FAKE_SERVICE = `server {
 }
 `;
 
-export async function stage(root, files, { envshMode = 0o755 } = {}) {
+export async function stage(
+    root,
+    files,
+    { envshMode = 0o755, prefix = HARNESS_PREFIX } = {}
+) {
+    const ENVSH = envshName(prefix);
     await mkdir(join(root, 'templates'), { recursive: true });
-    await mkdir(join(root, 'cmz'), { recursive: true });
+    await mkdir(join(root, HOST_CONF), { recursive: true });
     await mkdir(join(root, 'html'), { recursive: true });
     await mkdir(join(root, 'svc'), { recursive: true });
     await writeFile(
@@ -123,12 +151,15 @@ export async function stage(root, files, { envshMode = 0o755 } = {}) {
         files.template
     );
     await writeFile(
-        join(root, 'cmz', 'content-security-policy.conf'),
+        join(root, HOST_CONF, 'content-security-policy.conf'),
         files.csp
     );
-    await writeFile(join(root, 'cmz', 'security-headers.conf'), files.headers);
-    await writeFile(join(root, '15-cmz-upstreams.envsh'), files.envsh);
-    await chmod(join(root, '15-cmz-upstreams.envsh'), envshMode);
+    await writeFile(
+        join(root, HOST_CONF, 'security-headers.conf'),
+        files.headers
+    );
+    await writeFile(join(root, ENVSH), files.envsh);
+    await chmod(join(root, ENVSH), envshMode);
     await writeFile(join(root, 'svc', 'default.conf'), FAKE_SERVICE);
     for (const [name, text] of Object.entries({
         'index.html': '<!doctype html><title>relay</title>',
@@ -140,7 +171,13 @@ export async function stage(root, files, { envshMode = 0o755 } = {}) {
 }
 
 // Arguments de la commande de référence (README), sans -p ni nom.
-function relayArgs(root, env, { mountEnvsh = true } = {}) {
+function relayArgs(
+    root,
+    env,
+    { mountEnvsh = true, prefix = HARNESS_PREFIX } = {}
+) {
+    const ENVSH = envshName(prefix);
+    const forms = productForms(prefix);
     return [
         ...Object.entries(env).flatMap(([key, value]) => [
             '--env',
@@ -149,14 +186,11 @@ function relayArgs(root, env, { mountEnvsh = true } = {}) {
         '-v',
         `${root}/templates:/etc/nginx/templates:ro`,
         '-v',
-        `${root}/cmz/content-security-policy.conf:/etc/nginx/cmz/content-security-policy.conf:ro`,
+        `${root}/${HOST_CONF}/content-security-policy.conf:${forms.nginxDir}content-security-policy.conf:ro`,
         '-v',
-        `${root}/cmz/security-headers.conf:/etc/nginx/cmz/security-headers.conf:ro`,
+        `${root}/${HOST_CONF}/security-headers.conf:${forms.nginxDir}security-headers.conf:ro`,
         ...(mountEnvsh
-            ? [
-                  '-v',
-                  `${root}/15-cmz-upstreams.envsh:/docker-entrypoint.d/15-cmz-upstreams.envsh:ro`,
-              ]
+            ? ['-v', `${root}/${ENVSH}:/docker-entrypoint.d/${ENVSH}:ro`]
             : []),
         '-v',
         `${root}/html:/usr/share/nginx/html:ro`,
@@ -182,11 +216,17 @@ export function stopRelay(relay) {
 }
 
 // Une session : réseau, service fictif, relais ; fermeture garantie.
-export async function withRelay(root, variable, upstream, action) {
+export async function withRelay(
+    root,
+    variable,
+    upstream,
+    action,
+    { prefix = HARNESS_PREFIX } = {}
+) {
     const id = randomBytes(4).toString('hex');
-    const network = `cmz-relay-${id}`;
-    const svc = `cmz-svc-${id}`;
-    const relay = `cmz-relay-${id}`;
+    const network = signatureName(`relay-${id}`);
+    const svc = signatureName(`svc-${id}`);
+    const relay = signatureName(`relay-${id}`);
     try {
         ok(['network', 'create', network]);
         ok([
@@ -211,10 +251,14 @@ export async function withRelay(root, variable, upstream, action) {
             network,
             '-p',
             '127.0.0.1::8080',
-            ...relayArgs(root, {
-                NGINX_ENVSUBST_FILTER: '^CMZ_',
-                [variable]: upstream,
-            }),
+            ...relayArgs(
+                root,
+                {
+                    NGINX_ENVSUBST_FILTER: filterOf(prefix),
+                    [variable]: upstream,
+                },
+                { prefix }
+            ),
             nginxImage(),
         ]);
         const port = Number(
@@ -245,7 +289,7 @@ export async function runChecks(files, table) {
             results[name] = `FAIL ${String(error.message).split('\n')[0]}`;
         }
     };
-    const root = await mkdtemp(join(tmpdir(), 'cmz-nginx-relay-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('nginx-relay-')));
     const [service] = table;
     const prefix = service.path;
     try {
@@ -263,7 +307,7 @@ export async function runChecks(files, table) {
                             '--network',
                             network,
                             ...relayArgs(root, {
-                                NGINX_ENVSUBST_FILTER: '^CMZ_',
+                                NGINX_ENVSUBST_FILTER: FILTER,
                                 [service.variable]: 'http://svc:8000/',
                             }),
                             nginxImage(),
@@ -299,7 +343,7 @@ export async function runChecks(files, table) {
                         // prend la sienne dans les en-têtes de /sw.js.
                         assert.deepEqual(
                             headers['content-security-policy'],
-                            [EXTERNAL_CSP_HEADER],
+                            [externalCspHeader(HARNESS_PREFIX)],
                             path
                         );
                         assert.equal(
@@ -396,7 +440,7 @@ export async function runChecks(files, table) {
                     'run',
                     '--rm',
                     ...relayArgs(root, {
-                        NGINX_ENVSUBST_FILTER: '^CMZ_',
+                        NGINX_ENVSUBST_FILTER: FILTER,
                         [service.variable]: 'http://svc:8000/',
                     }),
                     nginxImage(),
@@ -410,13 +454,13 @@ export async function runChecks(files, table) {
                 '$host',
                 '$scheme',
                 '$uri',
-                '$cmz_cache_control',
-                '$cmz_forwarded_proto',
+                `$${forms.snake}cache_control`,
+                `$${forms.snake}forwarded_proto`,
                 '$proxy_add_x_forwarded_for',
             ])
                 assert.ok(rendered.includes(name), name);
             assert.equal(
-                rendered.includes('${CMZ_'),
+                rendered.includes('${' + forms.env),
                 false,
                 'variable non substituée'
             );
@@ -449,7 +493,7 @@ export async function runChecks(files, table) {
                 );
             });
         };
-        const base = { NGINX_ENVSUBST_FILTER: '^CMZ_' };
+        const base = { NGINX_ENVSUBST_FILTER: FILTER };
         const v = service.variable;
         await failure(
             'credentials',
@@ -476,19 +520,22 @@ export async function runChecks(files, table) {
         await failure(
             'filter-absent',
             { [v]: 'http://svc:8000/' },
-            /CMZ_ENVSUBST_FILTER_INVALID/
+            new RegExp(escapeRegExp(`${forms.env}ENVSUBST_FILTER_INVALID`))
         );
         // Garde : un amont résolvable (127.0.0.1) pour que seul l'échec de la
         // garde puisse arrêter le conteneur.
         const resolvable = { ...base, [v]: 'http://127.0.0.1:8000/' };
-        const guard = /unknown "cmz_upstreams_validated" variable/i;
+        const guard = new RegExp(
+            `unknown "${escapeRegExp(forms.snake)}upstreams_validated" variable`,
+            'i'
+        );
         await failure('envsh-not-mounted', resolvable, guard, {
             mountEnvsh: false,
         });
-        await chmod(join(root, '15-cmz-upstreams.envsh'), 0o644);
+        await chmod(join(root, ENVSH), 0o644);
         await failure('envsh-not-executable', resolvable, guard);
-        await chmod(join(root, '15-cmz-upstreams.envsh'), 0o755);
-        await rm(join(root, 'cmz', 'security-headers.conf'));
+        await chmod(join(root, ENVSH), 0o755);
+        await rm(join(root, HOST_CONF, 'security-headers.conf'));
         await failure(
             '11-headers-file-absent',
             resolvable,
@@ -566,7 +613,7 @@ export const MUTATIONS = [
             ...f,
             template: f.template.replace(
                 'try_files $uri /index.html;',
-                'try_files $uri /index.html;\n        add_header X-Cmz-Test "1";'
+                'try_files $uri /index.html;\n        add_header X-Location-Probe "1";'
             ),
         }),
         '1-header-matrix',
@@ -576,7 +623,10 @@ export const MUTATIONS = [
         (f) => ({
             ...f,
             template: f.template.replace(
-                /^ {4}set \$cmz_relay_guard .*\n/m,
+                new RegExp(
+                    `^ {4}set \\$${escapeRegExp(forms.snake)}relay_guard .*\\n`,
+                    'm'
+                ),
                 ''
             ),
         }),
@@ -587,8 +637,8 @@ export const MUTATIONS = [
         (f) => ({
             ...f,
             template: f.template.replace(
-                'set $cmz_relay_guard',
-                'set $cmz_upstreams_validated'
+                `set $${forms.snake}relay_guard`,
+                `set $${forms.snake}upstreams_validated`
             ),
         }),
         '4-envsh-not-executable',
@@ -598,8 +648,8 @@ export const MUTATIONS = [
         (f) => ({
             ...f,
             envsh: f.envsh.replace(
-                'cmz_fail "$1_INVALID"\n}',
-                'cmz_fail "$1_INVALID $cmz_value"\n}'
+                `${forms.snake}fail "$1_INVALID"\n}`,
+                `${forms.snake}fail "$1_INVALID $${forms.snake}value"\n}`
             ),
         }),
         '4-credentials',

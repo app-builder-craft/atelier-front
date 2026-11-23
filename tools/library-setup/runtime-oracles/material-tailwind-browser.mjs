@@ -8,9 +8,20 @@ import {
     removeTree,
     safePath,
 } from './support.mjs';
+import {
+    escapeRegExp,
+    SIGNATURE,
+    signatureName,
+} from '../../generator-platform/core/atelier-signature.mjs';
 
-const BROWSER_PROBE = 'cmz-coexistence-probe.html';
-const SOURCE_PROBE = 'cmz-coexistence-source-probe.html';
+const BROWSER_PROBE = `${signatureName('coexistence-probe')}.html`;
+const SOURCE_PROBE = `${signatureName('coexistence-source-probe')}.html`;
+// Identifiant du résultat de la sonde, nommé par la signature de l'atelier.
+const RESULT_ID = signatureName('result');
+const RESULT_PATTERN = new RegExp(
+    `<pre id="${escapeRegExp(RESULT_ID)}">([^<]*)<\\/pre>`
+);
+const BROWSER_PROFILE = `node_modules/${SIGNATURE.dir}-browser-profile`;
 
 function fail(message) {
     throw new Error(`library runtime proof: ${message}`);
@@ -28,7 +39,7 @@ export function browserProbeHtml(compiledCss) {
 </style></head><body>
 <button id="unlayered" class="mat-mdc-button">M</button>
 <div id="utility" class="text-[#123456]">T</div>
-<pre id="cmz-result"></pre>
+<pre id="${RESULT_ID}"></pre>
 <script>
 const html = getComputedStyle(document.documentElement);
 const button = getComputedStyle(document.getElementById('unlayered'));
@@ -37,7 +48,7 @@ const tokens = Array.from(document.styleSheets)
     .flatMap((sheet) => { try { return Array.from(sheet.cssRules); } catch { return []; } })
     .flatMap((rule) => (rule.style ? Array.from(rule.style) : []))
     .filter((property) => property.startsWith('--mat-'));
-document.getElementById('cmz-result').textContent = JSON.stringify({
+document.getElementById('${RESULT_ID}').textContent = JSON.stringify({
     tokenCount: new Set(tokens).size,
     tokenResolved: html.getPropertyValue(tokens[0] || '--absent').trim(),
     unlayeredBorderWidth: button.borderTopWidth,
@@ -47,7 +58,7 @@ document.getElementById('cmz-result').textContent = JSON.stringify({
 }
 
 export function assertBrowserCoexistence(raw) {
-    const match = /<pre id="cmz-result">([^<]*)<\/pre>/.exec(raw);
+    const match = RESULT_PATTERN.exec(raw);
     if (!match || !match[1].trim()) {
         fail('la sonde navigateur n’a produit aucun résultat exploitable');
     }
@@ -122,7 +133,7 @@ export function proveMaterialTailwindBrowser(context) {
                 '--disable-gpu',
                 '--no-sandbox',
                 '--disable-dev-shm-usage',
-                '--user-data-dir={{candidate}}/node_modules/.cmz-browser-profile',
+                `--user-data-dir={{candidate}}/${BROWSER_PROFILE}`,
                 '--dump-dom',
                 `file://{{candidate}}/${relative(context.workspace, probe)}`,
             ],

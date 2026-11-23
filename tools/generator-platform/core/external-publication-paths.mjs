@@ -5,6 +5,7 @@ import {
     externalFailure,
     readProductFile,
 } from './external-application-paths.mjs';
+import { RENAME_TOOL } from './application-ownership.mjs';
 import { sha256 } from './generation-manifest.mjs';
 
 export const ACTION_REQUEST_TOOL = 'generate:action-request';
@@ -53,10 +54,15 @@ export async function ownedAppFile(app, path) {
 }
 
 // Dernier outil qui a publié ce fichier ; `null` pour un fichier de la coque.
+// Un renommage du préfixe n'en est pas un : il réécrit en `q` la sortie de la
+// coque ou de la composition, prouvée égale à leur rendu (phase `derived`),
+// et l'auteur reste le leur.
 export function publishingTool(manifest, path) {
     return (
-        manifest.ownership.publications.findLast((record) =>
-            record.files.some((file) => file.path === path)
+        manifest.ownership.publications.findLast(
+            (record) =>
+                record.tool !== RENAME_TOOL &&
+                record.files.some((file) => file.path === path)
         )?.tool ?? null
     );
 }

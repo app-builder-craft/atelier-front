@@ -22,6 +22,10 @@ import {
     permissionViolations,
     workflowEvents,
 } from './check-workflow-privileges.mjs';
+import {
+    escapeRegExp,
+    toolEnv,
+} from './generator-platform/core/atelier-signature.mjs';
 
 const TRUSTED = "github.ref == 'refs/heads/main'";
 
@@ -475,7 +479,10 @@ fs.writeFileSync(path, JSON.stringify(state));\n`
     assert.equal(state.created.length, 1);
     assert.equal(state.created[0].assignee, 'ismaelkouda');
     assert.match(state.created[0].body, /actions\/runs\/123/);
-    assert.match(state.created[0].body, /CMZ_NGINX_DIGEST_STALE/);
+    assert.match(
+        state.created[0].body,
+        new RegExp(escapeRegExp(toolEnv('NGINX_DIGEST_STALE')))
+    );
     assert.equal(state.edited, 1);
     state.issues[0].state = 'CLOSED';
     save(state);

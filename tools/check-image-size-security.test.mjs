@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, test } from 'node:test';
 
 import { verifyImageSizeSecurity } from './check-image-size-security.mjs';
+import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
 const roots = [];
 
@@ -16,7 +17,9 @@ afterEach(() => {
 });
 
 function fixture() {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-image-size-security-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('image-size-security-'))
+    );
     roots.push(root);
     execFileSync('git', ['init', '-q'], { cwd: root });
     writeFileSync(

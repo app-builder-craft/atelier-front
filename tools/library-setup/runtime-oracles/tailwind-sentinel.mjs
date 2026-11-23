@@ -7,8 +7,9 @@ import {
     removeTree,
     safePath,
 } from './support.mjs';
+import { signatureName } from '../../generator-platform/core/atelier-signature.mjs';
 
-const SENTINEL = 'cmz-proof-text-[#123456]';
+const SENTINEL = signatureName('proof-text-[#123456]');
 
 function fail(message) {
     throw new Error(`library runtime proof: ${message}`);

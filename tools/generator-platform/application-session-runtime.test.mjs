@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, rm } from 'node:fs/promises';
 import test from 'node:test';
+
 import ts from 'typescript';
 import { sessionRenderConfiguration } from './core/application-design-session.mjs';
 import {
@@ -12,6 +13,7 @@ import {
     createApplicationSessionFixture,
     SESSION_FIXTURE_DOMAINS,
 } from './test-support/application-session-fixture.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 
 const projectionSource = ts.transpileModule(renderSessionProjection(), {
     compilerOptions: {
@@ -93,6 +95,7 @@ for (const domain of SESSION_FIXTURE_DOMAINS) {
         const files = await renderAngularApplicationSession({
             design: fixture.design,
             experience: fixture.design.experiences[0],
+            prefix: FIXTURE_PREFIX,
         });
         for (const [destination, source] of Object.entries(
             SESSION_NATIVE_SOURCES

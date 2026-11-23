@@ -49,6 +49,15 @@ import {
     originalVerdict,
 } from './test-support/external-realization-replay.mjs';
 import { SECOND_PROBES } from './test-support/external-realization-second-probes.mjs';
+import { SIGNATURE } from './core/atelier-signature.mjs';
+
+// Attribut d'ancre de la grammaire (signature de l'atelier) et sa forme à
+// capitales initiales, pour les cas « autre casse » (M-1).
+const ID = SIGNATURE.idAttribute;
+const ID_TITLE = ID.replace(
+    /(^|-)([a-z])/g,
+    (_, dash, letter) => `${dash}${letter.toUpperCase()}`
+);
 
 const TS = 'page.component.ts';
 const HTML = 'page.component.html';
@@ -405,12 +414,9 @@ test('X4-sécurité : chaque règle de la réalisation refuse sa violation et ac
         [
             'identifiant dans page.component.ts',
             edit(TS, (text) =>
-                text.replace(
-                    "selector: 'app-",
-                    "// data-cmz-id\n    selector: 'app-"
-                )
+                text.replace("selector: 'app-", `// ${ID}\n    selector: 'app-`)
             ),
-            'data-cmz-id belongs to the template, not page.component.ts',
+            `${ID} belongs to the template, not page.component.ts`,
         ],
         // Globaux, propriétés, clés calculées, chaînes assemblées.
         [
@@ -490,18 +496,18 @@ test('X4-sécurité : chaque règle de la réalisation refuse sa violation et ac
         ],
         [
             'identifiant lié, autre casse (M-1)',
-            append(HTML, '<p [attr.Data-Cmz-Id]="announcement()"></p>\n'),
-            `attribute binding forbidden in ${HTML}: attr.Data-Cmz-Id (aria-* only)`,
+            append(HTML, `<p [attr.${ID_TITLE}]="announcement()"></p>\n`),
+            `attribute binding forbidden in ${HTML}: attr.${ID_TITLE} (aria-* only)`,
         ],
         [
             'identifiant lié en propriété',
-            append(HTML, '<p [data-cmz-id]="announcement()"></p>\n'),
-            `property binding forbidden in ${HTML}: data-cmz-id`,
+            append(HTML, `<p [${ID}]="announcement()"></p>\n`),
+            `property binding forbidden in ${HTML}: ${ID}`,
         ],
         [
             'identifiant statique, autre casse (M-1)',
-            append(HTML, '<p DATA-CMZ-ID="remember-me"></p>\n'),
-            `data-cmz-id not declared by the page contract in ${HTML}: "remember-me"`,
+            append(HTML, `<p ${ID.toUpperCase()}="remember-me"></p>\n`),
+            `${ID} not declared by the page contract in ${HTML}: "remember-me"`,
         ],
         [
             'gestionnaire en ligne',

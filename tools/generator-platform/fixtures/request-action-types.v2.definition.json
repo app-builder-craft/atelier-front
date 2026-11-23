@@ -8,9 +8,9 @@
   },
   "backend_contract": {
     "uri": "tools/generator-platform/fixtures/request-action-types.backend-contract.json",
-    "id": "cmz-request-action-types",
+    "id": "fixture-request-action-types",
     "version": "1.0.0",
-    "sha256": "7b261ae9fd2cb2f037e4c26416b373db4795ba801e63d66f0b2840c1a991edec"
+    "sha256": "f5771a31212bd729831e5e5541a54588195e62622e69ff696246687ce731ea6e"
   },
   "operations": [
     {

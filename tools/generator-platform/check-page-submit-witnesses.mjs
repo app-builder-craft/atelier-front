@@ -27,6 +27,10 @@ import { tmpdir } from 'node:os';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SIGNATURE_FILES, signatureName } from './core/atelier-signature.mjs';
+
+const WITNESS = signatureName('witness');
+
 export const WITNESSES = Object.freeze([
     { id: 'false', method: 'returnsFalse', expected: 0, logged: false },
     { id: 'throws', method: 'throwsError', expected: 0, logged: true },
@@ -38,7 +42,7 @@ export const WITNESSES = Object.freeze([
 export function witnessPage(selector) {
     const forms = WITNESSES.map(
         ({ id, method }) =>
-            `<form id="w-${id}" action="/cmz-witness/${id}" (submit)="${method}()"><input name="w" value="1"><button id="b-${id}" type="submit">${id}</button></form>`
+            `<form id="w-${id}" action="/${WITNESS}/${id}" (submit)="${method}()"><input name="w" value="1"><button id="b-${id}" type="submit">${id}</button></form>`
     ).join('\n');
     return {
         'page.component.ts': `import { ChangeDetectionStrategy, Component } from '@angular/core';
@@ -54,7 +58,7 @@ export class PageComponent {
     }
 
     protected throwsError(): false {
-        throw new Error('cmz-witness');
+        throw new Error('${WITNESS}');
     }
 
     protected returnsUndefined(): void {
@@ -85,7 +89,7 @@ export async function witnessTarget(root) {
                 const selector = /selector: '([^']+)'/.exec(source)?.[1];
                 const contract = JSON.parse(
                     await readFile(
-                        join(apps, app, '.cmz', 'pages', `${page}.json`),
+                        join(apps, app, SIGNATURE_FILES.pages, `${page}.json`),
                         'utf8'
                     )
                 );
@@ -148,8 +152,8 @@ export async function measureWitnesses({ dist, path, browser }) {
     const server = createServer(async (request, response) => {
         const pathname = new URL(request.url ?? '/', 'http://localhost')
             .pathname;
-        if (pathname.startsWith('/cmz-witness/'))
-            hits.push(pathname.slice('/cmz-witness/'.length));
+        if (pathname.startsWith(`/${WITNESS}/`))
+            hits.push(pathname.slice(`/${WITNESS}/`.length));
         const file = resolve(dist, '.' + pathname);
         let bytes;
         let extension = extname(file);
@@ -198,7 +202,7 @@ export async function measureWitnesses({ dist, path, browser }) {
             await page.waitForTimeout(1500);
             const submissions =
                 hits.filter((hit) => hit === witness.id).length - before;
-            const logged = errors.some((text) => text.includes('cmz-witness'));
+            const logged = errors.some((text) => text.includes(WITNESS));
             results.push({
                 id: witness.id,
                 submissions,
@@ -253,7 +257,9 @@ async function main() {
             'utf8'
         )
     ).version;
-    const copy = await mkdtemp(join(tmpdir(), 'cmz-submit-witnesses-'));
+    const copy = await mkdtemp(
+        join(tmpdir(), signatureName('submit-witnesses-'))
+    );
     try {
         await cp(target.product, copy, {
             recursive: true,

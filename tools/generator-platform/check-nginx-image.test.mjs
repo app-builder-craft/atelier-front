@@ -12,6 +12,7 @@ import {
     pinnedNginxImage,
     readNginxHarnessDockerfile,
 } from './check-nginx-image.mjs';
+import { toolEnv } from './core/atelier-signature.mjs';
 import { nginxImage } from './renderers/external-relay-renderer.mjs';
 
 const HEX = 'ab'.repeat(32);
@@ -94,7 +95,7 @@ test('(a) la commande sur le dépôt réel : vert et référence complète', () 
     assert.equal(result.status, 0, result.stderr);
     assert.equal(
         result.stdout,
-        `CMZ_NGINX_IMAGE_OK ${pinnedNginxImage(readNginxHarnessDockerfile()).reference}\n`
+        `${toolEnv('NGINX_IMAGE_OK')} ${pinnedNginxImage(readNginxHarnessDockerfile()).reference}\n`
     );
 });
 

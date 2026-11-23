@@ -5,6 +5,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import { SIGNATURE } from '../core/atelier-signature.mjs';
+
 const html = (text) =>
     String(text)
         .replaceAll('&', '&amp;')
@@ -117,7 +119,7 @@ function template(page) {
             <label for="${control.id}-input">${html(control.label)}</label>
             <input
                 id="${control.id}-input"
-                data-cmz-id="${control.id}"
+                ${SIGNATURE.idAttribute}="${control.id}"
                 name="${control.id}"
                 type="${control.kind === 'password' ? 'password' : 'text'}"
                 autocomplete="${control.kind === 'password' ? 'current-password' : 'username'}"
@@ -132,20 +134,20 @@ function template(page) {
     );
     const states = page.states.map(
         (state) => `        @case (${literal(state.id).replaceAll('"', "'")}) {
-            <p data-cmz-id="${state.id}" class="state state-${state.kind}">${html(state.description)}</p>
+            <p ${SIGNATURE.idAttribute}="${state.id}" class="state state-${state.kind}">${html(state.description)}</p>
         }`
     );
-    return `<main data-cmz-id="${region.id}" aria-label="${html(region.accessible_name)}" class="page">
-    <h1 data-cmz-id="${heading.id}">${html(heading.content)}</h1>
+    return `<main ${SIGNATURE.idAttribute}="${region.id}" aria-label="${html(region.accessible_name)}" class="page">
+    <h1 ${SIGNATURE.idAttribute}="${heading.id}">${html(heading.content)}</h1>
     <p class="visually-hidden" role="status" aria-live="polite">{{ announcement() }}</p>
     <div class="status">
         @switch (state()) {
 ${states.join('\n')}
         }
     </div>
-    <form data-cmz-id="${form.id}" aria-label="${html(form.accessible_name)}" (submit)="submit($event)">
+    <form ${SIGNATURE.idAttribute}="${form.id}" aria-label="${html(form.accessible_name)}" (submit)="submit($event)">
 ${controls.join('\n')}
-        <button data-cmz-id="${action.id}" type="submit" [disabled]="state() !== '${action.available_in_state_ids[0]}'">
+        <button ${SIGNATURE.idAttribute}="${action.id}" type="submit" [disabled]="state() !== '${action.available_in_state_ids[0]}'">
             ${html(action.label)}
         </button>
     </form>
@@ -244,7 +246,7 @@ function render(composition: () => unknown): ComponentFixture<PageComponent> {
 }
 
 function type(fixture: ComponentFixture<PageComponent>, id: string, value: string): void {
-    const input = fixture.nativeElement.querySelector(\`[data-cmz-id="\${id}"]\`) as HTMLInputElement;
+    const input = fixture.nativeElement.querySelector(\`[${SIGNATURE.idAttribute}="\${id}"]\`) as HTMLInputElement;
     input.value = value;
     input.dispatchEvent(new Event('input'));
 }
@@ -257,7 +259,7 @@ function send(fixture: ComponentFixture<PageComponent>): void {
 }
 
 const visible = (fixture: ComponentFixture<PageComponent>, id: string): boolean =>
-    fixture.nativeElement.querySelector(\`[data-cmz-id="\${id}"]\`) !== null;
+    fixture.nativeElement.querySelector(\`[${SIGNATURE.idAttribute}="\${id}"]\`) !== null;
 
 describe('Page ${page.id}', () => {
     afterEach(() => TestBed.resetTestingModule());
@@ -267,7 +269,7 @@ describe('Page ${page.id}', () => {
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelector('h1')?.textContent?.trim()).toBe(${literal(page.title)});
         for (const id of ${JSON.stringify(controls)}) {
-            const input = root.querySelector(\`[data-cmz-id="\${id}"]\`) as HTMLInputElement;
+            const input = root.querySelector(\`[${SIGNATURE.idAttribute}="\${id}"]\`) as HTMLInputElement;
             expect(root.querySelector(\`label[for="\${input.id}"]\`)).not.toBeNull();
             expect(input.required).toBe(true);
         }
@@ -452,7 +454,7 @@ function render(submit: Submit, fieldErrors: Readonly<Record<string, readonly st
 }
 
 function type(fixture: ComponentFixture<PageComponent>, id: string, value: string): void {
-    const input = fixture.nativeElement.querySelector(\`[data-cmz-id="\${id}"]\`) as HTMLInputElement;
+    const input = fixture.nativeElement.querySelector(\`[${SIGNATURE.idAttribute}="\${id}"]\`) as HTMLInputElement;
     input.value = value;
     input.dispatchEvent(new Event('input'));
 }
@@ -465,7 +467,7 @@ function send(fixture: ComponentFixture<PageComponent>): Event {
 }
 
 const visible = (fixture: ComponentFixture<PageComponent>, id: string): boolean =>
-    fixture.nativeElement.querySelector(\`[data-cmz-id="\${id}"]\`) !== null;
+    fixture.nativeElement.querySelector(\`[${SIGNATURE.idAttribute}="\${id}"]\`) !== null;
 
 describe('Page ${page.id}', () => {
     afterEach(() => TestBed.resetTestingModule());
@@ -475,7 +477,7 @@ describe('Page ${page.id}', () => {
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelector('h1')?.textContent?.trim()).toBe(${literal(page.title)});
         for (const id of ${JSON.stringify(controls)}) {
-            const input = root.querySelector(\`[data-cmz-id="\${id}"]\`) as HTMLInputElement;
+            const input = root.querySelector(\`[${SIGNATURE.idAttribute}="\${id}"]\`) as HTMLInputElement;
             expect(root.querySelector(\`label[for="\${input.id}"]\`)).not.toBeNull();
             expect(input.required).toBe(true);
         }
@@ -531,7 +533,10 @@ ${action.input_bindings.map((binding) => `            ${binding.target_name}: 'v
 
 function evidence(page, contractSha256) {
     const map = (ids) =>
-        ids.map((id) => ({ id, selector: `[data-cmz-id="${id}"]` }));
+        ids.map((id) => ({
+            id,
+            selector: `[${SIGNATURE.idAttribute}="${id}"]`,
+        }));
     return {
         schema_version: '1.0.0',
         kind: 'page-realization-evidence',

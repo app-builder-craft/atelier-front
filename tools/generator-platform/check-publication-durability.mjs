@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { tmpdir } from 'node:os';
 
+import { toolEnv } from './core/atelier-signature.mjs';
 import { assertSupportedPublicationEnvironment } from './core/publication-durability.mjs';
 
 const args = process.argv.slice(2);
-let expectedProfileId = process.env.CMZ_PUBLICATION_PROFILE;
-let expectedPlatform = process.env.CMZ_PUBLICATION_PLATFORM;
+let expectedProfileId = process.env[toolEnv('PUBLICATION_PROFILE')];
+let expectedPlatform = process.env[toolEnv('PUBLICATION_PLATFORM')];
 for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--profile' && args[index + 1]) {
         expectedProfileId = args[index + 1];

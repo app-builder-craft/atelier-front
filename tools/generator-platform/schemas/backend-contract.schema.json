@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/backend-contract.schema.json",
-  "title": "CMZ Canonical Backend Contract",
+  "$id": "https://atelier.local/schemas/generator-platform/backend-contract.schema.json",
+  "title": "Atelier Canonical Backend Contract",
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -10,6 +10,7 @@ import {
     planExternalActionRequest,
     publishExternalActionRequest,
 } from '../core/external-action-request.mjs';
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { verifyGeneratedTree } from '../core/external-application-paths.mjs';
 import { TOOLS_ROOT } from '../test-support/external-application-fixture.mjs';
 import { assertProductOnlyImports } from '../test-support/external-publication-fixture.mjs';
@@ -58,8 +59,8 @@ export async function proveNativeActionRequest(session, shell) {
     assert.equal(labels.length, 5);
     await verifyGeneratedTree(plan.outputAbsolute, plan.files);
     // T11 : la sortie n'importe que les paquets installés du produit et ses
-    // propres fichiers ; aucun module cmz, aucun chemin de l'atelier.
-    const manifest = JSON.parse(plan.files['.cmz/app-manifest.json']);
+    // propres fichiers ; aucun module de l'atelier, aucun de ses chemins.
+    const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
     assertProductOnlyImports(
         Object.fromEntries(
             plan.changes.map(({ path }) => [path, plan.files[path]])

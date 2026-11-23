@@ -18,6 +18,11 @@ import {
     resolutionPolicySha256,
 } from './resolution-policy.mjs';
 import { availableSandboxBackends, runConfined } from './sandbox.mjs';
+import {
+    signatureName,
+    SIGNATURE,
+    toolEnv,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 const repositoryRoot = new URL('../..', import.meta.url).pathname;
 
@@ -38,7 +43,7 @@ function forEachBackend(title, body) {
 
 async function fixture(t) {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-sandbox-integration-'))
+        await mkdtemp(join(tmpdir(), signatureName('sandbox-integration-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const paths = {
@@ -65,7 +70,7 @@ forEachBackend(
                 : join(paths.repository, 'package.json');
         const forbiddenCache =
             backend === 'docker'
-                ? '/cmz-cache/secret'
+                ? `/${signatureName('cache')}/secret`
                 : join(paths.cache, 'secret');
         const repositoryTarget =
             backend === 'docker'
@@ -132,7 +137,7 @@ forEachBackend(
         await mkdir(join(paths.candidate, 'node_modules/protected'), {
             recursive: true,
         });
-        await mkdir(join(paths.candidate, '.cmz-oracle-runtime'));
+        await mkdir(join(paths.candidate, `${SIGNATURE.dir}-oracle-runtime`));
         await writeFile(
             join(paths.candidate, 'node_modules/protected/index.js'),
             'immutable\n'
@@ -152,8 +157,9 @@ try { fs.writeFileSync(${JSON.stringify(forbiddenRepository)}, 'mutated'); resul
 const timer = setTimeout(() => { result.network = 'timeout'; console.log(JSON.stringify(result)); }, 5000);
 fetch('https://example.com').then(() => { clearTimeout(timer); result.network = true; console.log(JSON.stringify(result)); }).catch((error) => { clearTimeout(timer); result.network = error.cause?.code || error.name; console.log(JSON.stringify(result)); });
 `;
-        const previous = process.env.CMZ_PAGE_ORACLE_SECRET;
-        process.env.CMZ_PAGE_ORACLE_SECRET = 'must-never-enter-the-sandbox';
+        const previous = process.env[toolEnv('PAGE_ORACLE_SECRET')];
+        process.env[toolEnv('PAGE_ORACLE_SECRET')] =
+            'must-never-enter-the-sandbox';
         let execution;
         try {
             execution = runConfined({
@@ -165,13 +171,13 @@ fetch('https://example.com').then(() => { clearTimeout(timer); result.network = 
                 argv: ['-e', child],
                 policy,
                 readOnlyCandidatePaths: ['node_modules'],
-                nxRoot: '.cmz-oracle-runtime',
+                nxRoot: `${SIGNATURE.dir}-oracle-runtime`,
                 allowLoopback: true,
             });
         } finally {
             if (previous === undefined)
-                delete process.env.CMZ_PAGE_ORACLE_SECRET;
-            else process.env.CMZ_PAGE_ORACLE_SECRET = previous;
+                delete process.env[toolEnv('PAGE_ORACLE_SECRET')];
+            else process.env[toolEnv('PAGE_ORACLE_SECRET')] = previous;
         }
         assert.equal(execution.status, 0, execution.stderr);
         const observed = JSON.parse(execution.stdout.trim());
@@ -273,7 +279,7 @@ const os = require('node:os');
 const path = require('node:path');
 const result = { directories: {} };
 try {
-    fs.writeFileSync(path.join(os.tmpdir(), 'cmz-tmpdir-probe'), 'x');
+    fs.writeFileSync(path.join(os.tmpdir(), '${signatureName('tmpdir-probe')}'), 'x');
     result.tmpdirWrite = true;
 } catch (error) { result.tmpdirWrite = error.code; }
 for (const key of ['NX_CACHE_DIRECTORY', 'NX_WORKSPACE_DATA_DIRECTORY', 'NX_NATIVE_FILE_CACHE_DIRECTORY']) {
@@ -362,8 +368,8 @@ forEachBackend(
                 : repositoryRoot;
         const outsideTarget =
             backend === 'docker'
-                ? '/etc/cmz-escape'
-                : '/tmp/cmz-renderer-escape';
+                ? `/etc/${signatureName('escape')}`
+                : `/tmp/${signatureName('renderer-escape')}`;
         const child = String.raw`
 const fs = require('node:fs');
 const result = {};

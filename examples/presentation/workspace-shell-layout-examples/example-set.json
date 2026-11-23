@@ -31,8 +31,8 @@
     {
       "path": "examples/presentation/workspace-shell-layout-examples/mockup.html",
       "media_type": "text/html",
-      "bytes": 9885,
-      "sha256": "26024284f8567be8cd2e79077b88bf435564711e6695bdd42f9ce8f028de7fe5",
+      "bytes": 9880,
+      "sha256": "925d67a9d86ebe8d896e685a1e411858c5ab41cbb59be79a143535b0d48eecba",
       "authority": "reproduction-only"
     },
     {
@@ -45,8 +45,8 @@
     {
       "path": "examples/presentation/workspace-shell-layout-examples/render.mjs",
       "media_type": "text/javascript",
-      "bytes": 1863,
-      "sha256": "0d4909dfbb002fe320ac02d6847990b7132b3b4eeda54f36df592a32ec860cdc",
+      "bytes": 1968,
+      "sha256": "8da45ba9a52b2c56f1e700ce961f0baf51a7547a3567999844bd74ea9248a238",
       "authority": "reproduction-only"
     }
   ],

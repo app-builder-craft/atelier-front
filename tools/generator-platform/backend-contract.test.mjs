@@ -52,7 +52,7 @@ function validContract(
                 base_urls: [
                     {
                         environment: 'production',
-                        url: 'https://cmz-service-api.example/catalogue/v1.0/',
+                        url: 'https://service-api.example/catalogue/v1.0/',
                     },
                 ],
                 evidence: evidence('$.service'),

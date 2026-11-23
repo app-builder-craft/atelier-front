@@ -6,10 +6,14 @@ import {
     publicApplicationWorkspacePlan,
     publishApplicationWorkspace,
 } from './generator-platform/core/application-workspace.mjs';
+import { toolEnv } from './generator-platform/core/atelier-signature.mjs';
 import { repositoryRoot } from './generator-platform/validate-ir.mjs';
 
+// Code d'erreur d'usage de la ligne de commande.
+const CLI_USAGE = toolEnv('CLI_USAGE');
+
 function fail(message) {
-    throw Object.assign(new Error(message), { code: 'CMZ_CLI_USAGE' });
+    throw Object.assign(new Error(message), { code: CLI_USAGE });
 }
 
 export function parseArgs(argv) {
@@ -24,6 +28,9 @@ export function parseArgs(argv) {
         ['--profiles', 'profiles'],
         ['--github-repository', 'githubRepository'],
         ['--review-owner', 'reviewOwner'],
+        // Préfixe du produit, facultatif : sans lui, le plan propose les
+        // initiales du nom du dépôt ; il est scellé dans l'espace.
+        ['--prefix', 'prefix'],
         ['--apply', 'expectedPlanId'],
     ]);
     const seen = new Set();
@@ -82,7 +89,7 @@ if (
 ) {
     main().catch((error) => {
         const message =
-            error.code === 'CMZ_CLI_USAGE' ||
+            error.code === CLI_USAGE ||
             error.message.startsWith('external application:') ||
             error.message.startsWith('library dependency resolution:')
                 ? error.message

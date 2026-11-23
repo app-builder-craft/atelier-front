@@ -12,6 +12,10 @@ import {
     angularTailwindSources,
     scaffoldTailwind,
 } from '../scaffold-tailwind-core.mjs';
+import {
+    SIGNATURE,
+    SIGNATURE_FILES,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 const ADAPTER_VERSION = '1.0.0';
 const MATERIAL_THEME = `// Include theming for Angular Material with \`mat.theme()\`.
@@ -143,7 +147,7 @@ function appContext(workspace, app, platform) {
 }
 
 function updateManifest(workspace, appRoot, platform, library) {
-    const path = `${appRoot}/.cmz/libraries.json`;
+    const path = `${appRoot}/${SIGNATURE_FILES.libraries}`;
     const manifest = readJson(workspace, path);
     if (
         manifest.schema_version !== '1.0.0' ||
@@ -200,7 +204,7 @@ function applyAngularTailwind(workspace, context, track) {
     writeOwned(
         workspace,
         `${context.sourceRoot}/tailwind.css`,
-        `/* Adaptateur qualifié CMZ, tailwindcss@${version}. */\n${css}`,
+        `/* Adaptateur qualifié ${SIGNATURE.name}, tailwindcss@${version}. */\n${css}`,
         { createOnly: true }
     );
     const styles = context.project.targets?.build?.options?.styles;

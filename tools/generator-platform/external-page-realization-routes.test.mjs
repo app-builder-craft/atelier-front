@@ -10,9 +10,10 @@ import test from 'node:test';
 import { n2DeclaredRoutes } from './proof-support/external-page-realization-native.mjs';
 import { SESSION_FIXTURE_DOMAINS } from './test-support/application-session-fixture.mjs';
 import { writeExternalSessionDesign } from './test-support/external-session-fixture.mjs';
+import { signatureName } from './core/atelier-signature.mjs';
 
 async function sessionInput(t, domain) {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-n2-routes-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('n2-routes-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     return writeExternalSessionDesign(root, domain);
 }

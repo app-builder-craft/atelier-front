@@ -8,9 +8,9 @@
   },
   "backend_contract": {
     "uri": "tools/generator-platform/fixtures/store-select.backend-contract.json",
-    "id": "cmz-store-select",
+    "id": "fixture-store-select",
     "version": "1.0.0",
-    "sha256": "993cf365b1cebe79c2e9a7967efb0b205e53f65d3cbf00ac48fe96341fc3cf7b"
+    "sha256": "38bd7d470a9a1762c493c49b1bd8ef283bcbc449063d0bd07ff01d42150aab0e"
   },
   "operations": [
     {

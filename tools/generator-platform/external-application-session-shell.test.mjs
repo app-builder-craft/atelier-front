@@ -15,14 +15,18 @@ import {
     pathExists,
     verifyGeneratedTree,
 } from './core/external-application-paths.mjs';
-import { EXTERNAL_WORKSPACE_CMZ as CMZ } from './renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from './renderers/application-workspace-renderer.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import {
-    EXTERNAL_CSP_HEADER,
+    externalCspHeader,
     EXTERNAL_CSP_HEADER_PATH,
-    EXTERNAL_CSP_META,
+    externalCspMeta,
 } from './renderers/external-content-security-policy.mjs';
-import { RELAY_FILES } from './renderers/external-relay-renderer.mjs';
+import {
+    RELAY_FILES,
+    relayEnvshPath,
+} from './renderers/external-relay-renderer.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import { createApplicationSessionFixture } from './test-support/application-session-fixture.mjs';
 import {
     hash,
@@ -33,12 +37,13 @@ import {
 } from './test-support/external-application-fixture.mjs';
 import { runDocumentCli } from './test-support/external-document-fixture.mjs';
 import {
-    CMZ_MODULE_SPECIFIER,
     createAppArguments,
+    INTERNAL_MODULE_SPECIFIER,
     SESSION_FIXTURE_DOMAINS,
     sessionShellOptions,
     writeExternalSessionDesign,
 } from './test-support/external-session-fixture.mjs';
+import { SIGNATURE_FILES, INTERNAL } from './core/atelier-signature.mjs';
 
 async function sessionProduct(t, domain) {
     const fixture = await prepareFixture(t);
@@ -47,10 +52,14 @@ async function sessionProduct(t, domain) {
     return { ...fixture, input, shell: sessionShellOptions(input) };
 }
 
+// Politique de la coque au préfixe des produits fictifs.
+const EXTERNAL_CSP_META = externalCspMeta(FIXTURE_PREFIX);
+const EXTERNAL_CSP_HEADER = externalCspHeader(FIXTURE_PREFIX);
+
 const typescript = (plan) =>
     Object.entries(plan.files).filter(([path]) => path.endsWith('.ts'));
 
-test('X0 : deux produits fictifs planifient une coque Angular avec session, sans import cmz ni URL de service', async (t) => {
+test('X0 : deux produits fictifs planifient une coque Angular avec session, sans import de la portée de l’atelier ni URL de service', async (t) => {
     const plans = [];
     for (const domain of SESSION_FIXTURE_DOMAINS) {
         const product = await sessionProduct(t, domain);
@@ -78,7 +87,7 @@ test('X0 : deux produits fictifs planifient une coque Angular avec session, sans
         const source = typescript(plan)
             .map(([, content]) => content)
             .join('\n');
-        assert.doesNotMatch(source, CMZ_MODULE_SPECIFIER);
+        assert.doesNotMatch(source, INTERNAL_MODULE_SPECIFIER);
         assert.equal(
             typescript(plan).filter(([, content]) =>
                 /export const SKIP_AUTH =/.test(content)
@@ -106,7 +115,9 @@ test('X0 : deux produits fictifs planifient une coque Angular avec session, sans
             )
         );
         const entry = JSON.parse(
-            plan.files[`.cmz/pages/${product.input.entryPage.id}.json`]
+            plan.files[
+                `${SIGNATURE_FILES.pages}/${product.input.entryPage.id}.json`
+            ]
         );
         assert.equal(entry.experience.session.storage, 'memory');
         assert.equal(
@@ -172,7 +183,7 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
         assert.equal(await pathExists(plan.outputAbsolute), false);
         assert.equal(await pathExists(plan.candidate), false);
         const marker = await readFile(
-            join(product.root, '.cmz/application-workspace.json')
+            join(product.root, SIGNATURE_FILES.workspaceManifest)
         );
         const calls = [];
         const result = await publishExternalApplicationShell(
@@ -208,11 +219,11 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
         );
         assert.equal(
             calls.at(-1).args[0],
-            join(product.root, CMZ.support, 'check-workspace.mjs')
+            join(product.root, WORKSPACE.support, 'check-workspace.mjs')
         );
         await verifyGeneratedTree(plan.outputAbsolute, plan.files);
         assert.equal(await pathExists(plan.candidate), false);
-        const manifest = JSON.parse(plan.files['.cmz/app-manifest.json']);
+        const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
         assert.equal(manifest.design_ref.path, product.input.designPath);
         assert.ok(
             manifest.generated_files.some(
@@ -221,7 +232,7 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
         );
         assert.deepEqual(
             await readFile(
-                join(product.root, '.cmz/application-workspace.json')
+                join(product.root, SIGNATURE_FILES.workspaceManifest)
             ),
             marker
         );
@@ -296,6 +307,7 @@ test('X0 : la coque extérieure avec session porte son test de garde ; le mode a
                     designPath: `design/${domain}.json`,
                     designSha256: hash('mode'),
                     externalWorkspace,
+                    prefix: FIXTURE_PREFIX,
                 })
             ).files;
         const atelier = await render(false);
@@ -324,6 +336,7 @@ test('X0 : la coque extérieure avec session porte son test de garde ; le mode a
                 navigationSpec,
                 EXTERNAL_CSP_HEADER_PATH,
                 ...Object.values(RELAY_FILES),
+                relayEnvshPath(FIXTURE_PREFIX),
             ].sort()
         );
         assert.match(
@@ -333,9 +346,9 @@ test('X0 : la coque extérieure avec session porte son test de garde ; le mode a
         assert.match(external[spec], /from '\.\/session\.guard'/);
         assert.match(external[spec], /toBeInstanceOf\(UrlTree\)/);
         assert.ok(
-            JSON.parse(external['.cmz/app-manifest.json']).generated_files.some(
-                (entry) => entry.path === spec
-            )
+            JSON.parse(
+                external[SIGNATURE_FILES.appManifest]
+            ).generated_files.some((entry) => entry.path === spec)
         );
     }
 });
@@ -357,6 +370,7 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
                 designPath: 'design/csp.json',
                 designSha256: hash('csp'),
                 externalWorkspace,
+                prefix: FIXTURE_PREFIX,
             })
         ).files;
     const atelier = await render(false);
@@ -399,7 +413,7 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
             `add_header Content-Security-Policy "${EXTERNAL_CSP_HEADER}" always;`
         )
     );
-    const manifest = JSON.parse(external['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(external[SIGNATURE_FILES.appManifest]);
     for (const path of ['src/index.html', EXTERNAL_CSP_HEADER_PATH])
         assert.ok(
             manifest.generated_files.some((entry) => entry.path === path),
@@ -423,20 +437,20 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
 });
 
 // V9-R1 : l'oracle du test 37 refuse aussi un import sans `from`.
-test('X0 : l’oracle « aucun module cmz » voit chaque forme d’import, sans faux positif', () => {
+test('X0 : l’oracle « aucun module de l’atelier » voit chaque forme d’import, sans faux positif', () => {
     for (const source of [
-        "import { session } from '@cmz/shared-domain';",
-        "import '@cmz/x';",
-        'import "@cmz/x";',
-        "export * from '@cmz/x';",
-        "const lazy = await import('@cmz/x');",
-        'const old = require(`@cmz/x`);',
+        `import { session } from '${INTERNAL.scope}/shared-domain';`,
+        `import '${INTERNAL.scope}/x';`,
+        `import "${INTERNAL.scope}/x";`,
+        `export * from '${INTERNAL.scope}/x';`,
+        `const lazy = await import('${INTERNAL.scope}/x');`,
+        `const old = require(\`${INTERNAL.scope}/x\`);`,
     ])
-        assert.match(source, CMZ_MODULE_SPECIFIER, source);
+        assert.match(source, INTERNAL_MODULE_SPECIFIER, source);
     for (const source of [
         "import { inject } from '@angular/core';",
-        "import { tokens } from '@cmzx/y';",
-        '// cmz est le nom de l’atelier, pas un module.',
+        `import { tokens } from '${INTERNAL.scope}x/y';`,
+        `// ${INTERNAL.name} est le nom de l’atelier, pas un module.`,
     ])
-        assert.doesNotMatch(source, CMZ_MODULE_SPECIFIER, source);
+        assert.doesNotMatch(source, INTERNAL_MODULE_SPECIFIER, source);
 });

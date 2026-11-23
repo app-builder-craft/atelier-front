@@ -7,7 +7,10 @@
 //     attribution différentielle (violations de la sonde moins celles de la
 //     base, décalées de la longueur insérée). Un écart d'alignement est
 //     signalé, il ne fait pas échouer la preuve.
+import { SIGNATURE } from '../core/atelier-signature.mjs';
 import { pageGrammarFindings } from '../core/page-grammar/index.mjs';
+
+const MAIN = `<main ${SIGNATURE.idAttribute}="main" aria-label="Report form" class="page">`;
 
 // Carte d'ancres revue (v1 §6.5) : ancre de la base d'origine → ancre de la
 // base adaptée. Le texte inséré reste à l'octet.
@@ -19,8 +22,7 @@ export const ADAPTED_ANCHORS = Object.freeze({
     "        '(window:offline)': 'online.set(false)',\n    },":
         "        class: 'page-host',\n    },",
     "'(window:offline)': 'online.set(false)',": "class: 'page-host',",
-    '<main data-cmz-id="main" aria-label="Report form" class="page">':
-        '<main data-cmz-id="main" aria-label="Report form" class="page">',
+    [MAIN]: MAIN,
     'providers: [...PAGE_COMPOSITION_PROVIDERS],':
         'providers: [...PAGE_COMPOSITION_PROVIDERS],',
 });

@@ -21,9 +21,12 @@ import { renderReactSpaShell } from './renderers/react-spa-shell-renderer.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 import {
+    FIXTURE_PREFIX,
     sha256,
+    withProductPrefix,
     writeApplicationDesignFixture,
 } from './test-support/application-design-fixture.mjs';
+import { SIGNATURE_FILES, signatureName } from './core/atelier-signature.mjs';
 
 const applicationDesignSchema = JSON.parse(
     await readFile(
@@ -46,6 +49,8 @@ async function fixture() {
         root,
         backendContractSchema
     );
+    // Banc interne : la conception porte le préfixe du produit (1.2.0).
+    data.design = withProductPrefix(data.design);
     const designContent = Buffer.from(
         `${JSON.stringify(data.design, null, 2)}\n`
     );
@@ -170,23 +175,24 @@ test('le renderer produit routing, i18n, PWA et un contrat borné par page', asy
         appName: options.appName,
         designPath: options.designPath,
         designSha256: sha256(options.designContent),
+        prefix: FIXTURE_PREFIX,
     });
     for (const path of [
-        '.cmz/libraries.json',
+        SIGNATURE_FILES.libraries,
         'project.json',
         'src/app/access.guard.ts',
         'src/app/access.guard.spec.ts',
         'src/app/app.routes.ts',
         'public/manifest.webmanifest',
         'public/sw.js',
-        '.cmz/libraries.json',
-        '.cmz/app-manifest.json',
-        '.cmz/pages/page_1111111111111111.json',
-        '.cmz/pages/page_2222222222222222.json',
+        SIGNATURE_FILES.libraries,
+        SIGNATURE_FILES.appManifest,
+        `${SIGNATURE_FILES.pages}/page_1111111111111111.json`,
+        `${SIGNATURE_FILES.pages}/page_2222222222222222.json`,
     ]) {
         assert.ok(rendered.files[path], `missing ${path}`);
     }
-    assert.deepEqual(JSON.parse(rendered.files['.cmz/libraries.json']), {
+    assert.deepEqual(JSON.parse(rendered.files[SIGNATURE_FILES.libraries]), {
         schema_version: '1.0.0',
         kind: 'app-library-manifest',
         platform: 'angular',
@@ -223,11 +229,13 @@ test('le renderer produit routing, i18n, PWA et un contrat borné par page', asy
     );
     assert.match(
         rendered.files['src/app/access.guard.ts'],
-        /createBrowserAccessDecision\(window\.__cmzAppAccessContext\)/,
+        new RegExp(
+            `createBrowserAccessDecision\\(window\\.__${FIXTURE_PREFIX}AppAccessContext\\)`
+        ),
         'le shell doit fournir un point d’entrée host générique et fail-closed'
     );
     assert.doesNotMatch(
-        rendered.files['.cmz/pages/page_1111111111111111.json'],
+        rendered.files[`${SIGNATURE_FILES.pages}/page_1111111111111111.json`],
         /angular/i
     );
 });
@@ -240,6 +248,7 @@ test('le renderer produit directement des octets canoniques et les atteste', asy
         appName: options.appName,
         designPath: options.designPath,
         designSha256: sha256(options.designContent),
+        prefix: FIXTURE_PREFIX,
     });
     const prefixed = Object.fromEntries(
         Object.entries(rendered.files).map(([path, content]) => [
@@ -249,11 +258,11 @@ test('le renderer produit directement des octets canoniques et les atteste', asy
     );
     assert.deepEqual(await canonicalizeGeneratedFiles(prefixed), prefixed);
 
-    const manifest = JSON.parse(rendered.files['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(rendered.files[SIGNATURE_FILES.appManifest]);
     assert.deepEqual(
         manifest.generated_files,
         Object.entries(rendered.files)
-            .filter(([path]) => path !== '.cmz/app-manifest.json')
+            .filter(([path]) => path !== SIGNATURE_FILES.appManifest)
             .map(([path, content]) => ({
                 path,
                 bytes: Buffer.byteLength(content),
@@ -287,6 +296,7 @@ for (const protectedPage of [false, true]) {
             appName: options.appName,
             designPath: options.designPath,
             designSha256: sha256(JSON.stringify(options.data.design)),
+            prefix: FIXTURE_PREFIX,
         });
         const routes = rendered.files['src/app/app.routes.tsx'];
         if (protectedPage) {
@@ -311,29 +321,30 @@ test('le renderer React produit un shell SPA mono-stack borné par les mêmes co
         appName: options.appName,
         designPath: options.designPath,
         designSha256: sha256(options.designContent),
+        prefix: FIXTURE_PREFIX,
     });
     for (const path of [
-        '.cmz/libraries.json',
-        '.cmz/app-manifest.json',
+        SIGNATURE_FILES.libraries,
+        SIGNATURE_FILES.appManifest,
         'project.json',
         'vite.config.mts',
         'src/main.tsx',
         'src/app/app.routes.tsx',
         'src/app/access-policy.tsx',
         'src/app/access-policy.spec.ts',
-        '.cmz/pages/page_1111111111111111.json',
-        '.cmz/pages/page_2222222222222222.json',
+        `${SIGNATURE_FILES.pages}/page_1111111111111111.json`,
+        `${SIGNATURE_FILES.pages}/page_2222222222222222.json`,
     ]) {
         assert.ok(rendered.files[path], `missing ${path}`);
     }
-    assert.deepEqual(JSON.parse(rendered.files['.cmz/libraries.json']), {
+    assert.deepEqual(JSON.parse(rendered.files[SIGNATURE_FILES.libraries]), {
         schema_version: '1.0.0',
         kind: 'app-library-manifest',
         platform: 'react',
         libraries: [],
     });
     assert.equal(
-        JSON.parse(rendered.files['.cmz/app-manifest.json']).profile,
+        JSON.parse(rendered.files[SIGNATURE_FILES.appManifest]).profile,
         'react-spa'
     );
     assert.match(rendered.files['vite.config.mts'], /@vitejs\/plugin-react/);
@@ -353,10 +364,12 @@ test('le renderer React produit un shell SPA mono-stack borné par les mêmes co
     );
     assert.match(
         rendered.files['src/app/access-policy.tsx'],
-        /createBrowserAccessDecision\(\s*window\.__cmzAppAccessContext\s*\)/
+        new RegExp(
+            `createBrowserAccessDecision\\(\\s*window\\.__${FIXTURE_PREFIX}AppAccessContext\\s*\\)`
+        )
     );
     assert.doesNotMatch(
-        rendered.files['.cmz/pages/page_1111111111111111.json'],
+        rendered.files[`${SIGNATURE_FILES.pages}/page_1111111111111111.json`],
         /react/i
     );
     assert.equal(rendered.files['public/manifest.webmanifest'], undefined);
@@ -373,11 +386,11 @@ test('le renderer React produit un shell SPA mono-stack borné par les mêmes co
         ])
     );
     assert.deepEqual(await canonicalizeGeneratedFiles(prefixed), prefixed);
-    const manifest = JSON.parse(rendered.files['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(rendered.files[SIGNATURE_FILES.appManifest]);
     assert.deepEqual(
         manifest.generated_files,
         Object.entries(rendered.files)
-            .filter(([path]) => path !== '.cmz/app-manifest.json')
+            .filter(([path]) => path !== SIGNATURE_FILES.appManifest)
             .map(([path, content]) => ({
                 path,
                 bytes: Buffer.byteLength(content),
@@ -405,6 +418,7 @@ test('le renderer React refuse de revendiquer un mode hors ligne non implément�
                 appName: options.appName,
                 designPath: options.designPath,
                 designSha256: sha256(options.designContent),
+                prefix: FIXTURE_PREFIX,
             }),
         /does not claim an offline policy/
     );
@@ -419,6 +433,7 @@ test('échappe le titre métier dans chaque contexte HTML et SVG', async () => {
         appName: options.appName,
         designPath: options.designPath,
         designSha256: sha256(options.designContent),
+        prefix: FIXTURE_PREFIX,
     });
     for (const path of ['src/index.html', 'public/icon.svg']) {
         assert.doesNotMatch(rendered.files[path], /<script>/);
@@ -437,6 +452,7 @@ test('le service worker ne capture jamais API ni origine externe', async () => {
         appName: options.appName,
         designPath: options.designPath,
         designSha256: sha256(options.designContent),
+        prefix: FIXTURE_PREFIX,
     });
     const listeners = new Map();
     let fetchCalls = 0;
@@ -636,7 +652,7 @@ test('une modification de conception invalide le plan revu', async () => {
 // Critère d'acceptation : une app fraîchement créée doit passer la gate
 // applicative, pas seulement contenir un fichier. Avant ce correctif,
 // `verifyApps` refusait toute app générée — « project.json régulier mais pas de
-// .cmz/libraries.json ». Le test matérialise donc le rendu et exécute la VRAIE
+// .atelier/libraries.json ». Le test matérialise donc le rendu et exécute la VRAIE
 // gate, recettes réelles du dépôt comprises.
 test('une app fraîchement rendue passe la gate library-setup', async (t) => {
     const options = await fixture();
@@ -646,9 +662,10 @@ test('une app fraîchement rendue passe la gate library-setup', async (t) => {
         appName: options.appName,
         designPath: options.designPath,
         designSha256: sha256(options.designContent),
+        prefix: FIXTURE_PREFIX,
     });
 
-    const manifest = JSON.parse(rendered.files['.cmz/libraries.json']);
+    const manifest = JSON.parse(rendered.files[SIGNATURE_FILES.libraries]);
     assert.deepEqual(manifest, {
         schema_version: '1.0.0',
         kind: 'app-library-manifest',
@@ -658,7 +675,7 @@ test('une app fraîchement rendue passe la gate library-setup', async (t) => {
         libraries: [],
     });
 
-    const root = await mkdtemp(join(tmpdir(), 'cmz-shell-gate-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('shell-gate-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     // verifyApps lit le schéma de manifeste sous la racine inspectée.
     await cp(join(REPO_ROOT, 'conventions'), join(root, 'conventions'), {
@@ -690,9 +707,12 @@ test('une app React fraîchement rendue passe la gate library-setup', async (t) 
         appName: options.appName,
         designPath: options.designPath,
         designSha256: sha256(options.designContent),
+        prefix: FIXTURE_PREFIX,
     });
 
-    const root = await mkdtemp(join(tmpdir(), 'cmz-react-shell-gate-'));
+    const root = await mkdtemp(
+        join(tmpdir(), signatureName('react-shell-gate-'))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     await cp(join(REPO_ROOT, 'conventions'), join(root, 'conventions'), {
         recursive: true,
@@ -725,6 +745,7 @@ test('coque session Angular opt-in, React refusée avant sortie et pages ancienn
         designSha256: data.pages.values().next().value.pageContract.design_ref
             .sha256,
         externalWorkspace: true,
+        prefix: FIXTURE_PREFIX,
     };
     const rendered = await renderAngularPwaShell(options);
     assert.ok(rendered.files['src/app/session/session.store.ts']);

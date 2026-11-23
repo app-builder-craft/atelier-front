@@ -111,7 +111,7 @@ const PROFILES = Object.freeze({
                     archive: {
                         root: 'actions/archive-op/src',
                         module: '../../../../actions/archive-op/src',
-                        sampleInput: { field: 'cmz-contrat' },
+                        sampleInput: { field: 'exemple-contrat' },
                         serviceToken: 'FIXTURE_SERVICE_API_URL',
                     },
                 },

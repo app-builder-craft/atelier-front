@@ -16,6 +16,13 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { hostname } from 'node:os';
 
+import {
+    SIGNATURE,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
+
+const TRANSACTION_REFS = `${SIGNATURE.gitRefs}library-transactions/`;
+
 function fail(message) {
     throw new Error(`library publication: ${message}`);
 }
@@ -216,7 +223,7 @@ function validateJournal(journal) {
         !/^refs\/heads\/[A-Za-z0-9._/-]+$/.test(journal.branch ?? '') ||
         !/^library-plan:[a-f0-9]{64}$/.test(journal.plan_id ?? '') ||
         journal.transaction_ref !==
-            `refs/cmz/library-transactions/${journal.plan_id.slice('library-plan:'.length)}` ||
+            `${TRANSACTION_REFS}${journal.plan_id.slice('library-plan:'.length)}` ||
         !Array.isArray(journal.changes) ||
         journal.changes.length === 0
     ) {
@@ -268,8 +275,8 @@ function validateJournal(journal) {
 function controlPaths(repository) {
     const root = gitDirectory(repository);
     return {
-        lock: join(root, 'cmz-library.lock'),
-        journal: join(root, 'cmz-library-transaction.json'),
+        lock: join(root, signatureName('library.lock')),
+        journal: join(root, signatureName('library-transaction.json')),
     };
 }
 
@@ -440,7 +447,7 @@ export function createCandidateCommit({
     }
     const index = join(
         dirname(candidate),
-        `.cmz-index-${randomBytes(8).toString('hex')}`
+        `${SIGNATURE.dir}-index-${randomBytes(8).toString('hex')}`
     );
     const env = { GIT_INDEX_FILE: index };
     try {
@@ -547,7 +554,10 @@ function restoreBase(repository, journal) {
 }
 
 function publishedTemporary(target) {
-    return join(dirname(target), `.${basename(target)}.cmz-publish`);
+    return join(
+        dirname(target),
+        `.${basename(target)}${SIGNATURE.dir}-publish`
+    );
 }
 
 function writePublishedFile(target, content, mode) {
@@ -671,7 +681,7 @@ export function publishCandidateCommit({
 }) {
     recoverLibraryPublication(repository, { processProbe });
     const { branch } = assertPublishableRepository(repository, baseCommit);
-    const transactionRef = `refs/cmz/library-transactions/${planId.replace('library-plan:', '')}`;
+    const transactionRef = `${TRANSACTION_REFS}${planId.replace('library-plan:', '')}`;
     const journal = validateJournal({
         schema_version: '1.1.0',
         phase: 'prepared',

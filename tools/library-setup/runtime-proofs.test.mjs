@@ -17,9 +17,20 @@ import {
     proveLibraryRuntime,
     requiredAcceptances,
 } from './runtime-proofs.mjs';
-import { proveMaterialHostTypography } from './runtime-oracles/material-host-typography.mjs';
+import {
+    HOST_FONT,
+    proveMaterialHostTypography,
+} from './runtime-oracles/material-host-typography.mjs';
 import { proveMaterialTailwindBrowser } from './runtime-oracles/material-tailwind-browser.mjs';
 import { QUALIFICATION_ORACLE_SOURCE_PATHS } from './tooling-fingerprint.mjs';
+import {
+    escapeRegExp,
+    SIGNATURE,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
+
+// Identifiant du résultat des oracles navigateur, signé par l'atelier.
+const RESULT_ID = signatureName('result');
 
 // Forme réellement observée sur un candidat après `ng-add` : les jetons dans
 // une règle `html` hors couche, le preflight confiné dans `@layer base`.
@@ -35,7 +46,7 @@ async function put(root, path, content) {
 
 test('Tailwind exige une vraie règle CSS issue du build et nettoie sa sonde', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-runtime-proof-'))
+        await mkdtemp(join(tmpdir(), signatureName('runtime-proof-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -225,7 +236,7 @@ test('la coexistence est exigée quel que soit l’ordre d’installation', () =
 
 test('une acceptance déclarée sans oracle bloque en nommant la clé', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-runtime-oracle-'))
+        await mkdtemp(join(tmpdir(), signatureName('runtime-oracle-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -278,7 +289,7 @@ test('une acceptance déclarée sans oracle bloque en nommant la clé', async (t
 // Tailwind devenue inopérante.
 test('l’oracle navigateur juge des styles calculés, pas du texte CSS', () => {
     const dump = (value) =>
-        `<html><body><pre id="cmz-result">${JSON.stringify(value)}</pre></body></html>`;
+        `<html><body><pre id="${RESULT_ID}">${JSON.stringify(value)}</pre></body></html>`;
     const bon = {
         tokenCount: 168,
         tokenResolved: 'rgb(0, 92, 187)',
@@ -324,7 +335,7 @@ test('la page sonde intègre le CSS compilé et n’appelle aucun réseau', () =
     assert.doesNotMatch(html, /<link/);
     assert.match(html, /--mat-sys-primary/);
     assert.match(html, /@layer base/);
-    assert.match(html, /id="cmz-result"/);
+    assert.match(html, new RegExp(`id="${escapeRegExp(RESULT_ID)}"`));
     assert.doesNotMatch(html, /https?:\/\//);
     assert.doesNotMatch(html, /fetch\(|XMLHttpRequest|WebSocket/);
     assert.throws(() => browserProbeHtml(''), /aucun CSS compilé/);
@@ -335,7 +346,7 @@ test('la page sonde intègre le CSS compilé et n’appelle aucun réseau', () =
 });
 
 const HOST_TYPOGRAPHY = {
-    fontFamily: '"CMZ Host Sentinel", serif',
+    fontFamily: `"${HOST_FONT}", serif`,
     fontSize: '19px',
     lineHeight: '31px',
     fontWeight: '700',
@@ -343,7 +354,7 @@ const HOST_TYPOGRAPHY = {
 
 test('l’oracle exige les quatre propriétés sur la racine, le body et son enfant', () => {
     const dump = (value) =>
-        `<html><body><pre id="cmz-result">${JSON.stringify(value)}</pre></body></html>`;
+        `<html><body><pre id="${RESULT_ID}">${JSON.stringify(value)}</pre></body></html>`;
     const healthy = {
         root: { ...HOST_TYPOGRAPHY },
         body: { ...HOST_TYPOGRAPHY },
@@ -375,7 +386,7 @@ test('l’oracle exige les quatre propriétés sur la racine, le body et son enf
 
 test('les mutations typographiques doivent être observées sur le body et son enfant', () => {
     const dump = (value) =>
-        `<pre id="cmz-result">${JSON.stringify(value)}</pre>`;
+        `<pre id="${RESULT_ID}">${JSON.stringify(value)}</pre>`;
     const healthy = {
         root: { ...HOST_TYPOGRAPHY },
         body: { ...HOST_TYPOGRAPHY },
@@ -410,14 +421,38 @@ test('les mutations typographiques doivent être observées sur le body et son e
     );
 });
 
+test('la police sentinelle est un nom à espaces, dérivé de la signature : le navigateur la rend entre guillemets, comme l’attendu', () => {
+    // Une famille qui est un seul identifiant CSS est rendue nue par
+    // `getComputedStyle` ; l'attendu `"<nom>", serif` exige un nom à espaces.
+    assert.match(HOST_FONT, / /, 'police sentinelle à espaces');
+    assert.doesNotMatch(
+        HOST_FONT,
+        /^-?[_a-zA-Z][-_a-zA-Z0-9]*$/,
+        'police sentinelle qui n’est pas un identifiant CSS'
+    );
+    assert.equal(
+        HOST_FONT.split(' ')[0].toLowerCase(),
+        SIGNATURE.name,
+        'police sentinelle dérivée du nom de la signature'
+    );
+});
+
 test('la sonde place la typographie hôte avant le CSS compilé et reste hors réseau', () => {
     const compiled = 'body{color:navy}';
     const html = hostTypographyProbeHtml(compiled);
-    assert.ok(html.indexOf('CMZ Host Sentinel') < html.indexOf(compiled));
+    // La police sentinelle est déclarée, et avant le CSS compilé.
+    const font = html.indexOf(`font-family: "${HOST_FONT}", serif;`);
+    assert.ok(
+        font >= 0 && font < html.indexOf(compiled),
+        'police sentinelle déclarée avant le CSS compilé'
+    );
     assert.match(html, /font-size: 19px/);
     assert.match(html, /line-height: 31px/);
     assert.match(html, /font-weight: 700/);
-    assert.match(html, /cmz-typography-child/);
+    assert.match(
+        html,
+        new RegExp(escapeRegExp(signatureName('typography-child')))
+    );
     assert.doesNotMatch(html, /https?:\/\//);
     assert.doesNotMatch(html, /fetch\(|XMLHttpRequest|WebSocket/);
     assert.throws(() => hostTypographyProbeHtml(''), /aucun CSS compilé/);
@@ -441,7 +476,7 @@ test('l’empreinte de qualification couvre le navigateur et le nouvel oracle', 
 
 test('l’oracle de typographie rend le CSS compilé puis nettoie sa sortie', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-host-typography-proof-'))
+        await mkdtemp(join(tmpdir(), signatureName('host-typography-proof-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -500,7 +535,7 @@ test('l’oracle de typographie rend le CSS compilé puis nettoie sa sortie', as
             }
             return {
                 status: 0,
-                stdout: `<pre id="cmz-result">${JSON.stringify({
+                stdout: `<pre id="${RESULT_ID}">${JSON.stringify({
                     root: typography.root,
                     body: typography.body,
                     child: typography.child,
@@ -522,7 +557,7 @@ test('l’oracle de typographie refuse un moteur absent, une sortie préexistant
     );
 
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-host-typography-guards-'))
+        await mkdtemp(join(tmpdir(), signatureName('host-typography-guards-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -583,7 +618,7 @@ test('l’oracle de typographie refuse un moteur absent, une sortie préexistant
 
 test('l’oracle navigateur place sa classe Tailwind dans la source puis la nettoie', async (t) => {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-browser-source-proof-'))
+        await mkdtemp(join(tmpdir(), signatureName('browser-source-proof-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const workspace = join(root, 'candidate');
@@ -599,7 +634,7 @@ test('l’oracle navigateur place sa classe Tailwind dans la source puis la nett
     );
     const sourceProbe = join(
         workspace,
-        'apps/demo/src/cmz-coexistence-source-probe.html'
+        `apps/demo/src/${signatureName('coexistence-source-probe')}.html`
     );
     const output = join(workspace, 'dist/apps/demo');
     let builds = 0;
@@ -632,7 +667,7 @@ test('l’oracle navigateur place sa classe Tailwind dans la source puis la nett
             renders += 1;
             return {
                 status: 0,
-                stdout: `<pre id="cmz-result">${JSON.stringify({
+                stdout: `<pre id="${RESULT_ID}">${JSON.stringify({
                     tokenCount: 2,
                     tokenResolved: '#005cbb',
                     unlayeredBorderWidth: '7px',

@@ -16,7 +16,7 @@
     {
       "id": "reference-note-api",
       "role": "reference",
-      "sha256": "208511b936508567b246807036c305dde012ec53332c361be9b28c3ce20a9938",
+      "sha256": "2b0f07548aa3c0896dd586314be1dc44b731c3b995afceb9972977a54280998b",
       "snapshot_uri": "examples/application-conception-proof/reference-api.backend-contract.json"
     },
     {
@@ -35,6 +35,9 @@
       }
     ],
     "id": "library-qualification-bench",
+    "identity": {
+      "prefix": "lqb"
+    },
     "primary_outcome": "A visitor submits one note through a contract-bound page.",
     "problem": "The generic conception pipeline needs one durable end-to-end proof.",
     "status": "approved",
@@ -181,7 +184,7 @@
       "title": "Submit a note"
     }
   ],
-  "schema_version": "1.0.0",
+  "schema_version": "1.2.0",
   "sources": [
     {
       "id": "conception-proof-brief",

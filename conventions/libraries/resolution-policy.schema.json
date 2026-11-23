@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/conventions/library-resolution-policy.schema.json",
-  "title": "CMZ library resolution policy",
+  "$id": "https://atelier.local/schemas/conventions/library-resolution-policy.schema.json",
+  "title": "Atelier library resolution policy",
   "type": "object",
   "additionalProperties": false,
   "required": [

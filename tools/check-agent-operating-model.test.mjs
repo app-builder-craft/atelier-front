@@ -1,10 +1,34 @@
 import assert from 'node:assert/strict';
+import {
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import {
+    AGENT_MODEL_FILES,
     collectAgentModelViolations,
     readAgentModelDocuments,
+    readSkillDirectories,
 } from './check-agent-operating-model.mjs';
+import {
+    internalName,
+    signatureName,
+} from './generator-platform/core/atelier-signature.mjs';
+
+const ROLE_SUFFIXES = [
+    'steward',
+    'step-executor',
+    'task-specialist',
+    'orchestrator',
+];
+// Ancien nom interne de l'atelier (lot MARQUE), composé pour ne pas l'écrire.
+const FORMER_NAME = ['c', 'mz'].join('');
 
 test('the repository exposes a complete guarded agent operating model', () => {
     assert.deepEqual(
@@ -15,11 +39,88 @@ test('the repository exposes a complete guarded agent operating model', () => {
 
 test('the guard rejects the loss of a role route', () => {
     const documents = readAgentModelDocuments();
-    documents.agents = documents.agents.replace('$cmz-step-executor', 'worker');
+    documents.agents = documents.agents.replace(
+        `${internalName('step-executor')}`,
+        'worker'
+    );
 
     assert.ok(
         collectAgentModelViolations(documents).some((violation) =>
-            violation.includes('$cmz-step-executor')
+            violation.includes(`${internalName('step-executor')}`)
+        )
+    );
+});
+
+test('the guard reads every skill directory at the roots declared by the contract', () => {
+    const { skillDirectories } = readAgentModelDocuments();
+    assert.deepEqual(Object.keys(skillDirectories), [
+        '.agents/skills',
+        '.claude/skills',
+    ]);
+    for (const names of Object.values(skillDirectories))
+        for (const suffix of ROLE_SUFFIXES)
+            assert.ok(names.includes(internalName(suffix)), suffix);
+});
+
+// Lot MARQUE, commit 6 : un dossier de rôle survivant sous un autre nom (dont
+// l'ancien nom interne) serait découvert par les clients sans être contrôlé.
+test('the guard rejects a surviving role skill directory under another name', () => {
+    for (const root of ['.agents/skills', '.claude/skills'])
+        for (const name of [
+            `${FORMER_NAME}-steward`,
+            `${FORMER_NAME}-step-executor`,
+            'legacy-orchestrator',
+        ]) {
+            const documents = readAgentModelDocuments();
+            documents.skillDirectories[root].push(name);
+            assert.deepEqual(
+                collectAgentModelViolations(documents).map(
+                    (violation) => violation.split(' (rôles : ')[0]
+                ),
+                [
+                    `dossier de skill de rôle hors du nom interne : ${root}/${name}`,
+                ],
+                `${root}/${name}`
+            );
+        }
+});
+
+test('the guard reads surviving directories on disk and accepts technical skills', (t) => {
+    const root = mkdtempSync(join(tmpdir(), signatureName('agent-skills-')));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const contract = join(root, AGENT_MODEL_FILES.contract);
+    mkdirSync(dirname(contract), { recursive: true });
+    writeFileSync(
+        contract,
+        readFileSync(
+            new URL(`../${AGENT_MODEL_FILES.contract}`, import.meta.url)
+        )
+    );
+    for (const directory of [
+        `.agents/skills/${internalName('steward')}`,
+        `.agents/skills/${FORMER_NAME}-steward`,
+        '.agents/skills/angular-developer',
+        '.claude/skills/notes',
+    ])
+        mkdirSync(join(root, directory), { recursive: true });
+    const documents = readAgentModelDocuments();
+    documents.skillDirectories = readSkillDirectories(root);
+    assert.deepEqual(
+        collectAgentModelViolations(documents).map(
+            (violation) => violation.split(' (rôles : ')[0]
+        ),
+        [
+            `dossier de skill de rôle hors du nom interne : .agents/skills/${FORMER_NAME}-steward`,
+        ]
+    );
+});
+
+test('the guard fails closed without a skill directory listing', () => {
+    const documents = readAgentModelDocuments();
+    delete documents.skillDirectories;
+    assert.ok(
+        collectAgentModelViolations(documents).includes(
+            'aucune racine de skills lue : contrôle des dossiers cassé'
         )
     );
 });
@@ -52,7 +153,7 @@ test('the guard rejects a historical authority restored in CLAUDE.md', () => {
 test('the guard rejects a Claude role adapter that stops importing its canonical skill', () => {
     const documents = readAgentModelDocuments();
     documents.claudeSteward = documents.claudeSteward.replace(
-        '@../../../.agents/skills/cmz-steward/SKILL.md',
+        `@../../../.agents/skills/${internalName('steward')}/SKILL.md`,
         'Instructions locales concurrentes.'
     );
 
@@ -89,8 +190,8 @@ test('the guard rejects every executable Claude frontmatter capability in role a
     for (const [field, value] of Object.entries(capabilities)) {
         const documents = readAgentModelDocuments();
         documents.claudeSteward = documents.claudeSteward.replace(
-            'name: cmz-steward\n',
-            `name: cmz-steward\n${field}: ${JSON.stringify(value)}\n`
+            `name: ${internalName('steward')}\n`,
+            `name: ${internalName('steward')}\n${field}: ${JSON.stringify(value)}\n`
         );
 
         assert.ok(
@@ -133,7 +234,7 @@ test('the guard rejects loss of the owner-facing approval controls', () => {
 test('the guard rejects invalid skill metadata even when prose remains', () => {
     const documents = readAgentModelDocuments();
     documents.executor = documents.executor.replace(
-        'name: cmz-step-executor',
+        `name: ${internalName('step-executor')}`,
         'name: wrong-role'
     );
     documents.orchestratorUi = 'interface: [invalid';

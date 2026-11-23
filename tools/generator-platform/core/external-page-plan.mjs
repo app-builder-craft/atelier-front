@@ -4,6 +4,7 @@
 // `generate:action-request` et ceux des lectures publiées par
 // `generate:list-query` (X5 C4). Il est publié dans le registre scellé de
 // l'application (ADR-0103), et la composition le recompile pour le vérifier.
+import { SIGNATURE_FILES } from './atelier-signature.mjs';
 import { compilePageExecutionPlan } from './page-execution-plan.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import { ownedProductContext } from './application-workspace-root.mjs';
@@ -91,7 +92,7 @@ const schemas = () =>
 // Compilation déterministe depuis l'état courant de l'application : mêmes
 // fichiers possédés, mêmes octets de plan.
 export async function compileOwnedPagePlan(app, appName, pageId) {
-    const pagePath = `.cmz/pages/${assertPageId(pageId)}.json`;
+    const pagePath = `${SIGNATURE_FILES.pages}/${assertPageId(pageId)}.json`;
     if (!app.manifest.generated_files.some((entry) => entry.path === pagePath))
         externalFailure('page is not declared by the application');
     const pageDocument = await ownedAppFile(app, pagePath);

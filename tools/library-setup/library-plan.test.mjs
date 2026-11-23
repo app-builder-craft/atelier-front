@@ -14,6 +14,7 @@ import { test } from 'node:test';
 
 import { snapshotFilesystem, snapshotSha256 } from './filesystem-snapshot.mjs';
 import { buildLibraryChangeSet, buildLibraryPlan } from './library-plan.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const hash = (character) => character.repeat(64);
 const entry = (path, sha256, mode = '100644') => ({
@@ -96,7 +97,9 @@ test('plan_id change pour chaque entrée gouvernante', () => {
 });
 
 test('snapshot refuse spéciaux et exclusions fournies par lien', async (t) => {
-    const root = realpathSync(await mkdtemp(join(tmpdir(), 'cmz-snapshot-')));
+    const root = realpathSync(
+        await mkdtemp(join(tmpdir(), signatureName('snapshot-')))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     await writeFile(join(root, 'a'), 'a');
     await chmod(join(root, 'a'), 0o755);

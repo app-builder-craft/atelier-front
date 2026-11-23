@@ -13,7 +13,7 @@ import {
     publishExternalApplicationShell,
 } from './core/application-workspace.mjs';
 import { verifyGeneratedTree } from './core/external-application-paths.mjs';
-import { EXTERNAL_WORKSPACE_CMZ as CMZ } from './renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from './renderers/application-workspace-renderer.mjs';
 import {
     formatProofStop,
     snapshotTree,
@@ -154,7 +154,7 @@ export async function main(argv = process.argv.slice(2)) {
                     SHARED_DOCUMENT_SOURCE,
                     () =>
                         confinedNode(session, root, [
-                            `${CMZ.support}/check-workspace.mjs`,
+                            `${WORKSPACE.support}/check-workspace.mjs`,
                         ]),
                     /Échec du contrat workspace/
                 );

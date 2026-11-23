@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
 
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -48,7 +49,7 @@ export async function nx24ShellDelta(profile, original) {
         ).replace(pluginPattern, 'plugins: [$1, nxReadySignal()]');
     }
     Object.assign(files, await canonicalizeGeneratedFiles(changed));
-    const manifestPath = '.cmz/app-manifest.json';
+    const manifestPath = SIGNATURE_FILES.appManifest;
     if (Object.hasOwn(files, manifestPath)) {
         const manifest = JSON.parse(files[manifestPath]);
         for (const entry of manifest.generated_files) {

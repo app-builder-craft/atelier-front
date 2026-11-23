@@ -1,5 +1,5 @@
 {
-  "name": "@cmz/core",
+  "name": "@atelier/core",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/core/src",
   "projectType": "library",
@@ -18,7 +18,7 @@
         "command": "bunx vitest run --config tools/vitest-lib.config.ts",
         "cwd": "{workspaceRoot}",
         "env": {
-          "CMZ_VITEST_LIB_ROOT": "libs/core"
+          "ATELIER_VITEST_LIB_ROOT": "libs/core"
         }
       }
     },

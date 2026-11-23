@@ -2,10 +2,15 @@
 // possédés, applications scellées (ADR-0103) et fermeture des entrées.
 // Extrait de application-workspace.mjs sans changement de comportement.
 import { lstat, readdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 
-import { EXTERNAL_WORKSPACE_CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
 import { verifyApplicationOwnership } from './application-ownership.mjs';
+import {
+    escapeRegExp,
+    SIGNATURE,
+    SIGNATURE_FILES,
+} from './atelier-signature.mjs';
 import {
     assertNoLocalConfiguration,
     assertPhysicalPath,
@@ -17,23 +22,80 @@ import {
     verifyGeneratedTree,
 } from './external-application-paths.mjs';
 import { sha256 } from './generation-manifest.mjs';
+import { prefixRefusals } from './product-identity.mjs';
 
-const MANIFEST = EXTERNAL_WORKSPACE_CMZ.manifest;
+const MANIFEST = EXTERNAL_WORKSPACE_SIGNATURE.manifest;
+// Espaces de noms réservés à la racine du produit.
+const RESERVED_NAMESPACE = new RegExp(
+    `^(?:apps|node_modules|${escapeRegExp(SIGNATURE.dir)}|\\.git|\\.nx|\\.angular|dist|coverage|tmp)/`
+);
+
+// Renommage du préfixe (lot MARQUE, commit 3) : son journal vit à côté du
+// produit, comme son verrou ; ses arbres de travail dans apps/.
+export const RENAME_PENDING =
+    'interrupted prefix rename pending; recover it first (recover:product-prefix)';
+export const renameJournalRoot = (productRoot, planId) =>
+    resolve(dirname(productRoot), `.${basename(productRoot)}.rename-${planId}`);
+
+// Journaux de renommage présents à côté du produit : `plan_id` de chacun.
+export async function pendingRenameJournals(productRoot) {
+    const pattern = new RegExp(
+        `^\\.${escapeRegExp(basename(productRoot))}\\.rename-([a-f0-9]{64})$`
+    );
+    const found = [];
+    for (const name of await readdir(dirname(productRoot))) {
+        const match = pattern.exec(name);
+        if (match) found.push(match[1]);
+    }
+    return found.sort();
+}
+
+// Un renommage interrompu bloque toute commande ; seuls ce renommage (ses
+// contrôles) et sa reprise le tolèrent, par `internal.renaming` (son plan_id).
+async function assertNoPendingRename(productRoot, renaming) {
+    for (const planId of await pendingRenameJournals(productRoot))
+        if (planId !== renaming) externalFailure(RENAME_PENDING);
+}
 
 // Racine d'un produit déjà créé : racine vérifiée, puis marqueur présent. Sans
 // marqueur, refus fermé plutôt qu'une erreur système portant un chemin local.
-export async function ownedProductContext(options) {
+export async function ownedProductContext(options, internal = {}) {
     const context = await externalApplicationContext(options);
     if (!(await pathExists(resolve(context.productRoot, MANIFEST))))
         externalFailure('workspace ownership marker missing');
+    await assertNoPendingRename(context.productRoot, internal.renaming);
     await assertNoLocalConfiguration(context.productRoot);
     return context;
+}
+
+// Manifeste d'une appli du produit, sous le dossier de signature courant : le
+// seul lecteur de ce marqueur avant la vérification de la racine. Une appli
+// sans lui (par exemple à la disposition d'avant le renommage de la signature,
+// lot MARQUE) est refusée, nommée, et non par une erreur système portant un
+// chemin local.
+export async function readAppManifest(appRoot) {
+    if (!(await pathExists(resolve(appRoot, SIGNATURE_FILES.appManifest))))
+        externalFailure('app ownership marker missing');
+    return readProductFile(appRoot, SIGNATURE_FILES.appManifest);
+}
+
+// Préfixe du produit scellé dans son espace (`identity.prefix`, couvert par
+// `workspace_id`) ; validé avant tout usage.
+export async function sealedProductPrefix(productRoot) {
+    const manifest = JSON.parse(
+        (await readProductFile(productRoot, MANIFEST)).toString('utf8')
+    );
+    const prefix = manifest.identity?.prefix;
+    if (prefixRefusals(prefix).length > 0)
+        externalFailure('workspace identity prefix is missing or invalid');
+    return prefix;
 }
 
 export async function verifyWorkspaceRoot(plan, documentSources = false) {
     const { productRoot } = plan;
     if (!(await pathExists(resolve(productRoot, MANIFEST))))
         externalFailure('workspace ownership marker missing');
+    await assertNoPendingRename(productRoot, plan.renaming);
     if (
         sha256(await readProductFile(productRoot, MANIFEST)) !==
         sha256(plan.files[MANIFEST])
@@ -57,12 +119,15 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         withFileTypes: true,
     })) {
         const working =
-            /^\.([a-z][a-z0-9-]*)\.(?:(external|publication|previous)-candidate-[a-f0-9]{64}|generation-lock(?:\..*)?)$/.exec(
+            /^\.([a-z][a-z0-9-]*)\.(?:(external|publication|previous)-candidate-[a-f0-9]{64}|rename-(?:candidate|previous)-([a-f0-9]{64})|generation-lock(?:\..*)?)$/.exec(
                 entry.name
             );
         if (working) {
             if (!entry.isDirectory() || entry.isSymbolicLink())
                 externalFailure('invalid working directory');
+            // Arbre d'un renommage du préfixe : seul ce renommage le tolère.
+            if (working[3] !== undefined && working[3] !== plan.renaming)
+                externalFailure(RENAME_PENDING);
             // ADR-0103 : une publication interrompue bloque toute autre
             // commande ; seule la reprise de cette application passe.
             if (
@@ -78,9 +143,7 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
             externalFailure('unowned app entry');
         const appRoot = resolve(productRoot, 'apps', entry.name);
         const app = JSON.parse(
-            (await readProductFile(appRoot, '.cmz/app-manifest.json')).toString(
-                'utf8'
-            )
+            (await readAppManifest(appRoot)).toString('utf8')
         );
         if (app.app_name !== entry.name || !plan.profiles.includes(app.profile))
             externalFailure('unowned app manifest');
@@ -100,9 +163,9 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         ))
             inputs.add(input.path);
         const files = await ownedFiles(appRoot, app.generated_files);
-        files['.cmz/app-manifest.json'] = await readProductFile(
+        files[SIGNATURE_FILES.appManifest] = await readProductFile(
             appRoot,
-            '.cmz/app-manifest.json'
+            SIGNATURE_FILES.appManifest
         );
         await verifyGeneratedTree(appRoot, files);
     }
@@ -186,12 +249,7 @@ export function inputFilePath(path) {
         'README.md',
         'AGENTS.md',
     ]);
-    if (
-        reserved.has(path) ||
-        /^(?:apps|node_modules|\.cmz|\.git|\.nx|\.angular|dist|coverage|tmp)\//.test(
-            path
-        )
-    )
+    if (reserved.has(path) || RESERVED_NAMESPACE.test(path))
         externalFailure('input collides with reserved workspace namespace');
     return path;
 }

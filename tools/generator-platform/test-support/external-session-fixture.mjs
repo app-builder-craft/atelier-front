@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import { escapeRegExp, INTERNAL } from '../core/atelier-signature.mjs';
 import {
     createApplicationSessionFixture,
     SESSION_FIXTURE_DOMAINS,
@@ -12,9 +13,12 @@ export { SESSION_FIXTURE_DOMAINS };
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
-// Toute mention d'un module `@cmz/` comme spécificateur : `from`, import nu,
-// `import()` dynamique ou `require`. Le produit ne dépend d'aucun paquet cmz.
-export const CMZ_MODULE_SPECIFIER = /['"`]@cmz\//;
+// Toute mention d'un module de la portée interne de l'atelier comme
+// spécificateur : `from`, import nu, `import()` dynamique ou `require`. Le
+// produit ne dépend d'aucun paquet de l'atelier.
+export const INTERNAL_MODULE_SPECIFIER = new RegExp(
+    `['"\`]${escapeRegExp(INTERNAL.scope)}/`
+);
 
 // Copies only the declared input closure of a fictitious session design into
 // an owned product, under descriptions/. Generated models, page contracts and

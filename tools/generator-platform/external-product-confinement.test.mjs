@@ -20,6 +20,7 @@ import { pathExists } from './core/external-application-paths.mjs';
 import { runConfinedProductCommand } from './core/external-product-confinement.mjs';
 import { fixtureParent } from './test-support/external-application-fixture.mjs';
 import { repositoryRoot } from './validate-ir.mjs';
+import { SIGNATURE, toolEnv } from './core/atelier-signature.mjs';
 
 // CI de la PR #389 : sur Docker, sandbox.mjs ignore `extraEnv` et fixe
 // CI=1. L'invocation réelle d'une commande du produit est construite pour les
@@ -81,9 +82,9 @@ assert.equal(process.env.CI, '1');
 assert.equal(process.env.PATH, '');
 assert.equal(process.env.NODE_OPTIONS, undefined);
 for (const [key, suffix] of Object.entries({
-    NX_CACHE_DIRECTORY: 'node_modules/.cmz-nx-cache',
-    NX_WORKSPACE_DATA_DIRECTORY: 'node_modules/.cmz-nx-workspace-data',
-    NX_NATIVE_FILE_CACHE_DIRECTORY: 'node_modules/.cmz-nx-native-file-cache',
+    NX_CACHE_DIRECTORY: 'node_modules/${SIGNATURE.dir}-nx-cache',
+    NX_WORKSPACE_DATA_DIRECTORY: 'node_modules/${SIGNATURE.dir}-nx-workspace-data',
+    NX_NATIVE_FILE_CACHE_DIRECTORY: 'node_modules/${SIGNATURE.dir}-nx-native-file-cache',
     TMPDIR: 'tmp',
     TMP: 'tmp',
     TEMP: 'tmp',
@@ -118,11 +119,11 @@ const tcp = (host) => new Promise((done) => {
     socket.on('error', (error) => done('blocked:' + (error.code ?? 'error')));
 });
 const record = {
-    sentinel: process.env.CMZ_PROBE_SECRET ?? null,
+    sentinel: process.env.${toolEnv('PROBE_SECRET')} ?? null,
     readOutside: attempt(() => readFileSync(outsideRead)),
     writeOutside: attempt(() => writeFileSync(outsideWrite, 'x')),
     writeSources: attempt(() => writeFileSync('apps/escape.txt', 'x')),
-    writeOwned: attempt(() => writeFileSync('.cmz/escape.txt', 'x')),
+    writeOwned: attempt(() => writeFileSync('${SIGNATURE.dir}/escape.txt', 'x')),
     writeTool: attempt(() => writeFileSync('node_modules/vitest/escape.txt', 'x')),
     writeCache: attempt(() => writeFileSync('tmp/cache.txt', 'x')),
 };
@@ -138,7 +139,7 @@ test('X4-sécurité : une commande du produit ne sort ni par le réseau, ni du p
     const outside = join(parent, 'outside');
     for (const path of [
         'apps',
-        '.cmz',
+        SIGNATURE.dir,
         'node_modules/vitest',
         'tmp',
         'unconfined',
@@ -176,7 +177,10 @@ test('X4-sécurité : une commande du produit ne sort ni par le réseau, ni du p
     const control = await promisify(execFile)(
         process.execPath,
         probe(join(root, 'unconfined/record.json')),
-        { cwd: root, env: { ...process.env, CMZ_PROBE_SECRET: 'leak' } }
+        {
+            cwd: root,
+            env: { ...process.env, [toolEnv('PROBE_SECRET')]: 'leak' },
+        }
     ).then(
         () => 0,
         (error) => error
@@ -190,12 +194,12 @@ test('X4-sécurité : une commande du produit ne sort ni par le réseau, ni du p
     for (const host of hosts) assert.equal(open[`tcp ${host}`], 'allowed');
     assert.equal(hits, hosts.length);
     await rm(join(outside, 'written.txt'));
-    for (const path of ['apps', '.cmz', 'node_modules/vitest', 'tmp'])
+    for (const path of ['apps', SIGNATURE.dir, 'node_modules/vitest', 'tmp'])
         await rm(join(root, path, path === 'tmp' ? 'cache.txt' : 'escape.txt'));
     hits = 0;
     // Confiné : rien ne sort, seuls les caches restent inscriptibles.
-    process.env.CMZ_PROBE_SECRET = 'leak';
-    t.after(() => delete process.env.CMZ_PROBE_SECRET);
+    process.env[toolEnv('PROBE_SECRET')] = 'leak';
+    t.after(() => delete process.env[toolEnv('PROBE_SECRET')]);
     const output = { text: '', write: (chunk) => (output.text += chunk) };
     await runExternalApplicationCommand(
         process.execPath,

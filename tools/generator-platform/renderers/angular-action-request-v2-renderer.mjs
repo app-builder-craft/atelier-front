@@ -1,3 +1,4 @@
+import { INTERNAL } from '../core/atelier-signature.mjs';
 import { pascalCase } from './shared.mjs';
 import {
     actionGraphRequestTypeName,
@@ -45,7 +46,7 @@ function renderSource(action, binding) {
     return `import { HttpClient } from '@angular/common/http';
 import { Service, inject } from '@angular/core';
 import { createActionRequestContext, ${binding.token}, type ActionRequestRequestPolicy } from '${binding.module}';
-import { InvalidPayloadError } from '@cmz/shared-domain';
+import { InvalidPayloadError } from '${INTERNAL.scope}/shared-domain';
 import { map, type Observable } from 'rxjs';
 
 import { ${decoderName} } from './${action.id}.decoder';
@@ -100,7 +101,7 @@ function renderFacade(action) {
         .map((state) => property(state))
         .join(' | ');
     return `import { Service, inject, signal } from '@angular/core';
-import { DomainError } from '@cmz/shared-domain';
+import { DomainError } from '${INTERNAL.scope}/shared-domain';
 import { catchError, defer, tap, throwError, type Observable } from 'rxjs';
 
 import { ${sourceName} } from './${action.id}.source';
@@ -205,11 +206,11 @@ export function renderAngularActionRequestV2(
         'src/models.ts': renderActionRequestV2Models(action, 'Angular'),
         'src/validation.ts': renderActionRequestV2Validation(
             action,
-            "import { InvalidPayloadError } from '@cmz/shared-domain';"
+            `import { InvalidPayloadError } from '${INTERNAL.scope}/shared-domain';`
         ),
         [`src/${action.id}.decoder.ts`]: renderActionRequestV2Decoder(
             action,
-            "import { InvalidPayloadError, ServerResponseError } from '@cmz/shared-domain';"
+            `import { InvalidPayloadError, ServerResponseError } from '${INTERNAL.scope}/shared-domain';`
         ),
         [`src/${action.id}.source.ts`]: renderSource(action, binding),
         [`src/${action.id}.facade.ts`]: renderFacade(action),

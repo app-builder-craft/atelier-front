@@ -11,6 +11,23 @@ export function sha256(content) {
     return createHash('sha256').update(content).digest('hex');
 }
 
+// Préfixe neutre du produit fictif des tests : les initiales de
+// `native-shells`, que le plan d'espace propose par défaut pour le dépôt des
+// fixtures (`fixture-laboratory/native-shells`). Un seul préfixe pour tous les
+// tests, distinct de la signature de l'atelier : un test prouve ainsi que le
+// préfixe déclaré descend jusqu'au rendu.
+export const FIXTURE_PREFIX = 'ns';
+
+// Conception 1.2.0 qui porte le préfixe du produit (`design.identity.prefix`),
+// exigé pour un banc interne ; le reste de la conception est inchangé.
+export function withProductPrefix(design, prefix = FIXTURE_PREFIX) {
+    return {
+        ...design,
+        schema_version: '1.2.0',
+        design: { ...design.design, identity: { prefix } },
+    };
+}
+
 function evidence() {
     return [
         { source_id: 'sample-app-brief', locator: 'validated-project-sheet' },

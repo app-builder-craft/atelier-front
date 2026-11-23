@@ -44,6 +44,7 @@ import {
     readManifest,
     sessionApp,
 } from './test-support/external-publication-fixture.mjs';
+import { SIGNATURE, SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 // Un octet change, la longueur reste identique (constat V8-R2).
 function sameLength(bytes) {
@@ -182,7 +183,7 @@ test('X1 : zones non déclarées et changements vides refusés avant toute écri
             /outside declared zones/,
         ],
         [{ 'src/app/app.routes.ts': 'export {};\n' }, /outside declared zones/],
-        [{ '.cmz/libraries.json': '{}\n' }, /outside declared zones/],
+        [{ [SIGNATURE_FILES.libraries]: '{}\n' }, /outside declared zones/],
         [
             { 'src/app/pages/page-absente/page.ts': 'export {};\n' },
             /outside declared zones/,
@@ -491,7 +492,7 @@ test('X1 : la reprise ne retire jamais un arbre inexact', async (t) => {
     const options = publication(product, { [NOTICE]: 'export {};\n' });
     const plan = await planApplicationPublication(options);
     // Candidat partiel exact du plan courant : retiré.
-    await mkdir(join(plan.candidate, '.cmz'), { recursive: true });
+    await mkdir(join(plan.candidate, SIGNATURE.dir), { recursive: true });
     await writeFile(join(plan.candidate, MANIFEST), plan.files[MANIFEST], {
         flag: 'wx',
     });
@@ -580,7 +581,7 @@ test('X1 suivi : une publication interrompue bloque toute autre commande jusqu�
     await planExternalApplicationShell(other);
     // Candidat seul (arrêt avant l'échange) : même refus ; la publication
     // relue de cette application reprend puis publie.
-    await mkdir(join(plan.candidate, '.cmz'), { recursive: true });
+    await mkdir(join(plan.candidate, SIGNATURE.dir), { recursive: true });
     await writeFile(join(plan.candidate, MANIFEST), plan.files[MANIFEST]);
     await assert.rejects(planExternalApplicationShell(other), pending);
     const done = await publishApplicationPublication(

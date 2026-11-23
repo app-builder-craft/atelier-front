@@ -15,8 +15,20 @@ import {
     applyQualifiedAdapter,
     qualifiedAdapterDescriptor,
 } from './qualified-adapters.mjs';
+import { scaffoldTailwind } from '../scaffold-tailwind-core.mjs';
+import {
+    SIGNATURE,
+    SIGNATURE_FILES,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
+
+// Première ligne du CSS Tailwind écrit par l'atelier, signée de son nom (lot
+// MARQUE, commit 4) : adaptateur Angular, adaptateur React et commande
+// `scaffold-tailwind` l'écrivent chacun.
+const signedComment = (version) =>
+    `/* Adaptateur qualifié ${SIGNATURE.name}, tailwindcss@${version}. */\n`;
 
 function put(root, path, content) {
     const absolute = join(root, path);
@@ -31,7 +43,9 @@ function copy(root, source, target) {
 }
 
 function fixture(t, { libraries = [] } = {}) {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-qualified-adapter-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('qualified-adapter-'))
+    );
     t.after(() => rmSync(root, { recursive: true, force: true }));
     put(
         root,
@@ -56,7 +70,7 @@ function fixture(t, { libraries = [] } = {}) {
     );
     put(
         root,
-        'apps/demo/.cmz/libraries.json',
+        `apps/demo/${SIGNATURE_FILES.libraries}`,
         `${JSON.stringify(
             {
                 schema_version: '1.0.0',
@@ -103,7 +117,9 @@ function fixture(t, { libraries = [] } = {}) {
 }
 
 function reactFixture(t, { libraries = [] } = {}) {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-react-tailwind-adapter-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('react-tailwind-adapter-'))
+    );
     t.after(() => rmSync(root, { recursive: true, force: true }));
     put(
         root,
@@ -121,7 +137,7 @@ function reactFixture(t, { libraries = [] } = {}) {
     );
     put(
         root,
-        'apps/demo/.cmz/libraries.json',
+        `apps/demo/${SIGNATURE_FILES.libraries}`,
         `${JSON.stringify(
             {
                 schema_version: '1.0.0',
@@ -157,7 +173,10 @@ function reactFixture(t, { libraries = [] } = {}) {
 
 function manifest(root) {
     return JSON.parse(
-        readFileSync(join(root, 'apps/demo/.cmz/libraries.json'), 'utf8')
+        readFileSync(
+            join(root, `apps/demo/${SIGNATURE_FILES.libraries}`),
+            'utf8'
+        )
     );
 }
 
@@ -200,7 +219,7 @@ test('Tailwind dérive les fichiers relus et câble exactement l’app cible', (
         },
     });
     const css = readFileSync(join(root, 'apps/demo/src/tailwind.css'), 'utf8');
-    assert.match(css, /Adaptateur qualifié CMZ, tailwindcss@4\.3\.3/);
+    assert.ok(css.startsWith(signedComment('4.3.3')), css.split('\n')[0]);
     assert.match(css, /@import 'tailwindcss' source\(none\)/);
     assert.match(css, /@source '\.\/';/);
     assert.doesNotMatch(css, /@source '\.\.\//);
@@ -232,7 +251,7 @@ test('Tailwind React emploie le plugin Vite officiel et garde SCSS séparé', (t
     const css = readFileSync(join(root, 'apps/demo/src/tailwind.css'), 'utf8');
     const main = readFileSync(join(root, 'apps/demo/src/main.tsx'), 'utf8');
     const vite = readFileSync(join(root, 'apps/demo/vite.config.mts'), 'utf8');
-    assert.match(css, /tailwindcss@4\.3\.3/);
+    assert.ok(css.startsWith(signedComment('4.3.3')), css.split('\n')[0]);
     assert.match(css, /@import 'tailwindcss' source\(none\)/);
     assert.match(css, /@source '\.\/'/);
     assert.match(main, /tailwind\.css';\nimport '\.\/styles\.scss'/);
@@ -242,6 +261,38 @@ test('Tailwind React emploie le plugin Vite officiel et garde SCSS séparé', (t
 
     const descriptor = qualifiedAdapterDescriptor(root, 'react', 'tailwind');
     assert.equal(descriptor.id, 'react/tailwind@1');
+});
+
+// La commande `scaffold-tailwind` (Angular) écrit à l'octet le CSS signé de
+// l'adaptateur qualifié : un seul commentaire, deux écrivains.
+test('scaffold-tailwind Angular écrit le CSS signé de l’adaptateur qualifié', (t) => {
+    const scaffolded = fixture(t);
+    scaffoldTailwind({
+        repository: scaffolded,
+        app: 'demo',
+        platform: 'angular',
+        tailwindVersion: '4.3.3',
+    });
+    const adapted = fixture(t);
+    applyQualifiedAdapter({
+        workspace: adapted,
+        app: 'demo',
+        platform: 'angular',
+        library: 'tailwind',
+        track: {
+            packages: {
+                tailwindcss: '4.3.3',
+                '@tailwindcss/postcss': '4.3.3',
+            },
+        },
+    });
+    const css = (root) =>
+        readFileSync(join(root, 'apps/demo/src/tailwind.css'), 'utf8');
+    assert.ok(
+        css(scaffolded).startsWith(signedComment('4.3.3')),
+        css(scaffolded).split('\n')[0]
+    );
+    assert.equal(css(scaffolded), css(adapted));
 });
 
 for (const [label, plugins, expectedPlugins] of [

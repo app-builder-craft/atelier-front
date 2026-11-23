@@ -14,15 +14,15 @@ import {
     pathExists,
     verifyGeneratedTree,
 } from '../core/external-application-paths.mjs';
-import { EXTERNAL_WORKSPACE_CMZ as CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from '../renderers/application-workspace-renderer.mjs';
 import {
     hash,
     snapshotTree,
 } from '../test-support/external-application-fixture.mjs';
 import { runDocumentCli } from '../test-support/external-document-fixture.mjs';
 import {
-    CMZ_MODULE_SPECIFIER,
     createAppArguments,
+    INTERNAL_MODULE_SPECIFIER,
     sessionShellOptions,
     writeExternalSessionDesign,
 } from '../test-support/external-session-fixture.mjs';
@@ -91,7 +91,7 @@ export async function publishNativeSessionShell(session, root, domain) {
             .filter(([path]) => path.endsWith('.ts'))
             .map(([, content]) => content)
             .join('\n'),
-        CMZ_MODULE_SPECIFIER
+        INTERNAL_MODULE_SPECIFIER
     );
     session.lines.push(
         `X0/${domain} app=${plan.app_name} plan_id=${plan.plan_id} tree_sha256=${plan.tree_sha256}`
@@ -177,7 +177,7 @@ export async function qualifySessionBrowser(session, shells, browser) {
     for (const { input, plan } of shells) {
         const product = input.root;
         const domain = input.domain;
-        const proof = resolve(product, CMZ.proof);
+        const proof = resolve(product, WORKSPACE.proof);
         assert.equal(await pathExists(proof), false);
         const fixture = {
             title: input.design.design.title,
@@ -215,7 +215,7 @@ export async function qualifySessionBrowser(session, shells, browser) {
                     session,
                     product,
                     [
-                        `${CMZ.proof}/session-browser.mjs`,
+                        `${WORKSPACE.proof}/session-browser.mjs`,
                         resolve(product, 'dist', plan.output, 'browser'),
                         `{{readonly:0}}/${browserRelative}`,
                         resolve(proof, 'session-browser.fixture.json'),

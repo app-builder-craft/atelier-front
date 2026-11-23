@@ -1,13 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/application-design.schema.json",
-  "title": "CMZ Target-neutral Application Design",
+  "$id": "https://atelier.local/schemas/generator-platform/application-design.schema.json",
+  "title": "Atelier Target-neutral Application Design",
   "oneOf": [
     {
       "$ref": "#/$defs/application10"
     },
     {
       "$ref": "#/$defs/application11"
+    },
+    {
+      "$ref": "#/$defs/application12"
     }
   ],
   "$defs": {
@@ -85,6 +88,58 @@
         },
         "evidence": {
           "$ref": "#/$defs/evidence"
+        }
+      }
+    },
+    "design12": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "version",
+        "status",
+        "problem",
+        "primary_outcome",
+        "description",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "status": {
+          "enum": ["draft", "approved"]
+        },
+        "problem": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "primary_outcome": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prefix"],
+          "properties": {
+            "prefix": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9]{1,5}$"
+            }
+          }
         }
       }
     },
@@ -809,6 +864,73 @@
         },
         "design": {
           "$ref": "#/$defs/design"
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "backend_contracts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/backendContract"
+          }
+        },
+        "audiences": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/audience"
+          }
+        },
+        "experiences": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/experience11"
+          }
+        },
+        "pages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/page"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unknown"
+          }
+        }
+      }
+    },
+    "application12": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "design",
+        "sources",
+        "backend_contracts",
+        "audiences",
+        "experiences",
+        "pages",
+        "unknowns"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.2.0"
+        },
+        "kind": {
+          "const": "application-design"
+        },
+        "design": {
+          "$ref": "#/$defs/design12"
         },
         "sources": {
           "type": "array",

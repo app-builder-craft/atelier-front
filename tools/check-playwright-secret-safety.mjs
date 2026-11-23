@@ -23,6 +23,11 @@ import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import {
+    signatureName,
+    toolEnv,
+} from './generator-platform/core/atelier-signature.mjs';
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PLAYWRIGHT_CLI = join(
     ROOT,
@@ -31,7 +36,9 @@ const PLAYWRIGHT_CLI = join(
     'test',
     'cli.js'
 );
-const SENTINEL_VALUE = 'cmz-synthetic-environment-must-not-be-serialized';
+const SENTINEL_VALUE = signatureName(
+    'synthetic-environment-must-not-be-serialized'
+);
 const EXPECTED_PRIMARY_CONFIGS = 1;
 const EXPECTED_PRIMARY_WEB_SERVERS = 1;
 const GIT_TIMEOUT_MS = 10_000;
@@ -50,7 +57,7 @@ function syntheticEnvironment(extra = {}) {
     return {
         CI: '1',
         LANG: 'C',
-        CMZ_PLAYWRIGHT_REPORTER_SENTINEL: SENTINEL_VALUE,
+        [toolEnv('PLAYWRIGHT_REPORTER_SENTINEL')]: SENTINEL_VALUE,
         ...extra,
     };
 }

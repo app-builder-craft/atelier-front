@@ -14,9 +14,15 @@ import {
 import { hostname } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 
+import {
+    SIGNATURE,
+    signaturePath,
+} from './generator-platform/core/atelier-signature.mjs';
+
 // Keep the historical path so interrupted transactions remain recoverable.
-export const MODULE_LIFECYCLE_TRANSACTION_ROOT =
-    '.cmz/retire-module-transactions';
+export const MODULE_LIFECYCLE_TRANSACTION_ROOT = signaturePath(
+    'retire-module-transactions'
+);
 
 function pathEntryExists(path) {
     try {
@@ -181,7 +187,7 @@ function releaseModuleLifecycleLock(lockRoot) {
 
 export function assertModuleLifecycleStorageIgnored(workspaceRoot) {
     for (const path of [
-        join(workspaceRoot, '.cmz'),
+        join(workspaceRoot, SIGNATURE.dir),
         transactionRoot(workspaceRoot),
     ]) {
         if (pathEntryExists(path))

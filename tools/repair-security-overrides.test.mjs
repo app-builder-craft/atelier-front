@@ -23,6 +23,7 @@ import {
     repairSecurityOverrides,
     securityRepairPlan,
 } from './repair-security-overrides.mjs';
+import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
 const high = (id = 'GHSA-aaaa-bbbb-cccc') => ({
     severity: 'high',
@@ -109,7 +110,7 @@ test('refuse un nom de paquet qui pourrait devenir une option de commande', () =
 });
 
 function repairFixture(t, pkg = { overrides: { axios: '^1.20.0' } }) {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-security-repair-'));
+    const root = mkdtempSync(join(tmpdir(), signatureName('security-repair-')));
     t.after(() => rmSync(root, { recursive: true, force: true }));
     const packagePath = join(root, 'package.json');
     const lockPath = join(root, 'bun.lock');

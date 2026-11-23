@@ -16,6 +16,10 @@ import {
     validRecipe,
     write,
 } from './check-library-setup-fixture.mjs';
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from './generator-platform/core/atelier-signature.mjs';
 
 // Suite 2/2 : verifyApps (manifeste obligatoire, plateforme déterminée,
 // dépendances cohérentes, confinement) + helpers exportés.
@@ -38,7 +42,7 @@ test('app avec project.json + manifeste + invariants satisfaits → ok', async (
     assert.equal(result.checkedApps, 1);
 });
 
-test('BYPASS : app avec project.json régulier mais sans .cmz/libraries.json → échec', async (t) => {
+test(`BYPASS : app avec project.json régulier mais sans ${SIGNATURE_FILES.libraries} → échec`, async (t) => {
     const root = await scaffold(t, {
         recipes: working(),
         apps: { 'demo-app': { manifest: null } },
@@ -51,13 +55,13 @@ test('BYPASS : app avec project.json régulier mais sans .cmz/libraries.json →
 });
 
 test('BYPASS : dossier d’app est un lien symbolique → échec', async (t) => {
-    const outside = await mkdtemp(join(tmpdir(), 'cmz-outside-'));
+    const outside = await mkdtemp(join(tmpdir(), signatureName('outside-')));
     t.after(() => rm(outside, { recursive: true, force: true }));
     await write(join(outside, 'project.json'), {
         name: 'demo-app',
         targets: { build: { executor: '@angular/build:application' } },
     });
-    await write(join(outside, '.cmz/libraries.json'), manifest());
+    await write(join(outside, SIGNATURE_FILES.libraries), manifest());
     const root = await scaffold(t, {
         recipes: working(),
         apps: { 'demo-app': { dirSymlink: outside } },
@@ -645,7 +649,9 @@ test('app sans project.json ignorée ; fichier isolé dans apps/ ignoré', async
 });
 
 test('detectAppPlatform : un seul résultat, sinon unknown (jamais "premier gagné")', async (t) => {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-platform-detect-'));
+    const root = await mkdtemp(
+        join(tmpdir(), signatureName('platform-detect-'))
+    );
     t.after(() => rm(root, { recursive: true, force: true }));
     await write(join(root, 'ng/project.json'), {
         targets: { build: { executor: '@angular/build:application' } },
@@ -694,7 +700,7 @@ test('detectAppPlatform : un seul résultat, sinon unknown (jamais "premier gagn
 });
 
 test('verifyWorkspaceDependency : chaîne complète + cohérence version', async (t) => {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-dep-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('dep-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     await write(join(root, 'package.json'), {
         devDependencies: { pkg: 'catalog:tooling' },
@@ -716,7 +722,7 @@ test('verifyWorkspaceDependency : chaîne complète + cohérence version', async
 });
 
 const depRoot = async (t, catalogValue, lockVersion) => {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-dep-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('dep-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     await write(join(root, 'package.json'), {
         dependencies: { pkg: 'catalog:' },

@@ -13,5 +13,5 @@ intacte : une police posée par le banc ferait échouer la preuve sans rapport
 avec Material. Ce banc n'est donc pas une coque produite par `create-app`, qui
 fixe sa propre police racine.
 
-Toute bibliothèque présente dans `.cmz/libraries.json` doit avoir été ajoutée
-par `add-library` et prouvée par les oracles runtime du workspace.
+Toute bibliothèque présente dans `.atelier/libraries.json` doit avoir été
+ajoutée par `add-library` et prouvée par les oracles runtime du workspace.

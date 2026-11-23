@@ -8,14 +8,14 @@ deux autres guides sont [atelier.md](./atelier.md) et
 
 ## 1. La commande la plus simple
 
-Les exemples utilisent la notation Codex `$cmz-*`. Dans Claude Code, les mêmes
-rôles s'appellent `/cmz-*` (des enveloppes sous `.claude/skills/`). Le rôle et
-ses permissions sont les mêmes ; seule la syntaxe change.
+Les exemples utilisent la notation Codex `$atelier-*`. Dans Claude Code, les
+mêmes rôles s'appellent `/atelier-*` (des enveloppes sous `.claude/skills/`). Le
+rôle et ses permissions sont les mêmes ; seule la syntaxe change.
 
 Si tu ne sais pas quel agent utiliser, écris :
 
 ```text
-$cmz-orchestrator Je veux <décrire simplement le résultat souhaité>.
+$atelier-orchestrator Je veux <décrire simplement le résultat souhaité>.
 ```
 
 L'orchestrator doit te répondre avec :
@@ -37,13 +37,13 @@ Il ne code pas à ta place, sauf si tu changes explicitement de rôle.
 
 Pour un agent qui doit comprendre tout le dépôt, discuter des priorités avec toi
 et suivre GitHub dans la durée. Ouvre un nouveau chat propre sur `main`, puis
-saisis `/status`, puis `$cmz-steward`, puis `/plan`.
+saisis `/status`, puis `$atelier-steward`, puis `/plan`.
 
 Prompt prêt à copier :
 
 ```text
 Tu remplaces pour la première fois l'agent principal de l'atelier.
-Ne modifie encore rien. Applique intégralement $cmz-steward.
+Ne modifie encore rien. Applique intégralement $atelier-steward.
 
 Vérifie le dépôt local, main, les PR, issues et CI vivantes. Lis les autorités
 requises. Donne-moi en français simple : ce qui est certain, ce qui est fini,
@@ -63,18 +63,18 @@ Pour une interface, une primitive ou une migration qui a déjà un identifiant e
 des critères de fin. Dans un nouveau chat et un worktree isolé : `/status`, puis
 le rôle, puis `/plan`.
 
-- Étape Angular : `$cmz-step-executor $angular-developer`.
-- Étape React : `$cmz-step-executor` seul. Le dépôt n'a pas encore de skill
+- Étape Angular : `$atelier-step-executor $angular-developer`.
+- Étape React : `$atelier-step-executor` seul. Le dépôt n'a pas encore de skill
   React qualifiée : l'agent vérifie la version installée, la documentation
   officielle de React et le profil React du dépôt. Il ne doit pas prétendre
   avoir utilisé une skill `$react-developer`, qui n'existe pas.
-- Étape de documentation ou d'outillage : `$cmz-step-executor` suffit.
+- Étape de documentation ou d'outillage : `$atelier-step-executor` suffit.
 
 Prompt prêt à copier :
 
 ```text
 Réalise l'étape <IDENTIFIANT> décrite dans <DOCUMENT OU ISSUE>.
-Applique $cmz-step-executor et les skills techniques nommées.
+Applique $atelier-step-executor et les skills techniques nommées.
 
 Avant de coder, présente le résultat attendu, les fichiers autorisés, ce qui ne
 doit pas changer, les inconnues, les risques, les solutions officielles à
@@ -90,7 +90,7 @@ Pour un travail long :
 
 À la fin, `/review` aide l'executor à relire son propre diff, mais ne remplace
 pas la revue indépendante. Quand les tests sont verts et le handoff complet,
-fais relire par un autre chat, avec `$cmz-task-specialist` :
+fais relire par un autre chat, avec `$atelier-task-specialist` :
 
 ```text
 Mode review. Relis l'étape <IDENTIFIANT> sur la PR <NUMÉRO>. Utilise le work
@@ -103,8 +103,8 @@ confiance et indique si la correction reste dans le work order.
 ### Cas 3 — un agent réalise une tâche précise
 
 Pour vérifier une CI, expliquer une erreur, auditer un fichier, relire une PR ou
-appliquer un correctif limité : `$cmz-task-specialist`. Il est en lecture seule
-par défaut. Une tâche courte n'a normalement pas besoin de `/goal`.
+appliquer un correctif limité : `$atelier-task-specialist`. Il est en lecture
+seule par défaut. Une tâche courte n'a normalement pas besoin de `/goal`.
 
 Diagnostic sans modification :
 
@@ -134,18 +134,18 @@ exécute les contrôles ciblés. Ne refactore rien hors périmètre.
 ### Cas 4 — tu veux être aidé à orchestrer
 
 Quand tu as une intention mais ne sais pas s'il faut un steward, un executor, un
-spécialiste, un plan ou un objectif durable : `$cmz-orchestrator`.
+spécialiste, un plan ou un objectif durable : `$atelier-orchestrator`.
 
 ```text
-$cmz-orchestrator Je veux reprendre le travail après deux semaines d'absence.
+$atelier-orchestrator Je veux reprendre le travail après deux semaines d'absence.
 ```
 
 ```text
-$cmz-orchestrator La CI de la PR #123 est rouge. Aide-moi à lancer le bon agent sans autoriser de modification avant le diagnostic.
+$atelier-orchestrator La CI de la PR #123 est rouge. Aide-moi à lancer le bon agent sans autoriser de modification avant le diagnostic.
 ```
 
 ```text
-$cmz-orchestrator Je veux faire réaliser l'écran Compact validé et contrôler le résultat sans lire tout le code.
+$atelier-orchestrator Je veux faire réaliser l'écran Compact validé et contrôler le résultat sans lire tout le code.
 ```
 
 Il doit fournir une seule recommandation principale, et une alternative
@@ -216,9 +216,9 @@ Regarde quatre choses :
 Pour une étape planifiée, garde cet ordre :
 
 1. toi ou le steward validez le work order avant le code ;
-2. un chat `$cmz-step-executor` réalise et teste ;
+2. un chat `$atelier-step-executor` réalise et teste ;
 3. la CI termine sur le dernier commit ;
-4. un autre chat `$cmz-task-specialist`, mode `review`, relit sans écrire ;
+4. un autre chat `$atelier-task-specialist`, mode `review`, relit sans écrire ;
 5. l'executor corrige seulement les défauts qui restent dans son périmètre ;
 6. chaque nouveau push rejoue la CI et invalide l'ancienne revue ;
 7. le relecteur approuve s'il n'est pas l'auteur du dernier push, puis fusionne
@@ -262,7 +262,7 @@ qui travaille.
 Avant de lancer un deuxième agent :
 
 ```text
-$cmz-orchestrator Vérifie si cette nouvelle tâche entre en conflit avec les branches, worktrees ou fichiers déjà attribués. Propose un ordre sûr.
+$atelier-orchestrator Vérifie si cette nouvelle tâche entre en conflit avec les branches, worktrees ou fichiers déjà attribués. Propose un ordre sûr.
 ```
 
 Règles simples : un seul agent écrit un fichier à la fois ; deux agents peuvent
@@ -277,7 +277,7 @@ Repasser les pistes de bibliothèques en `candidate` avant une requalification
 ([atelier.md](./atelier.md), § 4.3 et § 5) :
 
 ```text
-$cmz-task-specialist Mode fix. Dans conventions/libraries/*/*.compat.json, repasse
+$atelier-task-specialist Mode fix. Dans conventions/libraries/*/*.compat.json, repasse
 chaque piste à requalifier en "status": "candidate" avec "verification": null,
 sans rien changer d'autre. Un seul commit. Lance bun run check:library-setup et
 donne-moi sa sortie.
@@ -287,7 +287,7 @@ Diagnostiquer une commande de l'atelier qui refuse ([produit.md](./produit.md),
 § 5) :
 
 ```text
-$cmz-task-specialist Mode diagnose. La commande <COMMANDE EXACTE> a affiché
+$atelier-task-specialist Mode diagnose. La commande <COMMANDE EXACTE> a affiché
 <MESSAGE EXACT>. Ne modifie rien. Explique la cause, la preuve et ce que je dois
 faire.
 ```

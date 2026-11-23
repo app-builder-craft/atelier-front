@@ -18,6 +18,7 @@ import {
 } from './core/list-query-v2-compiler.mjs';
 import { renderAngularExternalListQuery } from './renderers/angular-external-list-query.mjs';
 import { renderAngularListQueryV2 } from './renderers/angular-list-query-v2-renderer.mjs';
+import { INTERNAL, escapeRegExp } from './core/atelier-signature.mjs';
 
 // Liaisons d'hôte fictives du rendu interne Angular (service du contrat).
 const HOST_BINDINGS = Object.freeze({
@@ -178,7 +179,9 @@ test('rendu : chaque profil n’a que son rendu', async () => {
     );
     assert.doesNotMatch(
         source,
-        /BYPASS_CACHE|createListQueryRequestContext|REQUEST_POLICY|isRefresh|@cmz\//
+        new RegExp(
+            `BYPASS_CACHE|createListQueryRequestContext|REQUEST_POLICY|isRefresh|${escapeRegExp(INTERNAL.scope)}/`
+        )
     );
 });
 
@@ -212,7 +215,9 @@ async function decoderModule(model, internal = false) {
     const files = internal
         ? renderAngularListQueryV2(model, HOST_BINDINGS).files
         : renderAngularExternalListQuery(model, BINDING).files;
-    const errorsModule = internal ? '@cmz/shared-domain' : BINDING.module;
+    const errorsModule = internal
+        ? `${INTERNAL.scope}/shared-domain`
+        : BINDING.module;
     const stub = `export class InvalidPayloadError extends Error { constructor(path, expected) { super(path + ': ' + expected); this.path = path; } }
 export class ServerResponseError extends Error {}`;
     const source = ts

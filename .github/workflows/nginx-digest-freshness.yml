@@ -71,8 +71,8 @@ jobs:
 
           Run : https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
           Tentative : $GITHUB_RUN_ATTEMPT. Le message exact y figure :
-          CMZ_NGINX_DIGEST_STALE (empreinte périmée) ou
-          CMZ_NGINX_DIGEST_UNVERIFIABLE (vérification impossible).
+          ATELIER_NGINX_DIGEST_STALE (empreinte périmée) ou
+          ATELIER_NGINX_DIGEST_UNVERIFIABLE (vérification impossible).
 
           Conduite (docs/proprietaire/atelier.md, section 8.2) :
           1. Une PR Dependabot « build(docker): bump nginx » est ouverte : la relire et la faire fusionner.

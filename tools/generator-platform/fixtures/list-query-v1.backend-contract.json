@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "kind": "backend-contract",
   "contract": {
-    "id": "cmz-editorial-api",
+    "id": "fixture-editorial-api",
     "title": "Generic editorial API migration fixture",
     "version": "1.0.0",
     "status": "planned",

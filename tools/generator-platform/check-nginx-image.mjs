@@ -15,6 +15,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { toolEnv } from './core/atelier-signature.mjs';
+
 export const NGINX_HARNESS_DOCKERFILE =
     'tools/generator-platform/nginx-harness/Dockerfile';
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -129,9 +131,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
     if (errors.length === 0)
         console.log(
-            `CMZ_NGINX_IMAGE_OK ${pinnedNginxImage(dockerfile).reference}`
+            `${toolEnv('NGINX_IMAGE_OK')} ${pinnedNginxImage(dockerfile).reference}`
         );
     for (const error of errors)
-        console.error(`CMZ_NGINX_IMAGE_INVALID ${error}`);
+        console.error(`${toolEnv('NGINX_IMAGE_INVALID')} ${error}`);
     process.exitCode = errors.length === 0 ? 0 : 1;
 }

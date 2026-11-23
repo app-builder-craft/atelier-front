@@ -11,6 +11,7 @@ import {
     publicCompilationContext,
     publishCompilationWithContext,
 } from './compilation-context.mjs';
+import { assertNoProductDesignPrefix } from './product-prefix.mjs';
 import { parseStructuredSource } from './source-document.mjs';
 
 function fail(message) {
@@ -119,6 +120,10 @@ export async function planApplicationDesignPublication({
         workspaceRoot: root,
     });
     if (errors.length > 0) fail(`design rejected:\n${errors.join('\n')}`);
+    // Produit extérieur : le préfixe est scellé dans l'espace ; une conception
+    // qui en déclare un est refusée dès la compilation, avec le refus nommé
+    // de la création de coque.
+    if (context) assertNoProductDesignPrefix(source.design);
     const content = Buffer.from(
         `${JSON.stringify(canonicalize(source.design), null, 2)}\n`
     );

@@ -62,7 +62,7 @@ jobs:
   guardrails:
     name: Garde-fous socle
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -123,9 +123,22 @@ jobs:
 
       # Un journal d'outil non ignoré rend le dépôt sale et fait échouer la
       # publication d'add-library APRÈS le travail coûteux. Défaut réel :
-      # .cmz/library-llm-audit/ manquait à .gitignore.
-      - name: check:cmz-journals-ignored (journaux d'outil hors index)
-        run: bun run check:cmz-journals-ignored
+      # .atelier/library-llm-audit/ manquait à .gitignore.
+      - name: check:atelier-journals-ignored (journaux d'outil hors index)
+        run: bun run check:atelier-journals-ignored
+
+      # Lot MARQUE : la signature de l'atelier n'existe qu'à un endroit ; une
+      # valeur réécrite en dur est refusée. Les formes du préfixe du produit
+      # dérivent d'une seule source (`core/product-identity.mjs`).
+      - name: check:identity-sources (sources uniques de signature et d'identité)
+        run: bun run check:identity-sources
+
+      # Lot MARQUE : l'ancien nom interne ne revient ni dans un fichier suivi
+      # ni dans un produit sonde publié réellement dans les deux profils ; les
+      # verrous, déduits de packageManager, sont jugés hors valeurs d'intégrité
+      # SRI.
+      - name: check:retired-name (ancien nom absent des fichiers suivis et des produits)
+        run: bun run check:retired-name
 
       # SIMPL-5 — les trois commandes de construction exposent une explication
       # JSON stable et un runbook court, sans précondition ni écriture.
@@ -133,7 +146,7 @@ jobs:
         run: bun run check:command-explanations
 
       # Ces trois audits globaux restent directement bloquants ici.
-      - name: check:project-names (ADR-0003 nommage @cmz/)
+      - name: check:project-names (ADR-0003 nommage @atelier/)
         run: node tools/check-project-names.mjs
 
       # Audit A-5 — chaque lib doit exposer build + lint (oracle package-based)
@@ -182,7 +195,7 @@ jobs:
       # ADR-0041 — garde-fou de DÉRIVE de configuration : les recettes
       # conventions/libraries/<platform>/<lib>.setup.json figent des
       # static_invariants structurels (présence de fichiers/fragments), le
-      # schéma fermé du manifeste apps/<app>/.cmz/libraries.json, la cohérence
+      # schéma fermé du manifeste apps/<app>/.atelier/libraries.json, la cohérence
       # package.json/catalog/bun.lock, et le confinement de toute lecture (zéro
       # lien symbolique). Cette step vérifie les contrats ; leurs acceptances
       # réelles sont exécutées par le job `library-end-to-end`. Le recours LLM
@@ -283,7 +296,7 @@ jobs:
 
       - name: check:publication-durability (${{ matrix.profile }})
         env:
-          CMZ_PUBLICATION_PLATFORM: ${{ matrix.platform }}
+          ATELIER_PUBLICATION_PLATFORM: ${{ matrix.platform }}
         run: bun run check:publication-durability
 
   # ADR-0042 — la frontière du candidat est prouvée sur les deux backends,
@@ -636,7 +649,7 @@ jobs:
       # l'installation officielle Playwright reste l'unique source des paquets.
       - name: Bound APT mirror retries
         run: |
-          sudo tee /etc/apt/apt.conf.d/80-cmz-ci-network >/dev/null <<'APT_CONFIG'
+          sudo tee /etc/apt/apt.conf.d/80-atelier-ci-network >/dev/null <<'APT_CONFIG'
           Acquire::Retries "1";
           Acquire::http::Timeout "10";
           Acquire::https::Timeout "10";
@@ -734,7 +747,7 @@ jobs:
   # CVE distincts, fast-uri, ip-address), tous dans l'outillage de build
   # (nx/eslint/@angular-devkit/@angular/cli/commitlint) sauf brace-expansion
   # dont une chaîne remonte réellement jusqu'à `exceljs` (dépendance
-  # applicative de `@cmz/shared-browser`, via
+  # applicative de `@atelier/shared-browser`, via
   # `unzipper → fstream → rimraf@2 → glob@7 → minimatch@3` — la vérification
   # d'origine, limitée au seul champ `browser` d'exceljs, n'avait pas vu cette
   # chaîne Node-only). Les 8 corrigés par un bloc `overrides` racine
@@ -929,23 +942,23 @@ jobs:
         shell: bash
         run: |
           proof_parent="$(cd "$(dirname "$GITHUB_WORKSPACE")" && pwd -P)"
-          printf 'CMZ_EXTERNAL_APPLICATION_PROOF_ROOT=%s/cmz-external-application-proof\n' "$proof_parent" >> "$GITHUB_ENV"
+          printf 'ATELIER_EXTERNAL_APPLICATION_PROOF_ROOT=%s/atelier-external-application-proof\n' "$proof_parent" >> "$GITHUB_ENV"
       - name: T9–T18 outils natifs confinés, deux apps et mutations
-        run: bun run check:external-application-shells --proof-root "${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}" --backend docker
+        run: bun run check:external-application-shells --proof-root "${{ env.ATELIER_EXTERNAL_APPLICATION_PROOF_ROOT }}" --backend docker
       # X4-config, preuves 8 et 10 : la coque construite par la preuve native,
       # servie par le relais nginx, ouverte par son Chromium (Trusted Types et
       # politique sans violation, service worker).
       - name: Coque servie par le relais nginx (X4-config)
-        run: bun run check:nginx-relay-browser "${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}"
+        run: bun run check:nginx-relay-browser "${{ env.ATELIER_EXTERNAL_APPLICATION_PROOF_ROOT }}"
       # X4-sécurité-3, N4 (O-S-V) : trois témoins natifs de (submit), construits
       # par les outils du produit de la preuve et mesurés dans son Chromium.
       - name: Témoins natifs de la soumission (X4-sécurité-3)
-        run: bun run check:page-submit-witnesses "${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}"
+        run: bun run check:page-submit-witnesses "${{ env.ATELIER_EXTERNAL_APPLICATION_PROOF_ROOT }}"
       - name: Reçu texte sans environnement
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: external-application-shells-text
-          path: ${{ env.CMZ_EXTERNAL_APPLICATION_PROOF_ROOT }}/report.txt
+          path: ${{ env.ATELIER_EXTERNAL_APPLICATION_PROOF_ROOT }}/report.txt
           if-no-files-found: warn
           retention-days: 7

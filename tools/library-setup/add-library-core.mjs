@@ -55,6 +55,10 @@ import {
     applyQualifiedAdapter,
     qualifiedAdapterDescriptor,
 } from './qualified-adapters.mjs';
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 const BROWSER_PROOF_KINDS = new Set([
     'browser-coexistence',
@@ -88,7 +92,7 @@ function fileHash(root, path) {
 
 function ensureCache() {
     const parent = realpathSync(tmpdir());
-    const cache = join(parent, 'cmz-library-bun-cache-v1');
+    const cache = join(parent, signatureName('library-bun-cache-v1'));
     if (!existsSync(cache)) {
         mkdirSync(cache, { mode: 0o700 });
         chmodSync(cache, 0o700);
@@ -110,7 +114,7 @@ function ensureCache() {
 
 function withSynchronizationHome(operation) {
     const home = mkdtempSync(
-        join(realpathSync(tmpdir()), 'cmz-library-sync-home-')
+        join(realpathSync(tmpdir()), signatureName('library-sync-home-'))
     );
     chmodSync(home, 0o700);
     try {
@@ -162,7 +166,7 @@ function workspaceVersions(manifest, platform) {
 }
 
 function installedLibraries(workspace, app, platform) {
-    const path = join(workspace, 'apps', app, '.cmz', 'libraries.json');
+    const path = join(workspace, 'apps', app, SIGNATURE_FILES.libraries);
     const stats = lstatSync(path);
     if (stats.isSymbolicLink() || !stats.isFile()) {
         fail(`manifeste de ${app} non régulier`);

@@ -11,8 +11,8 @@ import {
     qualifyNodeVersion,
     qualifyBrowser,
 } from './check-external-application-shells.mjs';
-import { verifyCmzJournalsIgnored } from '../check-cmz-journals-ignored.mjs';
-import { EXTERNAL_WORKSPACE_CMZ } from './renderers/application-workspace-renderer.mjs';
+import { verifySignatureJournalsIgnored } from '../check-atelier-journals-ignored.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE } from './renderers/application-workspace-renderer.mjs';
 import {
     planApplicationWorkspace,
     planExternalApplicationShell,
@@ -35,6 +35,11 @@ import {
     sourceDependencyExpectations,
     verifyWorkspaceDependencyProfiles,
 } from './test-support/workspace-dependency-assertions.mjs';
+import {
+    SIGNATURE,
+    SIGNATURE_FILES,
+    signaturePath,
+} from './core/atelier-signature.mjs';
 
 test('T1 : preview pur sur source, destination et voisins', async (t) => {
     const parent = await fixtureParent(t);
@@ -133,10 +138,10 @@ test('T6 : préparation/reprise exacte, aucun écrasement après modification', 
 test('T6 : dossier étranger, marqueur incomplet et candidat étranger restent intacts', async (t) => {
     const parent = await fixtureParent(t);
     const target = join(parent, 'foreign');
-    await mkdir(join(target, '.cmz'), { recursive: true });
+    await mkdir(join(target, SIGNATURE.dir), { recursive: true });
     await writeFile(join(target, 'owner.txt'), 'ne pas déplacer\n');
     await writeFile(
-        join(target, '.cmz/application-workspace.json'),
+        join(target, SIGNATURE_FILES.workspaceManifest),
         JSON.stringify({
             kind: 'application-workspace-manifest',
             target_root: target,
@@ -637,20 +642,21 @@ test('v10 : chemins produit déclarés acceptés, journal inconnu refusé', asyn
     const root = await fixtureParent(t);
     assert.equal(spawnSync('git', ['init', '-q', root]).status, 0);
     await mkdir(join(root, 'tools'));
-    const journal = ['.cmz', 'fixture-journal'].join('/');
+    const journal = signaturePath('fixture-journal');
     await writeFile(join(root, '.gitignore'), journal + '/\n');
-    const paths = [...Object.values(EXTERNAL_WORKSPACE_CMZ), journal];
+    const paths = [...Object.values(EXTERNAL_WORKSPACE_SIGNATURE), journal];
+    // Décision A du lot MARQUE : un outil nomme un chemin sous le dossier de
+    // signature par `signaturePath('<nom>'…)`, que le contrôle lit.
+    const call = (path) =>
+        `signaturePath(${JSON.stringify(path.split('/').slice(1).join('/'))})`;
     const source = join(root, 'tools/fixture.mjs');
-    await writeFile(source, paths.map(JSON.stringify).join(';\n'));
-    const accepted = verifyCmzJournalsIgnored(root);
+    await writeFile(source, paths.map(call).join(';\n'));
+    const accepted = verifySignatureJournalsIgnored(root);
     assert.equal(accepted.ok, true, accepted.errors.join('\n'));
     assert.deepEqual(accepted.names, ['fixture-journal']);
-    const unknown = ['.cmz', 'undeclared-product'].join('/');
-    await writeFile(
-        source,
-        [...paths, unknown].map(JSON.stringify).join(';\n')
-    );
-    const refused = verifyCmzJournalsIgnored(root);
+    const unknown = signaturePath('undeclared-product');
+    await writeFile(source, [...paths, unknown].map(call).join(';\n'));
+    const refused = verifySignatureJournalsIgnored(root);
     assert.equal(refused.ok, false);
     assert.equal(refused.errors.length, 1);
     assert.ok(refused.errors[0].includes(unknown + '/'));

@@ -21,6 +21,7 @@ import {
     recoverCandidateLeases,
     releaseCandidateLease,
 } from './candidate-lease.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 const START_TOKEN = 'Fri Sep  4 00:00:00 2026';
 const processProbe = (pid) => (pid === process.pid ? START_TOKEN : '');
@@ -33,7 +34,7 @@ function git(root, ...args) {
 }
 
 async function fixture(t) {
-    const parent = await mkdtemp(join(tmpdir(), 'cmz-lease-test-'));
+    const parent = await mkdtemp(join(tmpdir(), signatureName('lease-test-')));
     t.after(() => rm(parent, { recursive: true, force: true }));
     const repo = join(parent, 'repo');
     const leaseRoot = join(parent, 'leases');

@@ -27,7 +27,48 @@ import {
     hash,
     shellFixture,
 } from './external-application-fixture.mjs';
+import { FIXTURE_PREFIX } from './application-design-fixture.mjs';
 import { nx24ShellDelta } from './nx24-shell-delta.mjs';
+import { SIGNATURE } from '../core/atelier-signature.mjs';
+
+// Le renderer historique range ses métadonnées sous SA signature, lue dans sa
+// sortie (son unique manifeste d'appli), comme son préfixe implicite. Avant le
+// delta Nx24, ce dossier est renommé vers la signature courante (lot MARQUE,
+// commit 4) : chemins et entrées du manifeste, puis empreinte de l'arbre. Le
+// renommage ne touche aucun contenu : un fichier qui citerait l'ancien dossier
+// fait échouer l'oracle.
+async function withCurrentSignature(files) {
+    const manifests = Object.keys(files).filter((path) =>
+        /^\.[a-z][a-z0-9-]*\/app-manifest\.json$/.test(path)
+    );
+    assert.equal(manifests.length, 1, 'manifeste historique introuvable');
+    const from = manifests[0].split('/')[0];
+    const rename = (path) =>
+        path.startsWith(`${from}/`)
+            ? `${SIGNATURE.dir}${path.slice(from.length)}`
+            : path;
+    const renamed = Object.fromEntries(
+        Object.entries(files).map(([path, content]) => [rename(path), content])
+    );
+    const manifestPath = rename(manifests[0]);
+    for (const [path, content] of Object.entries(renamed))
+        if (path !== manifestPath)
+            assert.ok(!content.includes(`${from}/`), `${path} cite ${from}/`);
+    const manifest = JSON.parse(renamed[manifestPath]);
+    for (const entry of manifest.generated_files)
+        entry.path = rename(entry.path);
+    manifest.tree_sha256 = hash(
+        manifest.generated_files
+            .map((entry) => `${entry.path}\0${entry.sha256}`)
+            .join('\0')
+    );
+    return {
+        ...renamed,
+        ...(await canonicalizeGeneratedFiles({
+            [manifestPath]: JSON.stringify(manifest, null, 2),
+        })),
+    };
+}
 
 test('T13 : configurations strictes et compilation/test/lint natifs locaux des deux cibles', async (t) => {
     for (const profile of ['angular-pwa', 'react-spa']) {
@@ -154,7 +195,23 @@ test('T16 : référence historique exhaustive et seul delta Nx24 qualifié', asy
                 await readFile(join(fixture.root, fixture.input.designPath))
             ),
         };
-        const historical = (await reference[fn](options)).files;
+        const historical = await withCurrentSignature(
+            (await reference[fn](options)).files
+        );
+        // Le renderer historique a un préfixe implicite, lu dans sa sortie :
+        // rendu au même préfixe, le renderer actuel n'en diffère que du delta
+        // Nx24.
+        const access =
+            historical[
+                profile === 'angular-pwa'
+                    ? 'src/app/access.guard.ts'
+                    : 'src/app/access-policy.tsx'
+            ];
+        const implicit = /window\.__([a-z][a-z0-9]{1,5})AppAccessContext/.exec(
+            access ?? ''
+        );
+        assert.ok(implicit, `${profile} : préfixe historique introuvable`);
+        options.prefix = implicit[1];
         const actual = (await render(options)).files;
         // Red witness: unmodified historical bytes must reject the migrated renderer.
         assert.throws(() => assert.deepEqual(actual, historical), {
@@ -288,6 +345,8 @@ test(
             designPath: input.designPath,
             designSha256: hash(await readFile(join(root, input.designPath))),
             externalWorkspace: true,
+            // Préfixe que la préparation propose pour ce dépôt fictif.
+            prefix: FIXTURE_PREFIX,
         });
         const files = {
             ...workspace,

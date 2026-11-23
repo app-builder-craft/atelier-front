@@ -31,7 +31,7 @@ export default [
             '@nx/enforce-module-boundaries': [
                 'error',
                 {
-                    // false : les libs cmz-platform sont applicatives (non publiées npm).
+                    // false : les libs de l'atelier sont applicatives (non publiées npm).
                     // `enforceBuildableLibDependency: true` est réservé aux monorepos
                     // publicateurs (ng-packagr, changesets). Ici il produirait des
                     // faux-positifs dès qu'un target `build: tsc --noEmit` est déclaré
@@ -96,7 +96,7 @@ export default [
                             ],
                         },
                         // `app` = composition root — liste explicite (pas de joker `*`).
-                        // `type:browser` (@cmz/shared-browser) n'est autorisé QUE depuis
+                        // `type:browser` (@atelier/shared-browser) n'est autorisé QUE depuis
                         // type:app : adaptateurs navigateur réservés au wiring root
                         // (audit D-5 / P2-18). Aucune couche lib (ui/application/data/…)
                         // ne liste type:browser → import interdit ailleurs.

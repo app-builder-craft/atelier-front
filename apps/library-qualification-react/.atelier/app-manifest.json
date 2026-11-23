@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "application-shell-manifest",
+  "app_name": "library-qualification-react",
+  "profile": "react-spa",
+  "design_ref": {
+    "path": "designs/library-qualification-bench.application-design.json",
+    "sha256": "407ebd68edaf374961f84833f6b8c908a7eb351f15f9dcd9e211f7788c0bea93"
+  },
+  "experience_id": "visitor-web",
+  "generated_files": [
+    {
+      "path": ".atelier/libraries.json",
+      "bytes": 108,
+      "sha256": "c3f2551e21438af48d354958e174da65f3188402e8f42d2d5fccf3031c4b7b9b"
+    },
+    {
+      "path": ".atelier/pages/page_a11ca71000000001.json",
+      "bytes": 3885,
+      "sha256": "6334b4e2c775b3e810b0e5e445179349c0865bae084a40bdbfa3f57b42ee693a"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "bytes": 315,
+      "sha256": "8fa49bb8b6a1f6e63b0f05949d6d2ad3ed6ce03e49fab593793086237f8a8a15"
+    },
+    {
+      "path": "index.html",
+      "bytes": 668,
+      "sha256": "a0b85d905d66b468cc1f966ceececaae63e6844f3811ab84f728689484612a0a"
+    },
+    {
+      "path": "project.json",
+      "bytes": 248,
+      "sha256": "cc643f0ac8458693c2c7b84a0e5438f2862a8d05f7ea4649d88e926dc2c2020e"
+    },
+    {
+      "path": "public/icon.svg",
+      "bytes": 439,
+      "sha256": "db6df63fae45c9d31f8fe150cffc13da1e410939ffae255d715e66c4494c03bc"
+    },
+    {
+      "path": "src/app/access-policy.spec.ts",
+      "bytes": 3089,
+      "sha256": "10fd140a4480263b6b3a95b53ef462675010aece9f03ed3e36f9b1ffb3264010"
+    },
+    {
+      "path": "src/app/access-policy.tsx",
+      "bytes": 2699,
+      "sha256": "654cc85195db86938cae88e586f2ee759a0ef565a5a9c140ee2401c678047952"
+    },
+    {
+      "path": "src/app/app.routes.tsx",
+      "bytes": 363,
+      "sha256": "3f24ec6b84fc12ad3b6269b8bd4c920bb5b858d98018d60a4d61c09196325167"
+    },
+    {
+      "path": "src/app/app.tsx",
+      "bytes": 95,
+      "sha256": "36b09813dd6cf32dc7599d94736216dd7095031ce748ab80bdc218a080494ad8"
+    },
+    {
+      "path": "src/app/pages/page_a11ca71000000001/page.tsx",
+      "bytes": 317,
+      "sha256": "6d56d3b7f06303f38568d2b52ed323865230d77041a55ccd7af6da5e35d015f9"
+    },
+    {
+      "path": "src/main.tsx",
+      "bytes": 450,
+      "sha256": "f19a27d13b1d12e08028990148ecf6813930106c27a2c3916dfbb27a2f1045cb"
+    },
+    {
+      "path": "src/styles.scss",
+      "bytes": 177,
+      "sha256": "c767a4c3638dccd4e7fe96a871c36a278201246aeff87c52c6a9c3e45a4ec6d4"
+    },
+    {
+      "path": "tsconfig.app.json",
+      "bytes": 420,
+      "sha256": "8e065da45a1be8b72cf1a30687b93348e846894b79c7e3a9582ae67d6b332f60"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 372,
+      "sha256": "cba4f1de914a31500f736057dcece770356d94641c434b0814ce3e1455723ba1"
+    },
+    {
+      "path": "tsconfig.spec.json",
+      "bytes": 462,
+      "sha256": "a692c650f5b6d3533107ab4ee57d672c057fc38fa7e500e4c1c450d8e4a74fb8"
+    },
+    {
+      "path": "vite.config.mts",
+      "bytes": 1144,
+      "sha256": "e7a376999e27cc4c42733879913117e3b5c092a289921f1d123b94ad7ff5341a"
+    }
+  ],
+  "tree_sha256": "8e29cfc245592e12b58b713dff0fc905de5479e703f1db7567cb878a66c745c5"
+}

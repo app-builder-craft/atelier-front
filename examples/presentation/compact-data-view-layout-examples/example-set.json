@@ -32,8 +32,8 @@
     {
       "path": "examples/presentation/compact-data-view-layout-examples/mockup.html",
       "media_type": "text/html",
-      "bytes": 16681,
-      "sha256": "f06d3d38797a1b23b077ecd0d706805a8298d592ee9de3a5b77081522456e82f",
+      "bytes": 16676,
+      "sha256": "194791b0f89d0baf983e7b3f3668aab033a404ff8cf592b9d6b2c391ddc2a03e",
       "authority": "reproduction-only"
     },
     {
@@ -46,8 +46,8 @@
     {
       "path": "examples/presentation/compact-data-view-layout-examples/render.mjs",
       "media_type": "text/javascript",
-      "bytes": 2033,
-      "sha256": "3e75f3cb49452eb6449c60def695bd8a57af970d39538d6eee8ca38ea8f7ec24",
+      "bytes": 2144,
+      "sha256": "07265b2058012d1d539c03715db209b032ef3b74ea6e968128f0a74aa4827283",
       "authority": "reproduction-only"
     }
   ],

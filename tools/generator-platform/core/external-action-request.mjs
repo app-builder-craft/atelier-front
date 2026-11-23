@@ -18,7 +18,9 @@ import {
 import {
     inputFilePath,
     ownedProductContext,
+    readAppManifest,
 } from './application-workspace-root.mjs';
+import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import {
     externalFailure,
@@ -33,6 +35,11 @@ import {
     pagesConsumingCommand,
 } from './external-publication-paths.mjs';
 import { sha256 } from './generation-manifest.mjs';
+
+// Contrat de page publié sous le dossier de signature.
+const PAGE_CONTRACT = new RegExp(
+    `^${escapeRegExp(SIGNATURE_FILES.pages)}/page_[a-f0-9]{16}\\.json$`
+);
 
 export {
     ACTION_REQUEST_TOOL,
@@ -73,9 +80,7 @@ export async function sessionApplication(
     const appRoot = resolve(root, 'apps', appName);
     if (!(await pathExists(appRoot))) externalFailure('application is absent');
     const manifest = JSON.parse(
-        (await readProductFile(appRoot, '.cmz/app-manifest.json')).toString(
-            'utf8'
-        )
+        (await readAppManifest(appRoot)).toString('utf8')
     );
     // Angular seulement : React reste explicitement refusé.
     if (manifest.profile !== 'angular-pwa')
@@ -166,7 +171,7 @@ export function assertShellServiceBinding(endpoints, serviceId, contractId) {
 // l'application déclarent ; sinon le plan de page le refuserait plus tard.
 export async function assertDeclaredContract(app, contract) {
     for (const { path } of app.manifest.generated_files) {
-        if (!/^\.cmz\/pages\/page_[a-f0-9]{16}\.json$/.test(path)) continue;
+        if (!PAGE_CONTRACT.test(path)) continue;
         const page = JSON.parse((await ownedAppFile(app, path)).toString());
         for (const reference of page.backend_contracts ?? [])
             if (

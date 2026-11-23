@@ -20,6 +20,10 @@ import {
     trackedPlaywrightConfigs,
     verifyPlaywrightSecretSafety,
 } from './check-playwright-secret-safety.mjs';
+import {
+    signatureName,
+    toolEnv,
+} from './generator-platform/core/atelier-signature.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PLAYWRIGHT_CLI = join(
@@ -51,7 +55,9 @@ function fixtureConfig({
     hasWebServer = true,
     reporterOnlyLeak = false,
 } = {}) {
-    const root = mkdtempSync(join(tmpdir(), 'cmz-playwright-secret-safety-'));
+    const root = mkdtempSync(
+        join(tmpdir(), signatureName('playwright-secret-safety-'))
+    );
     temporaryRoots.push(root);
     const testDir = join(root, 'e2e');
     mkdirSync(testDir);
@@ -66,7 +72,7 @@ function fixtureConfig({
         .map(shellArgument)
         .join(' ');
     const metadata = reporterOnlyLeak
-        ? `metadata: { reporterCanary: process.env.CMZ_PLAYWRIGHT_REPORTER_SENTINEL },`
+        ? `metadata: { reporterCanary: process.env.${toolEnv('PLAYWRIGHT_REPORTER_SENTINEL')} },`
         : '';
     const finiteBlockingDelay =
         `await new Promise((resolve) => ` +
@@ -88,7 +94,7 @@ function fixtureConfig({
     writeFileSync(
         configPath,
         `import { defineConfig } from ${JSON.stringify(playwrightModule)};\n` +
-            `if (process.env.CMZ_REAL_ENVIRONMENT_CANARY) throw new Error('real environment leaked');\n` +
+            `if (process.env.${toolEnv('REAL_ENVIRONMENT_CANARY')}) throw new Error('real environment leaked');\n` +
             (blocksImport ? finiteBlockingDelay : '') +
             `export default defineConfig({\n` +
             `  testDir: ${JSON.stringify(testDir)},\n` +
@@ -156,7 +162,7 @@ test('le reporter JSON reste borné et --list ne démarre aucun serveur', () => 
     });
     const { configPath, root, serverMarker } = fixture;
     proveServerWitness(fixture);
-    process.env.CMZ_REAL_ENVIRONMENT_CANARY = 'parent-only-value';
+    process.env[toolEnv('REAL_ENVIRONMENT_CANARY')] = 'parent-only-value';
     let inspection;
     try {
         inspection = inspectPlaywrightConfig(configPath, {
@@ -164,7 +170,7 @@ test('le reporter JSON reste borné et --list ne démarre aucun serveur', () => 
             playwrightCli: PLAYWRIGHT_CLI,
         });
     } finally {
-        delete process.env.CMZ_REAL_ENVIRONMENT_CANARY;
+        delete process.env[toolEnv('REAL_ENVIRONMENT_CANARY')];
     }
 
     assert.equal(inspection.webServerCount, 1);

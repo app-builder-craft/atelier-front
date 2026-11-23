@@ -29,6 +29,7 @@ import { fixture } from './test-support/dependabot-policy-fixture.mjs';
 // aussi les contre-tests PEER-GRAPH et nginx dans le même contexte CI.
 import './check-dependabot-peer-policy.test.mjs';
 import './check-dependabot-nginx-policy.test.mjs';
+import { signatureName } from './generator-platform/core/atelier-signature.mjs';
 
 test('accepte un groupe React complet et des runtimes alignés', () => {
     const { config, pkg, lock } = fixture();
@@ -607,7 +608,9 @@ test('ignore : liste vide ou absente admise sans figer une exclusion', () => {
 
 test('B : la CLI réelle lie les exclusions au workflow et refuse une délégation inopérante', (t) => {
     const source = fileURLToPath(new URL('..', import.meta.url));
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'cmz-nx-policy-')));
+    const root = realpathSync(
+        mkdtempSync(join(tmpdir(), signatureName('nx-policy-')))
+    );
     t.after(() => rmSync(root, { recursive: true, force: true }));
     mkdirSync(join(root, 'tools'), { recursive: true });
     mkdirSync(join(root, '.github/workflows'), { recursive: true });

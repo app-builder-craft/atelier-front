@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/page-realization-evidence.schema.json",
-  "title": "CMZ Page Realization Evidence",
+  "$id": "https://atelier.local/schemas/generator-platform/page-realization-evidence.schema.json",
+  "title": "Atelier Page Realization Evidence",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -43,7 +43,7 @@
         },
         "selector": {
           "type": "string",
-          "pattern": "^\\[data-cmz-id=\"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\"\\]$"
+          "pattern": "^\\[data-atelier-id=\"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*\"\\]$"
         }
       }
     },

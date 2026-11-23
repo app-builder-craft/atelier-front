@@ -20,7 +20,8 @@ import {
     workOrderPath,
 } from '../core/external-page-realization.mjs';
 import { sha256 } from '../core/generation-manifest.mjs';
-import { EXTERNAL_WORKSPACE_CMZ as CMZ } from '../renderers/application-workspace-renderer.mjs';
+import * as atelier from '../core/atelier-signature.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from '../renderers/application-workspace-renderer.mjs';
 import {
     hash,
     snapshotTree,
@@ -40,6 +41,8 @@ import {
     cspTrapFixture,
     proveConfinedProductOracle,
 } from './external-page-security-native.mjs';
+
+const tag = (name) => `${atelier.toolEnv(name)}=`; // ligne de sortie du script
 
 async function writeDraft(root, workOrder, files) {
     const draft = resolve(root, workOrder.draft_root);
@@ -193,7 +196,9 @@ export async function proveNativePageRealization(session, shell) {
         publishExternalPageRealization,
         options
     );
-    const manifest = JSON.parse(plan.files['.cmz/app-manifest.json']);
+    const manifest = JSON.parse(
+        plan.files[atelier.SIGNATURE_FILES.appManifest]
+    );
     assert.equal(
         plan.changes.find(({ path }) => path.endsWith('/page.component.ts'))
             .change,
@@ -272,7 +277,7 @@ import { extname, relative, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 
 // Canal de diagnostic fermé (CI de la PR #389) : en cas d'échec, le script
-// n'écrit que des lignes CMZ_DIAG= qu'il construit lui-même, et la preuve
+// n'écrit que des lignes ${tag('DIAG')} qu'il construit lui-même, et la preuve
 // ne publie que celles-ci, filtrées par diagnosticLines().
 let stage = 'arguments';
 let currentPage;
@@ -294,13 +299,13 @@ async function diagnose(error) {
     try {
         const counts = {};
         // repli justifié : diagnostic seul ; sans page lisible, aucun compte de violations.
-        for (const [directive] of (await currentPage?.evaluate(() => globalThis.__cmzViolations)) ?? [])
+        for (const [directive] of (await currentPage?.evaluate(() => globalThis.${atelier.signatureGlobal('Violations')})) ?? [])
             counts[directive] = (counts[directive] ?? 0) + 1;
         for (const [directive, count] of Object.entries(counts)) lines.push('csp:' + directive + '=' + count);
     } catch { lines.push('stage:page-unreadable'); }
     for (const text of consoleErrors.slice(0, 20)) lines.push('console:' + text);
     lines.push(...routeDiagnostics);
-    process.stdout.write(lines.map((line) => 'CMZ_DIAG=' + line).join('\\n') + '\\n');
+    process.stdout.write(lines.map((line) => '${tag('DIAG')}' + line).join('\\n') + '\\n');
     process.exitCode = 1;
 }
 const [buildPath, browserPath, fixturePath] = process.argv.slice(2);
@@ -400,7 +405,7 @@ try {
     const connectivity = (online) => {
         let state = online;
         Object.defineProperty(globalThis.Navigator.prototype, 'onLine', { configurable: true, get: () => state });
-        Object.defineProperty(globalThis, '__cmzConnectivity', {
+        Object.defineProperty(globalThis, '${atelier.signatureGlobal('Connectivity')}', {
             value: (next) => {
                 state = next;
                 globalThis.dispatchEvent(new Event(next ? 'online' : 'offline'));
@@ -418,7 +423,7 @@ try {
     await context.addInitScript(() => {
         Reflect.deleteProperty(globalThis.Navigator.prototype, 'serviceWorker');
         const violations = [];
-        Object.defineProperty(globalThis, '__cmzViolations', { value: violations });
+        Object.defineProperty(globalThis, '${atelier.signatureGlobal('Violations')}', { value: violations });
         document.addEventListener('securitypolicyviolation', (event) =>
             violations.push([event.effectiveDirective, event.blockedURI])
         );
@@ -443,14 +448,14 @@ try {
     stage = 'placeholder';
     assert.equal(await page.getByText(fixture.placeholder).count(), 0, 'La page d’attente doit être remplacée');
     stage = 'ready';
-    await page.locator('[data-cmz-id="' + fixture.readyState + '"]').waitFor();
+    await page.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
     stage = 'fill';
     for (const control of fixture.controls)
         await page.getByLabel(control.label, { exact: true }).fill('valeur-' + control.id);
     stage = 'submit';
     await page.getByRole('button', { name: fixture.actionLabel, exact: true }).click();
     stage = 'error-state';
-    await page.locator('[data-cmz-id="' + fixture.errorState + '"]').waitFor();
+    await page.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.errorState + '"]').waitFor();
     stage = 'networkidle';
     await page.waitForLoadState('networkidle');
     stage = 'realized-page-checks';
@@ -458,10 +463,10 @@ try {
     // X4-config : l'envoi part vers le relais de même origine, une seule fois.
     assert.equal(writes.length, 1, 'Un seul envoi attendu');
     assert.match(writes[0], /^POST \\/api\\/[a-z][a-z0-9-]*\\/[A-Za-z0-9._~\\/-]*$/, 'Envoi hors du relais de même origine');
-    process.stdout.write('CMZ_RELAY=' + writes[0] + '\\n');
+    process.stdout.write('${tag('RELAY')}' + writes[0] + '\\n');
     // Page réalisée sous la politique de la coque : aucune violation, aucune
     // requête hors des fichiers du bundle (M-3).
-    assert.deepEqual(await page.evaluate(() => globalThis.__cmzViolations), [], 'Violation de la politique sur la page réalisée');
+    assert.deepEqual(await page.evaluate(() => globalThis.${atelier.signatureGlobal('Violations')}), [], 'Violation de la politique sur la page réalisée');
     const outside = served.filter((path) => path !== '/' && path !== fixture.entryPath && !bundle.has(path) && !path.startsWith('/api/'));
     assert.deepEqual(outside, [], 'Requête hors bundle');
     // Hors ligne émulé : l'état hors ligne du contrat est affiché, l'état
@@ -474,8 +479,8 @@ try {
     currentPage = offlinePage;
     await offlinePage.goto(origin + fixture.entryPath);
     await offlinePage.getByRole('heading', { name: fixture.entryTitle, exact: true }).waitFor();
-    await offlinePage.locator('[data-cmz-id="' + fixture.offlineState + '"]').waitFor();
-    assert.equal(await offlinePage.locator('[data-cmz-id="' + fixture.readyState + '"]').count(), 0, 'État prêt affiché hors ligne');
+    await offlinePage.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.offlineState + '"]').waitFor();
+    assert.equal(await offlinePage.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.readyState + '"]').count(), 0, 'État prêt affiché hors ligne');
     const offlineAction = offlinePage.getByRole('button', { name: fixture.actionLabel, exact: true });
     assert.equal(await offlineAction.isDisabled(), true, 'Envoi possible hors ligne');
     await offlineAction.click({ force: true });
@@ -483,7 +488,7 @@ try {
     assert.deepEqual(offlineWrites, [], 'Requête d’envoi hors ligne');
     await offlineContext.close();
     currentPage = page;
-    process.stdout.write('CMZ_CONNECTIVITY=online:ready offline:' + fixture.offlineState + '\\n');
+    process.stdout.write('${tag('CONNECTIVITY')}online:ready offline:' + fixture.offlineState + '\\n');
     // X4-sécurité-3, N2 étendu (conception v2 §3.5) : aucune soumission native,
     // y compris en erreur. Par scénario, sur une page neuve : un seul
     // chargement de document, aucune URL de requête contenant une valeur
@@ -505,7 +510,7 @@ try {
         const foreignBefore = foreignHits.length;
         await scenarioPage.goto(origin + fixture.entryPath);
         await scenarioPage.getByRole('heading', { name: fixture.entryTitle, exact: true }).waitFor();
-        await scenarioPage.locator('[data-cmz-id="' + fixture.readyState + '"]').waitFor();
+        await scenarioPage.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
         const markers = fixture.controls.map((control) => 'n2' + label.replace(/[^a-z0-9]/g, '') + control.id.replace(/[^a-z0-9]/g, ''));
         await act(scenarioPage, scenarioContext, markers);
         await scenarioPage.waitForTimeout(700);
@@ -519,14 +524,14 @@ try {
         routeDiagnostics.push('route:final ' + routePath(final.pathname), 'route:expected ' + [...routes].map(routePath).join(','));
         assert.ok(routes.has(final.pathname), label + ' : URL finale hors des routes déclarées');
         await scenarioContext.close();
-        process.stdout.write('CMZ_N2=' + label + ' documents=1 typed_in_url=0 query=0 arrived_on_second_origin=0 windows=0 route=' + final.pathname + '\\n');
+        process.stdout.write('${tag('N2')}' + label + ' documents=1 typed_in_url=0 query=0 arrived_on_second_origin=0 windows=0 route=' + final.pathname + '\\n');
     };
     const send = async (target, markers) => {
         for (const [index, control] of fixture.controls.entries())
             await target.getByLabel(control.label, { exact: true }).fill(markers[index]);
         await target.getByRole('button', { name: fixture.actionLabel, exact: true }).click();
     };
-    const failed = (target) => target.locator('[data-cmz-id="' + fixture.errorState + '"]').waitFor();
+    const failed = (target) => target.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.errorState + '"]').waitFor();
     await scenario('chargement', 502, async () => undefined);
     // setOffline fait échouer les requêtes réelles ; l'état vu par la page
     // vient de l'émulation, jamais du réseau de l'hôte. Chaque attente a son
@@ -534,12 +539,12 @@ try {
     await scenario('hors-ligne-puis-en-ligne', 502, async (target, scenarioContext) => {
         stage = 'n2-hors-ligne-attente';
         await scenarioContext.setOffline(true);
-        await target.evaluate(() => globalThis.__cmzConnectivity(false));
-        await target.locator('[data-cmz-id="' + fixture.offlineState + '"]').waitFor();
+        await target.evaluate(() => globalThis.${atelier.signatureGlobal('Connectivity')}(false));
+        await target.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.offlineState + '"]').waitFor();
         stage = 'n2-hors-ligne-retour';
         await scenarioContext.setOffline(false);
-        await target.evaluate(() => globalThis.__cmzConnectivity(true));
-        await target.locator('[data-cmz-id="' + fixture.readyState + '"]').waitFor();
+        await target.evaluate(() => globalThis.${atelier.signatureGlobal('Connectivity')}(true));
+        await target.locator('[${atelier.SIGNATURE.idAttribute}="' + fixture.readyState + '"]').waitFor();
         stage = 'n2-hors-ligne-puis-en-ligne';
     });
     for (const [label, mode] of [['4xx', 400], ['5xx', 500], ['reponse-invalide', 'invalid'], ['serveur-injoignable', 'unreachable']])
@@ -561,24 +566,24 @@ try {
     const head = index.slice(0, index.indexOf('</head>'));
     const sub = (text) => text.replaceAll('__FOREIGN__', other);
     const { probes, traps, scripted, navigation } = fixture.csp;
-    extra.set('/cmz-csp-trap.js', ['text/javascript', [
+    extra.set('/${atelier.signatureName('csp-trap')}.js', ['text/javascript', [
         ...scripted.map(({ code }) => 'try { ' + sub(code) + ' } catch {}'),
         ...probes.filter((probe) => probe.script).map((probe) => sub(probe.script)),
     ].join('\\n')]);
-    extra.set('/cmz-csp-trap.html', ['text/html', head
+    extra.set('/${atelier.signatureName('csp-trap')}.html', ['text/html', head
         + probes.map((probe) => '<style>' + sub(probe.css) + '</style>').join('')
         + '</head><body>'
         + traps.map((trap) => sub(trap.html)).join('')
         + probes.map((probe) => sub(probe.html)).join('')
-        + '<script src="/cmz-csp-trap.js"></script></body></html>']);
+        + '<script src="/${atelier.signatureName('csp-trap')}.js"></script></body></html>']);
     const trapPage = await context.newPage();
     currentPage = trapPage;
-    await trapPage.goto(origin + '/cmz-csp-trap.html');
+    await trapPage.goto(origin + '/${atelier.signatureName('csp-trap')}.html');
     await trapPage.waitForTimeout(2000);
     await trapPage.evaluate(() => document.getElementById('trap-form').submit()).catch(() => undefined);
     await trapPage.waitForTimeout(1500);
-    const violations = await trapPage.evaluate(() => globalThis.__cmzViolations);
-    assert.equal(await trapPage.evaluate(() => globalThis.cmzInline ?? false), false, 'Script en ligne exécuté');
+    const violations = await trapPage.evaluate(() => globalThis.${atelier.signatureGlobal('Violations')});
+    assert.equal(await trapPage.evaluate(() => globalThis.${atelier.signatureIdentifier('Inline')} ?? false), false, 'Script en ligne exécuté');
     // Un cadre ou un objet bloqué n'est rapporté qu'avec son origine : une
     // seule source par directive le rend attribuable.
     const blocked = (id, directive) => violations.some(([effective, uri]) =>
@@ -619,19 +624,19 @@ try {
     // Navigation de premier niveau : la politique ne la gouverne pas
     // (navigate-to n'existe pas). On compte ce qui arrive sur la seconde
     // origine ; la page qui l'écrit est refusée par les règles.
-    extra.set('/cmz-csp-navigation.js', ['text/javascript', sub(navigation)]);
-    extra.set('/cmz-csp-navigation.html', ['text/html', head + '</head><body><script src="/cmz-csp-navigation.js"></script></body></html>']);
+    extra.set('/${atelier.signatureName('csp-navigation')}.js', ['text/javascript', sub(navigation)]);
+    extra.set('/${atelier.signatureName('csp-navigation')}.html', ['text/html', head + '</head><body><script src="/${atelier.signatureName('csp-navigation')}.js"></script></body></html>']);
     stage = 'navigation-trap';
     const navigationPage = await context.newPage();
     currentPage = navigationPage;
-    await navigationPage.goto(origin + '/cmz-csp-navigation.html');
+    await navigationPage.goto(origin + '/${atelier.signatureName('csp-navigation')}.html');
     await navigationPage.waitForTimeout(2000);
     result.navigation = {
         arrived: foreignHits.filter((hit) => hit.includes('/trap-navigation/')).length,
         others: foreignHits.filter((hit) => !hit.includes('/trap-navigation/')).length,
     };
     assert.equal(result.navigation.others, 0, 'Requête reçue par une autre origine');
-    process.stdout.write('CMZ_CSP_RESULT=' + JSON.stringify(result) + '\\n');
+    process.stdout.write('${tag('CSP_RESULT')}' + JSON.stringify(result) + '\\n');
     process.stdout.write('Navigateur : page réalisée sans violation ni requête ; page témoin bloquée par la politique.\\n');
 } catch (error) {
     await diagnose(error);
@@ -653,7 +658,7 @@ export async function qualifyRealizationBrowser(session, shells, browser) {
     for (const { input, plan, page } of shells) {
         const product = input.root;
         const domain = input.domain;
-        const proof = resolve(product, CMZ.proof);
+        const proof = resolve(product, WORKSPACE.proof);
         assert.equal(await pathExists(proof), false);
         const [action] = page.actions.filter(
             (entry) => entry.kind === 'backend'
@@ -704,7 +709,7 @@ export async function qualifyRealizationBrowser(session, shells, browser) {
                     session,
                     product,
                     [
-                        `${CMZ.proof}/realization-browser.mjs`,
+                        `${WORKSPACE.proof}/realization-browser.mjs`,
                         resolve(product, 'dist', plan.output, 'browser'),
                         `{{readonly:0}}/${browserRelative}`,
                         resolve(proof, 'realization-browser.fixture.json'),
@@ -715,21 +720,21 @@ export async function qualifyRealizationBrowser(session, shells, browser) {
             // X4-config : l'envoi part vers le relais de même origine.
             const relay = opened.stdout
                 .split('\n')
-                .find((entry) => entry.startsWith('CMZ_RELAY='));
+                .find((entry) => entry.startsWith(tag('RELAY')));
             assert.match(
-                relay ?? '',
-                /^CMZ_RELAY=POST \/api\/[a-z][a-z0-9-]*\/[A-Za-z0-9._~/-]*$/,
+                relay?.startsWith(tag('RELAY')) ? relay : '',
+                /^[A-Z_]+=POST \/api\/[a-z][a-z0-9-]*\/[A-Za-z0-9._~/-]*$/,
                 'Envoi vers le relais non prouvé'
             );
             session.lines.push(
-                `PASS X4C/${domain}/same-origin-relay ${relay.slice('CMZ_RELAY='.length)} only, no other origin`
+                `PASS X4C/${domain}/same-origin-relay ${relay.slice(tag('RELAY').length)} only, no other origin`
             );
             // Connectivité émulée : les deux états du contrat sont prouvés.
             assert.ok(
                 opened.stdout
                     .split('\n')
                     .includes(
-                        `CMZ_CONNECTIVITY=online:ready offline:${fixture.offlineState}`
+                        `${tag('CONNECTIVITY')}online:ready offline:${fixture.offlineState}`
                     ),
                 'Connectivité émulée non prouvée'
             );
@@ -739,17 +744,17 @@ export async function qualifyRealizationBrowser(session, shells, browser) {
             // X4-sécurité-3, N2 étendu : un scénario par ligne, tous présents.
             const scenarios = opened.stdout
                 .split('\n')
-                .filter((entry) => entry.startsWith('CMZ_N2='));
+                .filter((entry) => entry.startsWith(tag('N2')));
             assert.deepEqual(
                 scenarios.map(
-                    (entry) => entry.slice('CMZ_N2='.length).split(' ')[0]
+                    (entry) => entry.slice(tag('N2').length).split(' ')[0]
                 ),
                 N2_SCENARIOS,
                 'Scénarios N2 incomplets'
             );
             for (const entry of scenarios)
                 session.lines.push(
-                    `PASS X4S3/${domain}/n2 ${entry.slice('CMZ_N2='.length)}`
+                    `PASS X4S3/${domain}/n2 ${entry.slice(tag('N2').length)}`
                 );
             session.lines.push(
                 `X4S3/${domain}/n2 sans-adresse-de-service non reproductible dans le produit construit (adresse toujours de même origine depuis X4-config) : couvert par la spec de contrat P-A3 et la spec de page`
@@ -757,9 +762,9 @@ export async function qualifyRealizationBrowser(session, shells, browser) {
             // X4-sécurité : politique mesurée par l'événement de violation.
             const line = opened.stdout
                 .split('\n')
-                .find((entry) => entry.startsWith('CMZ_CSP_RESULT='));
+                .find((entry) => entry.startsWith(tag('CSP_RESULT')));
             assert.ok(line, 'Mesure de la politique absente');
-            const measured = JSON.parse(line.slice('CMZ_CSP_RESULT='.length));
+            const measured = JSON.parse(line.slice(tag('CSP_RESULT').length));
             session.lines.push(
                 `PASS X4S/${domain}/csp-realized-page zero violation, no request outside the bundle`
             );

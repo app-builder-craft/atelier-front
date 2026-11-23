@@ -13,7 +13,7 @@ export interface AppAccessPolicy {
 declare global {
     interface Window {
         /** Contexte public injecté par le host avant le bootstrap React. */
-        __cmzAppAccessContext?: unknown;
+        __lqbAppAccessContext?: unknown;
     }
 }
 
@@ -77,7 +77,7 @@ export function AppAccessGate({
     policy: AppAccessPolicy;
     children: ReactNode;
 }) {
-    const decision = createBrowserAccessDecision(window.__cmzAppAccessContext);
+    const decision = createBrowserAccessDecision(window.__lqbAppAccessContext);
     if (evaluateAppAccess(policy, decision)) return children;
 
     return (

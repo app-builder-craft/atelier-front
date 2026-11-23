@@ -14,6 +14,7 @@ import {
     runConfined,
     selectSandboxBackend,
 } from '../../library-setup/sandbox.mjs';
+import { signatureName } from './atelier-signature.mjs';
 import { externalFailure } from './external-application-paths.mjs';
 
 // Seuls ces répertoires du produit restent inscriptibles : caches et sorties
@@ -89,7 +90,7 @@ export async function runConfinedProductCommand(
     if (loaded.errors.length)
         externalFailure('confinement policy of the workshop is invalid');
     const scratch = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-product-command-'))
+        await mkdtemp(join(tmpdir(), signatureName('product-command-')))
     );
     try {
         const home = join(scratch, 'home');

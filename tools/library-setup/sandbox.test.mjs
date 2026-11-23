@@ -10,6 +10,10 @@ import {
     runConfined,
     selectSandboxBackend,
 } from './sandbox.mjs';
+import {
+    SIGNATURE,
+    signatureName,
+} from '../generator-platform/core/atelier-signature.mjs';
 
 const policy = {
     sandbox: {
@@ -23,7 +27,7 @@ const policy = {
 
 async function paths(t) {
     const root = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-sandbox-test-'))
+        await mkdtemp(join(tmpdir(), signatureName('sandbox-test-')))
     );
     t.after(() => rm(root, { recursive: true, force: true }));
     const result = {
@@ -288,10 +292,14 @@ test('Docker est sans shell, sans réseau en exécution et utilise une image dig
     );
     assert.ok(
         observed.argv.includes(
-            `type=bind,src=${value.home},dst=/cmz-home,readonly`
+            `type=bind,src=${value.home},dst=/${signatureName('home')},readonly`
         )
     );
-    assert.ok(!observed.argv.some((arg) => arg.includes('dst=/cmz-cache')));
+    assert.ok(
+        !observed.argv.some((arg) =>
+            arg.includes(`dst=/${signatureName('cache')}`)
+        )
+    );
 });
 
 test('refuse credentials, argv NUL et image Docker flottante', async (t) => {
@@ -334,7 +342,7 @@ test('refuse credentials, argv NUL et image Docker flottante', async (t) => {
 // Défaut réel du 2026-09-06 : l'oracle navigateur écrivait des chemins HÔTE
 // dans `argv` et dans l'exécutable conteneur. Sur macOS c'était juste, dans le
 // conteneur — où le candidat est monté sur `/workspace` et la lecture seule sur
-// `/cmz-readonly-<n>` — c'était faux. Les tests Docker mockés ne voyaient rien :
+// `/${signatureName('readonly-<n>')}` — c'était faux. Les tests Docker mockés ne voyaient rien :
 // ils vérifiaient des drapeaux, jamais la cohérence des chemins.
 test('les jetons de chemin sont résolus selon le backend', async (t) => {
     const value = await paths(t);
@@ -394,7 +402,7 @@ test('les jetons de chemin sont résolus selon le backend', async (t) => {
         spawn,
     });
     assert.ok(
-        observed.args.includes('/cmz-readonly-0/moteur'),
+        observed.args.includes(`/${signatureName('readonly')}-0/moteur`),
         'docker : moteur au point de montage'
     );
     assert.ok(
@@ -447,7 +455,7 @@ test('protège node_modules et déplace les écritures Nx dans une racine dédi�
     const value = await paths(t);
     await mkdir(join(value.candidate, 'node_modules'));
     await mkdir(join(value.repository, 'node_modules'));
-    await mkdir(join(value.candidate, '.cmz-oracle-runtime'));
+    await mkdir(join(value.candidate, `${SIGNATURE.dir}-oracle-runtime`));
     const calls = [];
     const spawn = (executable, argv, options) => {
         calls.push({ executable, argv, options });
@@ -462,7 +470,7 @@ test('protège node_modules et déplace les écritures Nx dans une racine dédi�
         policy,
         readOnlyCandidatePaths: ['node_modules'],
         repositoryReadOnlyPaths: [join(value.repository, 'node_modules')],
-        nxRoot: '.cmz-oracle-runtime',
+        nxRoot: `${SIGNATURE.dir}-oracle-runtime`,
         spawn,
     };
 
@@ -480,19 +488,19 @@ test('protège node_modules et déplace les écritures Nx dans une racine dédi�
     );
     assert.equal(
         mac.options.env.NX_CACHE_DIRECTORY,
-        `${value.candidate}/.cmz-oracle-runtime/node_modules/.cmz-nx-cache`
+        `${value.candidate}/${SIGNATURE.dir}-oracle-runtime/node_modules/${SIGNATURE.dir}-nx-cache`
     );
 
     runConfined({ ...common, backend: 'docker' });
     const docker = calls.at(-1);
     assert.ok(
         docker.argv.includes(
-            `type=bind,src=${value.repository}/node_modules,dst=/cmz-repository-0,readonly`
+            `type=bind,src=${value.repository}/node_modules,dst=/${signatureName('repository')}-0,readonly`
         )
     );
     assert.ok(
         docker.argv.includes(
-            'NX_CACHE_DIRECTORY=/workspace/.cmz-oracle-runtime/node_modules/.cmz-nx-cache'
+            `NX_CACHE_DIRECTORY=/workspace/${SIGNATURE.dir}-oracle-runtime/node_modules/${SIGNATURE.dir}-nx-cache`
         )
     );
 });

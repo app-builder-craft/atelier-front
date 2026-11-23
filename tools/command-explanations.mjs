@@ -1,3 +1,8 @@
+import {
+    SIGNATURE_FILES,
+    signatureName,
+} from './generator-platform/core/atelier-signature.mjs';
+
 const RUNBOOK = 'docs/proprietaire/produit.md';
 
 const explanations = {
@@ -87,8 +92,8 @@ const explanations = {
                 'la branche courante avant la publication finale',
             ],
             temporary: [
-                '<os-temp>/cmz-library-apply-*/workspace/**',
-                '<os-temp>/cmz-library-home-*/**',
+                `<os-temp>/${signatureName('library-apply-')}*/workspace/**`,
+                `<os-temp>/${signatureName('library-home-')}*/**`,
             ],
         },
         phases: [
@@ -160,12 +165,12 @@ explanations['prepare:application-workspace'] = {
         'Prépare un workspace Nx/Bun séparé, possédé et lié à un plan explicite, sans installer ni créer une application.',
     runbook: RUNBOOK,
     invocations: [
-        'bun run prepare:application-workspace --target-root <absolu> --profiles angular-pwa,react-spa --github-repository <owner/repo> --review-owner <login> --dry-run',
-        'bun run prepare:application-workspace --target-root <absolu> --profiles angular-pwa,react-spa --github-repository <owner/repo> --review-owner <login> --apply <plan_id>',
+        'bun run prepare:application-workspace --target-root <absolu> --profiles angular-pwa,react-spa --github-repository <owner/repo> --review-owner <login> [--prefix <préfixe>] --dry-run',
+        'bun run prepare:application-workspace --target-root <absolu> --profiles angular-pwa,react-spa --github-repository <owner/repo> --review-owner <login> [--prefix <préfixe>] --apply <plan_id>',
     ],
     ownership: {
         creates: [
-            '<target-root>/{package.json,nx.json,tsconfig.base.json,configurations,.cmz/support/**}',
+            `<target-root>/{package.json,nx.json,tsconfig.base.json,configurations,${SIGNATURE_FILES.support}/**}`,
         ],
         modifies: [],
         protects: [

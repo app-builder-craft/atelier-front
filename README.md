@@ -1,4 +1,4 @@
-# cmz-platform — atelier générique
+# atelier-front — atelier générique
 
 Atelier Nx (Bun, Angular) assisté par IA. Il génère des applications
 extérieures, Angular de la coque aux pages, React pour la coque seulement.

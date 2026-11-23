@@ -31,6 +31,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { repositoryRoot } from './validate-ir.mjs';
+import { signatureName } from './core/atelier-signature.mjs';
 
 const sourcePath = new URL('./core/role-production.mjs', import.meta.url);
 const roleNodeSchema = JSON.parse(
@@ -79,7 +80,9 @@ async function loadMutant(mutant) {
     );
     const mutated = original.replace(mutant.before, mutant.after);
     assert.notEqual(mutated, original, `${mutant.name}: mutation sans effet`);
-    const root = await mkdtemp(resolve(tmpdir(), 'cmz-multi-node-mutant-'));
+    const root = await mkdtemp(
+        resolve(tmpdir(), signatureName('multi-node-mutant-'))
+    );
     const core = resolve(root, 'core');
     await mkdir(core, { recursive: true });
     await symlink(

@@ -20,6 +20,7 @@ import {
     validateTreeEntries,
     verifyMaterializedTree,
 } from './git-tree.mjs';
+import { signatureName } from '../generator-platform/core/atelier-signature.mjs';
 
 function git(root, ...args) {
     return execFileSync('git', ['-C', root, ...args], {
@@ -29,7 +30,7 @@ function git(root, ...args) {
 }
 
 async function repository(t) {
-    const root = await mkdtemp(join(tmpdir(), 'cmz-git-tree-repo-'));
+    const root = await mkdtemp(join(tmpdir(), signatureName('git-tree-repo-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     git(root, 'init', '-q');
     git(root, 'config', 'user.email', 'test@example.test');
@@ -46,7 +47,9 @@ async function repository(t) {
 
 test('matérialise et revérifie exactement fichiers, modes et liens du tree', async (t) => {
     const repo = await repository(t);
-    const destination = await mkdtemp(join(tmpdir(), 'cmz-git-tree-out-'));
+    const destination = await mkdtemp(
+        join(tmpdir(), signatureName('git-tree-out-'))
+    );
     t.after(() => rm(destination, { recursive: true, force: true }));
     const tree = readGitTree(repo);
     materializeGitTree(tree, destination);
@@ -164,7 +167,9 @@ test('refuse une cible de lien relative qui remonte hors du candidat', async (t)
 
 test('une dérive de contenu, de mode ou un fichier inattendu invalide le candidat', async (t) => {
     const repo = await repository(t);
-    const destination = await mkdtemp(join(tmpdir(), 'cmz-git-tree-drift-'));
+    const destination = await mkdtemp(
+        join(tmpdir(), signatureName('git-tree-drift-'))
+    );
     t.after(() => rm(destination, { recursive: true, force: true }));
     const tree = readGitTree(repo);
     materializeGitTree(tree, destination);

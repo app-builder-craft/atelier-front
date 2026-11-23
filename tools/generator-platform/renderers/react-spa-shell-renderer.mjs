@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
+import { productForms } from '../core/product-identity.mjs';
 import { adaptExternalShellFiles } from './application-workspace-renderer.mjs';
 
 function sha256(content) {
@@ -62,7 +64,7 @@ ${routes}
 `;
 }
 
-function accessPolicy() {
+function accessPolicy(forms) {
     return `import type { ReactNode } from 'react';
 
 export interface AppAccessDecisionPort {
@@ -78,7 +80,7 @@ export interface AppAccessPolicy {
 declare global {
     interface Window {
         /** Contexte public injecté par le host avant le bootstrap React. */
-        __cmzAppAccessContext?: unknown;
+        ${forms.global}AppAccessContext?: unknown;
     }
 }
 
@@ -143,7 +145,7 @@ export function AppAccessGate({
     children: ReactNode;
 }) {
     const decision = createBrowserAccessDecision(
-        window.__cmzAppAccessContext
+        window.${forms.global}AppAccessContext
     );
     if (evaluateAppAccess(policy, decision)) return children;
 
@@ -275,9 +277,12 @@ export async function renderReactSpaShell({
     designPath,
     designSha256,
     externalWorkspace = false,
+    prefix,
 }) {
     if (design.experiences?.find((entry) => entry.id === experienceId)?.session)
         throw new Error('APP_SESSION_REACT_UNSUPPORTED');
+    // Formes du préfixe du produit (globale du navigateur).
+    const forms = productForms(prefix);
     if (!/^[a-z][a-z0-9-]*$/.test(appName ?? ''))
         throw new Error('application shell: app name must be kebab-case');
     if (design.design?.status !== 'approved')
@@ -312,7 +317,7 @@ export async function renderReactSpaShell({
     const root = `apps/${appName}`;
     const escapedTitle = escapedMarkup(design.design.title);
     const files = {
-        '.cmz/libraries.json': json({
+        [SIGNATURE_FILES.libraries]: json({
             schema_version: '1.0.0',
             kind: 'app-library-manifest',
             platform: 'react',
@@ -479,7 +484,7 @@ export function App() {
 }
 `,
         'src/app/app.routes.tsx': renderRoutes(pages, entryPage),
-        'src/app/access-policy.tsx': accessPolicy(),
+        'src/app/access-policy.tsx': accessPolicy(forms),
         'src/app/access-policy.spec.ts': accessPolicySpec(),
         'src/styles.scss': `:root {
     color-scheme: light;
@@ -498,12 +503,16 @@ body {
     };
     for (const page of pages) {
         files[`src/app/pages/${page.id}/page.tsx`] = placeholderPage(page);
-        files[`.cmz/pages/${page.id}.json`] = json(
+        files[`${SIGNATURE_FILES.pages}/${page.id}.json`] = json(
             pageContract(design, experience, page, designPath, designSha256)
         );
     }
     if (externalWorkspace) {
-        adaptExternalShellFiles(files, { profile: 'react-spa', appName });
+        adaptExternalShellFiles(files, {
+            profile: 'react-spa',
+            appName,
+            prefix,
+        });
     }
     const canonicalFiles = await canonicalizeGeneratedFiles(
         Object.fromEntries(
@@ -538,9 +547,9 @@ body {
         ),
     };
     const canonicalManifest = await canonicalizeGeneratedFiles({
-        [`${root}/.cmz/app-manifest.json`]: json(manifest),
+        [`${root}/${SIGNATURE_FILES.appManifest}`]: json(manifest),
     });
-    files['.cmz/app-manifest.json'] =
-        canonicalManifest[`${root}/.cmz/app-manifest.json`];
+    files[SIGNATURE_FILES.appManifest] =
+        canonicalManifest[`${root}/${SIGNATURE_FILES.appManifest}`];
     return { files, manifest, experience, pages };
 }

@@ -148,11 +148,15 @@ function menuBinding(graph, rootId, session) {
     }
 }
 
+// Versions de conception qui portent une session : 1.1.0, et 1.2.0 qui ne
+// fait qu'y ajouter l'identité du produit (`design.identity.prefix`).
+const SESSION_DESIGN_VERSIONS = new Set(['1.1.0', '1.2.0']);
+
 export function resolveApplicationSession(design, experience, contracts) {
     const session = experience.session;
     if (
         !session ||
-        design.schema_version !== '1.1.0' ||
+        !SESSION_DESIGN_VERSIONS.has(design.schema_version) ||
         experience.channel !== 'web' ||
         experience.offline_policy !== 'none' ||
         session.storage !== 'memory' ||
@@ -336,7 +340,7 @@ export function validateApplicationSessions(design, schema, contracts) {
     const sessions = (design.experiences ?? []).filter((experience) =>
         own(experience, 'session')
     );
-    if (design.schema_version !== '1.1.0')
+    if (!SESSION_DESIGN_VERSIONS.has(design.schema_version))
         return sessions.length ? ['APP_SESSION_VERSION'] : [];
     try {
         // Reuse the own-only native schema parser: inherited properties must

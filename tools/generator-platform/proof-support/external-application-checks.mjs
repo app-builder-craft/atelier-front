@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 
-import { EXTERNAL_WORKSPACE_CMZ as CMZ } from '../renderers/application-workspace-renderer.mjs';
+import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from '../renderers/application-workspace-renderer.mjs';
+import { signatureName } from '../core/atelier-signature.mjs';
 import {
     assertPhysicalPath,
     assertSourceWeight,
@@ -195,7 +196,7 @@ export async function qualifyMutations(session, product, plan) {
         await displacedEntry(
             session,
             product,
-            `${CMZ.support}/angular-unit-test.config.mjs`,
+            `${WORKSPACE.support}/angular-unit-test.config.mjs`,
             unit,
             /angular-unit-test.config/
         );
@@ -211,7 +212,7 @@ export async function qualifyMutations(session, product, plan) {
 }
 
 export async function instrumentProduct(session, product, browserFixture) {
-    const proof = resolve(product, CMZ.proof);
+    const proof = resolve(product, WORKSPACE.proof);
     assert.equal(await pathExists(proof), false);
     const witness = resolve(session.root, 'outside-candidate-witness');
     await writeFile(witness, 'outside candidate\n', { flag: 'wx' });
@@ -222,7 +223,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const source = ${JSON.stringify(TOOLS_ROOT)};
 const require = createRequire(import.meta.url);
-for (const root of [source, '/cmz-repository-0']) {
+for (const root of [source, '/${signatureName('repository-0')}']) {
     let readable = false;
     try { readFileSync(root + '/package.json'); readable = true; } catch {}
     assert.equal(readable, false, 'Lecture atelier autorisée');
@@ -250,20 +251,25 @@ process.stdout.write('Confinement : lectures/résolution/écriture refusées.\\n
     record(
         session,
         'T11/real-filesystem-probes',
-        confinedNode(session, product, [`${CMZ.proof}/confinement.mjs`])
+        confinedNode(session, product, [`${WORKSPACE.proof}/confinement.mjs`])
     );
     assert.equal(await readFile(witness, 'utf8'), 'outside candidate\n');
     record(
         session,
         'T11/product-input-closure',
-        confinedNode(session, product, [`${CMZ.support}/check-workspace.mjs`])
+        confinedNode(session, product, [
+            `${WORKSPACE.support}/check-workspace.mjs`,
+        ])
     );
     return { proof, files };
 }
 
 export async function qualifyBrowser(session, product, plans, browser) {
     qualifyNodeVersion(session, product, { browser });
-    const fixturePath = resolve(product, `${CMZ.proof}/browser.fixture.json`);
+    const fixturePath = resolve(
+        product,
+        `${WORKSPACE.proof}/browser.fixture.json`
+    );
     const browserRelative = relative(browser.root, browser.executable)
         .split('\\')
         .join('/');
@@ -284,7 +290,7 @@ export async function qualifyBrowser(session, product, plans, browser) {
                 session,
                 product,
                 [
-                    `${CMZ.support}/browser-smoke.mjs`,
+                    `${WORKSPACE.support}/browser-smoke.mjs`,
                     resolve(
                         product,
                         'dist',

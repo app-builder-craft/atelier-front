@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "kind": "backend-contract",
   "contract": {
-    "id": "cmz-store-select",
+    "id": "fixture-store-select",
     "title": "Store select fictional contract",
     "version": "1.0.0",
     "status": "implemented",

@@ -16,6 +16,7 @@ import {
     runNativeDocumentCell,
     SHARED_DOCUMENT_SOURCE,
 } from './proof-support/external-document-native.mjs';
+import { toolEnv } from './core/atelier-signature.mjs';
 
 for (const cell of NATIVE_CELLS) {
     test(`EXT03a/CI closed cell binding ${cell}`, () => {
@@ -43,16 +44,16 @@ for (const cell of NATIVE_CELLS) {
             nativeCellContext({ ...context, cell: 'other' }, root, cell, path)
         );
         const env = nativeCellEnvironment(process.execPath, root, cell, path);
-        assert.equal(env.CMZ_EXT03A_NATIVE_CELL, cell);
-        assert.equal(env.CMZ_EXT03A_NATIVE_ROOT, root);
-        assert.equal(env.CMZ_EXT03A_NATIVE_CONTEXT, path);
+        assert.equal(env[toolEnv('EXT03A_NATIVE_CELL')], cell);
+        assert.equal(env[toolEnv('EXT03A_NATIVE_ROOT')], root);
+        assert.equal(env[toolEnv('EXT03A_NATIVE_CONTEXT')], path);
         assert.deepEqual(
             Object.keys(env).sort(),
             [
                 'CI',
-                'CMZ_EXT03A_NATIVE_CELL',
-                'CMZ_EXT03A_NATIVE_CONTEXT',
-                'CMZ_EXT03A_NATIVE_ROOT',
+                toolEnv('EXT03A_NATIVE_CELL'),
+                toolEnv('EXT03A_NATIVE_CONTEXT'),
+                toolEnv('EXT03A_NATIVE_ROOT'),
                 'LANG',
                 'NO_COLOR',
                 'NX_DAEMON',

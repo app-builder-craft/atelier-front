@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cmz.local/schemas/generator-platform/list-query-definition-v2.schema.json",
-  "title": "CMZ List Query Authoring Definition v2",
+  "$id": "https://atelier.local/schemas/generator-platform/list-query-definition-v2.schema.json",
+  "title": "Atelier List Query Authoring Definition v2",
   "type": "object",
   "additionalProperties": false,
   "required": [

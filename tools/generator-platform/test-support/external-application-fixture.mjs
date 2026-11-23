@@ -19,6 +19,7 @@ import {
     planApplicationWorkspace,
     publishApplicationWorkspace,
 } from '../core/application-workspace.mjs';
+import { signatureName } from '../core/atelier-signature.mjs';
 import { pathExists } from '../core/external-application-paths.mjs';
 import { stableStringify } from '../core/generation-manifest.mjs';
 import { writeApplicationDesignFixture } from './application-design-fixture.mjs';
@@ -116,7 +117,7 @@ export async function schemas() {
 
 export async function fixtureParent(t) {
     const parent = await realpath(
-        await mkdtemp(join(tmpdir(), 'cmz-external-unit-'))
+        await mkdtemp(join(tmpdir(), signatureName('external-unit-')))
     );
     t.after(() => rm(parent, { recursive: true, force: true }));
     return parent;

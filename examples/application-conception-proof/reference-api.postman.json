@@ -6,11 +6,11 @@
   },
   "variable": [
     { "key": "baseUrl", "value": "https://reference.example/api" },
-    { "key": "cmz_contract_id", "value": "reference-note-api" },
-    { "key": "cmz_contract_version", "value": "1.0.0" },
-    { "key": "cmz_environment", "value": "reference" },
-    { "key": "cmz_service_id", "value": "reference-service" },
-    { "key": "cmz_source_id", "value": "reference-note-postman" }
+    { "key": "atelier_contract_id", "value": "reference-note-api" },
+    { "key": "atelier_contract_version", "value": "1.0.0" },
+    { "key": "atelier_environment", "value": "reference" },
+    { "key": "atelier_service_id", "value": "reference-service" },
+    { "key": "atelier_source_id", "value": "reference-note-postman" }
   ],
   "auth": { "type": "noauth" },
   "item": [

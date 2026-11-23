@@ -13,6 +13,7 @@ import {
     planApplicationPublication,
     publishApplicationPublication,
 } from '../core/application-publication.mjs';
+import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { verifyGeneratedTree } from '../core/external-application-paths.mjs';
 import { sha256 } from '../core/generation-manifest.mjs';
 import {
@@ -21,7 +22,7 @@ import {
 } from '../test-support/external-application-fixture.mjs';
 import { confinedNode, record } from './external-application-runtime.mjs';
 
-const MANIFEST = '.cmz/app-manifest.json';
+const MANIFEST = SIGNATURE_FILES.appManifest;
 const NOTICE = 'src/app/generated/x1-proof/notice.ts';
 
 // Runner natif d'une publication : chaque commande du produit est exécutée

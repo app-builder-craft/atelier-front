@@ -5,6 +5,7 @@ import {
     mkdtemp,
     mkdir,
     readFile,
+    readdir,
     rename,
     rm,
     writeFile,
@@ -25,8 +26,10 @@ import {
     GENERATION_PROCESS_HOSTNAME,
     recoverInterruptedTransactions,
     withGenerationLock,
+    withProductWriterLocks,
 } from './core/generation-transaction.mjs';
 import { loadJson } from './validate-ir.mjs';
+import { signatureName } from './core/atelier-signature.mjs';
 
 // Sortie de génération fictive, au format vérifié par la reprise : un
 // manifeste de contrôle et un manifeste de cible, chacun avec ses artefacts.
@@ -125,7 +128,9 @@ async function runCrashPublicationChild({
 }
 
 test('a stale local lock is reclaimed but a live lock is never stolen', async () => {
-    const temporaryRoot = await mkdtemp(resolve(tmpdir(), 'cmz-lock-owner-'));
+    const temporaryRoot = await mkdtemp(
+        resolve(tmpdir(), signatureName('lock-owner-'))
+    );
     const outputRoot = resolve(temporaryRoot, 'generated-support');
     const lockRoot = resolve(
         temporaryRoot,
@@ -169,7 +174,7 @@ test('a stale local lock is reclaimed but a live lock is never stolen', async ()
 
 test('recovery restores the previous output after a crash between renames', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-recover-previous-')
+        resolve(tmpdir(), signatureName('recover-previous-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated-support');
     const transactionRoot = resolve(
@@ -207,7 +212,7 @@ test('recovery restores the previous output after a crash between renames', asyn
 
 test('recovery restores the previous output after the publisher is actually SIGKILLed on the first rename', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-sigkill-after-previous-move-')
+        resolve(tmpdir(), signatureName('sigkill-after-previous-move-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated-support');
     const transactionRoot = resolve(
@@ -250,7 +255,7 @@ test('recovery restores the previous output after the publisher is actually SIGK
 
 test('recovery verifies the new output after the publisher is actually SIGKILLed on the second rename', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-sigkill-after-candidate-publish-')
+        resolve(tmpdir(), signatureName('sigkill-after-candidate-publish-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated-support');
     const transactionRoot = resolve(
@@ -294,7 +299,7 @@ test('recovery verifies the new output after the publisher is actually SIGKILLed
 
 test('recovery finalizes a published candidate only when its hashes match the journal', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-recover-published-')
+        resolve(tmpdir(), signatureName('recover-published-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated-support');
     const transactionRoot = resolve(
@@ -334,7 +339,7 @@ test('recovery finalizes a published candidate only when its hashes match the jo
 
 test('recovery refuses a published tree whose artifact bytes contradict its journal', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-recover-drifted-published-')
+        resolve(tmpdir(), signatureName('recover-drifted-published-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated-support');
     const transactionRoot = resolve(
@@ -379,7 +384,7 @@ test('recovery refuses a published tree whose artifact bytes contradict its jour
 
 test('initial-generation recovery verifies output even before the published phase was journaled', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-recover-initial-published-')
+        resolve(tmpdir(), signatureName('recover-initial-published-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated-support');
     const transactionRoot = resolve(
@@ -411,7 +416,7 @@ test('initial-generation recovery verifies output even before the published phas
 
 test('recovery rejects an over-specified transaction journal', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-recover-invalid-journal-')
+        resolve(tmpdir(), signatureName('recover-invalid-journal-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated-support');
     const transactionRoot = resolve(
@@ -446,7 +451,7 @@ test('recovery rejects an over-specified transaction journal', async () => {
 
 test('a durability error after moving the previous tree rolls it back before cleanup', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-previous-move-sync-failure-')
+        resolve(tmpdir(), signatureName('previous-move-sync-failure-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated');
     const transactionRoot = resolve(temporaryRoot, 'transaction');
@@ -493,7 +498,7 @@ test('a durability error after moving the previous tree rolls it back before cle
 
 test('initial publication rolls the candidate back when the durable journal cannot advance', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-initial-journal-rollback-')
+        resolve(tmpdir(), signatureName('initial-journal-rollback-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated');
     const transactionRoot = resolve(temporaryRoot, 'transaction');
@@ -530,7 +535,7 @@ test('initial publication rolls the candidate back when the durable journal cann
 
 test('directory commit rolls back when candidate publication fails', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-apply-rollback-')
+        resolve(tmpdir(), signatureName('apply-rollback-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated');
     const transactionRoot = resolve(temporaryRoot, 'transaction');
@@ -571,7 +576,7 @@ test('directory commit rolls back when candidate publication fails', async () =>
 
 test('a failed rollback preserves the previous tree at an explicit recovery path', async () => {
     const temporaryRoot = await mkdtemp(
-        resolve(tmpdir(), 'cmz-apply-recovery-')
+        resolve(tmpdir(), signatureName('apply-recovery-'))
     );
     const outputRoot = resolve(temporaryRoot, 'generated');
     const transactionRoot = resolve(temporaryRoot, 'transaction');
@@ -610,6 +615,75 @@ test('a failed rollback preserves the previous tree at an explicit recovery path
             'previous\n'
         );
     } finally {
+        await rm(temporaryRoot, { recursive: true, force: true });
+    }
+});
+
+// Lot MARQUE, commit 3 (B) : point d'entrée unique des écrivains d'un produit
+// extérieur. Le verrou du produit est pris d'abord : un second écrivain du
+// même produit est refusé avant de prendre le verrou de sa propre sortie.
+test('withProductWriterLocks : produit puis sorties ; un second écrivain du produit est refusé', async () => {
+    const temporaryRoot = await mkdtemp(resolve(tmpdir(), 'product-locks-'));
+    const product = resolve(temporaryRoot, 'product');
+    const apps = resolve(product, 'apps');
+    const locks = async (directory) =>
+        (await readdir(directory))
+            .filter((name) => name.endsWith('.generation-lock'))
+            .sort();
+    let release = () => undefined;
+    try {
+        await mkdir(apps, { recursive: true });
+        const barrier = new Promise((done) => {
+            release = done;
+        });
+        let entered;
+        const started = new Promise((done) => {
+            entered = done;
+        });
+        const held = [];
+        const first = withProductWriterLocks(
+            product,
+            [resolve(apps, 'b'), resolve(apps, 'a'), resolve(apps, 'b')],
+            async () => {
+                held.push(
+                    ...(await locks(temporaryRoot)),
+                    ...(await locks(apps))
+                );
+                entered();
+                await barrier;
+                return 'first';
+            }
+        );
+        await started;
+        assert.deepEqual(held, [
+            '.product.generation-lock',
+            '.a.generation-lock',
+            '.b.generation-lock',
+        ]);
+        await assert.rejects(
+            withProductWriterLocks(product, [resolve(apps, 'c')], async () =>
+                assert.fail('second writer entered')
+            ),
+            /another generation owns/
+        );
+        assert.deepEqual(await locks(apps), [
+            '.a.generation-lock',
+            '.b.generation-lock',
+        ]);
+        release();
+        assert.equal(await first, 'first');
+        assert.equal(
+            await withProductWriterLocks(
+                product,
+                [resolve(apps, 'c')],
+                async () => 'second'
+            ),
+            'second'
+        );
+        assert.deepEqual(await locks(temporaryRoot), []);
+        assert.deepEqual(await locks(apps), []);
+    } finally {
+        release();
         await rm(temporaryRoot, { recursive: true, force: true });
     }
 });

@@ -50,6 +50,10 @@ import {
     writeDraft,
 } from './test-support/external-realization-product.mjs';
 import { SESSION_FIXTURE_DOMAINS } from './test-support/external-session-fixture.mjs';
+import { escapeRegExp, SIGNATURE } from './core/atelier-signature.mjs';
+
+// Attribut d'ancre de la grammaire, dérivé de la signature de l'atelier.
+const ID = SIGNATURE.idAttribute;
 
 const cli = (script, args) =>
     spawnSync(process.execPath, [join(TOOLS_ROOT, 'tools', script), ...args], {
@@ -269,17 +273,18 @@ test('X4 : chaque règle de sécurité du bon de travail refuse sa violation, sa
             edit(
                 html,
                 (text) =>
-                    `${text}<input data-cmz-id="remember-me" aria-label="x" />\n`
+                    `${text}<input ${ID}="remember-me" aria-label="x" />\n`
             ),
-            /data-cmz-id not declared by the page contract in page\.component\.html: "remember-me"/,
+            new RegExp(
+                `${escapeRegExp(ID)} not declared by the page contract in page\\.component\\.html: "remember-me"`
+            ),
         ],
         [
             'sélecteur dynamique',
-            edit(
-                html,
-                (text) => `${text}<p [attr.data-cmz-id]="'ready'">x</p>\n`
+            edit(html, (text) => `${text}<p [attr.${ID}]="'ready'">x</p>\n`),
+            new RegExp(
+                `attribute binding forbidden in page\\.component\\.html: attr\\.${escapeRegExp(ID)}`
             ),
-            /attribute binding forbidden in page\.component\.html: attr\.data-cmz-id/,
         ],
         [
             'composition non montée',

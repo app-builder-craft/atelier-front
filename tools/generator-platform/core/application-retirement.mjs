@@ -19,9 +19,15 @@ import {
     runNxGraphGate,
 } from '../../module-lifecycle-nx.mjs';
 import { currentGitIdentity } from '../../workspace-transaction.mjs';
+import {
+    retiredAppTombstone,
+    SIGNATURE,
+    SIGNATURE_FILES,
+    signaturePath,
+} from './atelier-signature.mjs';
 import { withGenerationLock } from './generation-transaction.mjs';
 
-const TRANSACTION_ROOT = '.cmz/retire-app-transactions';
+const TRANSACTION_ROOT = signaturePath('retire-app-transactions');
 
 function fail(message) {
     throw new Error(`application retirement: ${message}`);
@@ -92,13 +98,14 @@ async function readOwnedApp(workspaceRoot, appName) {
     let project;
     try {
         manifest = JSON.parse(
-            await readFile(resolve(root, '.cmz/app-manifest.json'), 'utf8')
+            await readFile(resolve(root, SIGNATURE_FILES.appManifest), 'utf8')
         );
         project = JSON.parse(
             await readFile(resolve(root, 'project.json'), 'utf8')
         );
-    } catch (error) {
-        fail(`app ownership metadata is unreadable (${error.message})`);
+    } catch {
+        // Message fixe : le message système porterait un chemin absolu.
+        fail('app ownership metadata is unreadable');
     }
     if (
         manifest?.kind !== 'application-shell-manifest' ||
@@ -125,7 +132,10 @@ function externalReferences(workspaceRoot, appName) {
     const tokens = [Buffer.from(`apps/${appName}`), Buffer.from(`${appName}:`)];
     const references = [];
     for (const path of inventory.split('\0').filter(Boolean).sort()) {
-        if (path.startsWith(`apps/${appName}/`) || path.startsWith('.cmz/'))
+        if (
+            path.startsWith(`apps/${appName}/`) ||
+            path.startsWith(`${SIGNATURE.dir}/`)
+        )
             continue;
         const absolute = resolve(workspaceRoot, path);
         try {
@@ -215,7 +225,7 @@ async function readState(paths, appName) {
         !['prepared', 'moved'].includes(state.phase) ||
         state.app_name !== appName ||
         state.output !== `apps/${appName}` ||
-        state.tombstone !== `docs/architecture/retired-apps/${appName}.json` ||
+        state.tombstone !== retiredAppTombstone(appName) ||
         typeof state.tombstone_parent_existed !== 'boolean' ||
         !/^[a-f0-9]{64}$/.test(state.plan_id ?? '') ||
         !/^[a-f0-9]{64}$/.test(state.tree_sha256 ?? '') ||
@@ -283,7 +293,7 @@ export async function planApplicationRetirement(
         file_count: app.snapshot.files.length,
         design_ref: app.manifest.design_ref,
         git_head: identity.head,
-        tombstone: `docs/architecture/retired-apps/${appName}.json`,
+        tombstone: retiredAppTombstone(appName),
     };
     const planId = sha256(JSON.stringify(base));
     return {

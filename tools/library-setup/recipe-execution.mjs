@@ -6,6 +6,7 @@ import { buildLibraryChangeSet } from './library-plan.mjs';
 import { replaceRegularFile } from './dependency-resolution.mjs';
 import { snapshotFilesystem } from './filesystem-snapshot.mjs';
 import { runConfined } from './sandbox.mjs';
+import { SIGNATURE_FILES } from '../generator-platform/core/atelier-signature.mjs';
 
 function fail(message) {
     throw new Error(`library recipe execution: ${message}`);
@@ -178,7 +179,7 @@ export function recipeInvocation({ workspace, recipe, app, track }) {
 }
 
 export function addLibraryManifestEntry(workspace, app, platform, library) {
-    const path = `apps/${app}/.cmz/libraries.json`;
+    const path = `apps/${app}/${SIGNATURE_FILES.libraries}`;
     const raw = readFileSync(regularFile(workspace, path), 'utf8');
     const manifest = parseWithoutDuplicateKeys(raw, path);
     if (
@@ -293,9 +294,10 @@ export function executeLibraryRecipe({
     restoreCosmeticDependencyWrites(candidate.workspace, dependencyBytes);
     // Le manifeste est écrit AVANT la canonisation, jamais après : mesuré,
     // JSON.stringify(…, 2) et Prettier divergent dès que le tableau tient sur
-    // une ligne, et Prettier descend bien dans `.cmz/`. Écrit après, ce fichier
-    // échappait à la fois au formatage canonique et au contrôle de périmètre
-    // final — une application équipée rendait alors `format:check` rouge.
+    // une ligne, et Prettier descend bien dans le dossier de signature. Écrit
+    // après, ce fichier échappait à la fois au formatage canonique et au
+    // contrôle de périmètre final — une application équipée rendait alors
+    // `format:check` rouge.
     addLibraryManifestEntry(
         candidate.workspace,
         app,

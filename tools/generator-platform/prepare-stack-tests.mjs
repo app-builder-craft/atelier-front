@@ -11,11 +11,13 @@ import {
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SIGNATURE, SIGNATURE_FILES } from './core/atelier-signature.mjs';
 import { computeAngularPageCompositionTarget } from './page-composition-targets.mjs';
 import {
     createApplicationSessionFixture,
     SESSION_FIXTURE_DOMAINS,
 } from './test-support/application-session-fixture.mjs';
+import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import { renderAngularActionRequestV2 } from './renderers/angular-action-request-v2-renderer.mjs';
 import { sessionEndpointToken } from './renderers/angular-application-session-renderer.mjs';
@@ -155,7 +157,7 @@ async function prepareSessionTestWorkspace() {
     assert.equal(project.targets.test.options.watch, false);
     assert.equal(
         project.targets.test.options.runnerConfig,
-        '.cmz/support/angular-unit-test.config.mjs'
+        `${SIGNATURE_FILES.support}/angular-unit-test.config.mjs`
     );
     const include = sessionSpecs.map((name) => resolve(view, specRoot, name));
     project.targets.test.options = {
@@ -258,6 +260,8 @@ if (target === 'angular') {
                 designSha256: data.pages.values().next().value.pageContract
                     .design_ref.sha256,
                 externalWorkspace: true,
+                // Produit fictif de la pile : le préfixe neutre des tests.
+                prefix: FIXTURE_PREFIX,
             });
             // Product configuration belongs to a real product workspace, not
             // to Vite's nearest-tsconfig lookup in the session test target.
@@ -428,7 +432,8 @@ if (target === 'angular') {
             assert.ok(
                 testPaths.every(
                     (path) =>
-                        !path.startsWith('.cmz/') && !path.startsWith('public/')
+                        !path.startsWith(`${SIGNATURE.dir}/`) &&
+                        !path.startsWith('public/')
                 ),
                 'session test target must not contain product metadata or assets'
             );
