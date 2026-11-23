@@ -75,20 +75,20 @@ préparation de la racine, contrats backend, conception, coque de l'application,
 lectures et actions, plan et composition de la page. Chaque commande montre
 d'abord un plan (`--dry-run`), puis publie exactement ce plan.
 
-### 1.6 La réalisation de la page
+### 1.6 L'interface de la page
 
-L'atelier publie un **bon de travail** pour la page : les fichiers permis, les
-contrats, les identifiants à respecter. L'IA de réalisation écrit l'interface
-dans ce cadre, dans un brouillon hors de l'application. Elle est libre de la
-présentation, jamais des règles métier.
+L'atelier ne réalise plus l'interface d'une page : le bon de travail et la
+grammaire fermée sont retirés
+([ADR 0104](../adr/0104-retrait-de-la-grammaire-heritee.md), « Retrait de la
+grammaire héritée »).
+Jusqu'à l'arrivée de l'interface libre et de ses contrôles, la génération
+s'arrête au plan et à la composition de la page.
 
 ### 1.7 La vérification
 
-`verify:page-realization` contrôle le brouillon, puis le publie à la place de la
-page d'attente. Compilation, build de production, lint et tests du produit
-doivent passer. Ensuite, regarde la page dans ton navigateur. L'IA présente un
-bloc `PAGE TERMINÉE` et te demande : corriger, ajouter un cas, valider et passer
-à la page suivante, ou arrêter.
+Chaque publication est compilée, construite, lintée et testée par les outils du
+produit. L'IA présente un bloc `PAGE TERMINÉE` et te demande : corriger,
+ajouter un cas, valider et passer à la page suivante, ou arrêter.
 
 ### 1.8 Le déploiement
 
@@ -115,8 +115,7 @@ n'écrit rien et ne demande aucun autre argument : `--explain` s'utilise seul.
 
 Les autres commandes de la chaîne n'ont pas `--explain`, mais affichent leur
 mode d'emploi avec `--help` : `generate:list-query`, `generate:action-request`,
-`compile:page-execution-plan`, `generate:page-composition`,
-`prepare:page-realization`, `verify:page-realization`.
+`compile:page-execution-plan`, `generate:page-composition`.
 `compile:backend-contract` et `compile:application-design` n'ont ni l'un ni
 l'autre : leurs options sont décrites ci-dessous.
 
@@ -157,7 +156,7 @@ bun run prepare:application-workspace --target-root <racine absolue> --profiles 
   (`<propriétaire>/<nom>`) et affiche sa provenance ; le `--apply` confirme ce
   même plan. Un préfixe réservé ou invalide fait refuser le plan : déclarer
   alors `--prefix`. Le préfixe est scellé dans l'espace ; il ne change ensuite
-  que par `rename-product-prefix` (§ 3.9).
+  que par `rename-product-prefix` (§ 3.8).
 - Le dossier parent de la racine doit exister. La racine ne doit être ni dans
   l'atelier, ni dans un dépôt Git. L'outil ne crée ni Git ni dépôt distant : le
   `git init` du produit se fait après.
@@ -266,28 +265,7 @@ Toujours dans cet ordre : le plan d'exécution, puis la composition. Une page
 peut combiner plusieurs lectures et actions indépendantes ; un enchaînement
 ordonné entre elles n'est pas pris en charge.
 
-### 3.8 Réaliser et vérifier la page : `prepare:page-realization`, `verify:page-realization`
-
-```sh
-bun run prepare:page-realization --target-root <racine absolue> --app <nom-app> --page <page_id> --dry-run
-bun run prepare:page-realization --target-root <racine absolue> --app <nom-app> --page <page_id> --apply <plan_id>
-```
-
-Le second appel publie le bon de travail (`work_order_path` dans le JSON). L'IA
-de réalisation écrit alors la page dans
-`descriptions/page-realizations/<nom-app>/<page_id>/`.
-
-```sh
-bun run verify:page-realization --target-root <racine absolue> --app <nom-app> --page <page_id> --dry-run
-bun run verify:page-realization --target-root <racine absolue> --app <nom-app> --page <page_id> --apply <plan_id>
-```
-
-- `--dry-run` contrôle le brouillon. Il doit afficher un JSON avec `"ok": true`
-  et un `plan_id`. En cas de refus, il affiche `"ok": false` et la liste
-  `violations` : l'IA corrige seulement cette page et relance.
-- `--apply <plan_id>` publie la page à la place de la page d'attente.
-
-### 3.9 Renommer le préfixe : `rename-product-prefix`
+### 3.8 Renommer le préfixe : `rename-product-prefix`
 
 ```sh
 bun run rename-product-prefix --target-root <racine absolue> --to <préfixe> --dry-run
@@ -375,14 +353,13 @@ Les messages sont copiés du code ; `…` remplace une partie variable.
 | `ambiguous interrupted publication` suivi de `Écart : "…" (…).`                                                                                                                                                                                           | Un fichier a été ajouté ou modifié dans l'application pendant la publication                                                | Faire retirer ou rétablir le fichier nommé, puis relancer la reprise (§ 4)                                                             |
 | `publication rollback refused; inspect the owned tree locally`                                                                                                                                                                                            | L'arbre de l'application a changé pendant les contrôles                                                                     | Ne rien supprimer ; lancer la reprise, puis suivre l'écart nommé                                                                       |
 | `Préparation refusée ; inspecter les entrées localement.`, `Création extérieure refusée ; inspecter les entrées localement.`, `Génération extérieure refusée ; inspecter les entrées localement.` ou `Reprise refusée ; inspecter le produit localement.` | Refus volontairement peu bavard (aucun chemin ni détail n'est affiché)                                                      | Ne pas relancer avec d'autres options. Faire diagnostiquer par un agent (`task-specialist`, mode `diagnose`) avec la commande exacte   |
-| `"ok": false` et une liste `violations` (vérification de page)                                                                                                                                                                                            | Le brouillon de la page sort de son bon de travail                                                                          | L'IA corrige seulement cette page, puis relance `verify:page-realization --dry-run`                                                    |
 | `input collides with reserved workspace namespace`                                                                                                                                                                                                        | Une entrée porte un nom réservé (`package.json`, `README.md`, `apps/…`, `.atelier/…`…)                                      | Ranger les entrées sous `descriptions/`                                                                                                |
 | `canonical absolute target-root required`, `non-canonical physical path`, `existing target parent required`, `target overlaps the active workshop` ou `target nested in an existing Git repository`                                                       | La racine n'est pas un chemin absolu réel, son parent manque, ou elle est dans l'atelier ou dans un dépôt Git               | Choisir un chemin absolu, sans lien symbolique, hors de l'atelier et de tout dépôt Git ; créer le dossier parent (`mkdir -p <parent>`) |
 | `explicit unique profiles required` ou `GitHub repository and review owner required`                                                                                                                                                                      | `--profiles`, `--github-repository` ou `--review-owner` absent ou mal écrit                                                 | `--profiles angular-pwa` (ou `react-spa`), `--github-repository <propriétaire>/<dépôt>`, `--review-owner <identifiant>`                |
 | `--prefix refused: …`                                                                                                                                                                                                                                     | Préfixe déclaré invalide (forme) ou réservé (portée du catalogue, nom réservé par le relais ou le serveur de développement) | Déclarer un autre `--prefix` : 2 à 6 caractères, minuscules ou chiffres, une lettre en tête                                            |
 | `proposed prefix "…" (initials of "…") refused: … ; déclarer --prefix`                                                                                                                                                                                    | Les initiales du nom du dépôt ne forment pas un préfixe valide, ou il est réservé                                           | Relancer le `--dry-run` avec `--prefix <préfixe>`                                                                                      |
 | `PRODUCT_PREFIX_IN_DESIGN: an external product design must not declare identity.prefix; …`                                                                                                                                                                | La conception du produit déclare un préfixe ; celui du produit est scellé dans son espace                                   | Retirer `identity` du bloc `design` de la conception                                                                                   |
-| `PRODUCT_PREFIX_SEALED: change it with rename-product-prefix`                                                                                                                                                                                             | Le préfixe est scellé dans l'espace ; la commande ou la conception en déclare un autre                                      | Retirer l'autre préfixe ; pour le changer, passer par `rename-product-prefix` (§ 3.9)                                                  |
+| `PRODUCT_PREFIX_SEALED: change it with rename-product-prefix`                                                                                                                                                                                             | Le préfixe est scellé dans l'espace ; la commande ou la conception en déclare un autre                                      | Retirer l'autre préfixe ; pour le changer, passer par `rename-product-prefix` (§ 3.8)                                                  |
 | `--to refused: …`, `rename without change` ou `reviewed rename plan is stale`                                                                                                                                                                             | Préfixe invalide, réservé ou inchangé ; ou le produit a changé depuis le `--dry-run`                                        | Corriger `--to` (règle de `--prefix`, § 3.1) ou refaire le `--dry-run`                                                                 |
 | `interrupted prefix rename pending; …` ou `ambiguous interrupted prefix rename: …`                                                                                                                                                                        | Un renommage du préfixe a été interrompu                                                                                    | `recover:product-prefix` (§ 4)                                                                                                         |
 | `PRODUCT_SHELL_NOT_REPRODUCIBLE: …` ou `PRODUCT_COMPOSITION_NOT_REPRODUCIBLE: …`                                                                                                                                                                          | La coque ou la composition vient d'une autre version du générateur                                                          | Régénérer le socle, ou republier la composition (§ 3.7)                                                                                |
@@ -392,7 +369,7 @@ Les messages sont copiés du code ; `…` remplace une partie variable.
 ## 6. Exemples
 
 - Un produit fictif complet côté documents (fiche de projet, source de
-  conception, contrats backend de référence et cible, réalisation de page) :
+  conception, contrats backend de référence et cible) :
   [examples/application-conception-proof/](../../examples/application-conception-proof/).
 - Un catalogue d'exemples de mise en page approuvés, qui guident la composition
   d'une interface sans valoir preuve ni autorité métier :

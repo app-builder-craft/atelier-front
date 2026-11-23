@@ -259,3 +259,19 @@ export const COUNTER_PROBE_CLASSES = table([
     'hôte:+ clé calculée HORS décorateur (edit)\ttémoin\ttémoin : acceptée par les mêmes lignes\te86a9591bc2c1bee48348320fd8870228c4c824704aa2ba4abd5fde465537029',
     'hôte:+ sans host\ttémoin\ttémoin : acceptée par les mêmes lignes\t281cdbf36939b0edd5e7a5046c57f77b5aa84883d2a93b562f7dfa00d7211e79',
 ]);
+
+// Limites ACCEPTÉES par le propriétaire (décision L10-1 = A, « on y reviendra
+// plus tard pour un contrôle ») : ce que plus aucune machine ne refuse. La
+// section des limites de l'ADR « Retrait de la grammaire héritée » en est le
+// rendu (vérifié par page-probes.test.mjs) ; la limite E7 liste les sondes de
+// la classe `limite`.
+export const LIMITS = Object.freeze([
+    Object.freeze([
+        'E6',
+        'des caractères bidirectionnels invisibles dans le code (U+202E, U+2066…) et le trait d’union conditionnel (U+00AD) : aucune règle officielle installée ne les refuse ; no-irregular-whitespace ne refuse que U+2028 et U+200B (mesuré au verrou).',
+    ]),
+    Object.freeze([
+        'E7',
+        'une faute maquillée (nom calculé, alias, détour par event.view, style injecté par un nom construit) dans du code qu’aucun test n’exécute : la règle officielle ne voit que la forme écrite. Bornée par les tests de l’IA qui échouent sur une requête hors socle (lots 6 et 7), la couverture d’au moins 80 % par page (§27 bis, Q7 = B), la politique de sécurité de contenu et la relecture.',
+    ]),
+]);

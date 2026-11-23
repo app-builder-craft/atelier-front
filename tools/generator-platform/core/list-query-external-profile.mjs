@@ -17,7 +17,7 @@ import { isPrototypeName } from './prototype-names.mjs';
 import { canonicalOperationPath } from './application-design-session.mjs';
 
 // X5 C5 (B-C5-1) : états d'une lecture extérieure, SOURCE UNIQUE du type
-// d'état de la façade et des états déclarés du bon de travail.
+// d'état de la façade.
 export const EXTERNAL_QUERY_STATES = Object.freeze([
     'idle',
     'loading',

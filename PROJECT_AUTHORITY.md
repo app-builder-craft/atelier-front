@@ -48,10 +48,13 @@ La chaîne de l'étape B :
    les actions ;
 5. `compile:page-execution-plan` et `generate:page-composition` composent une
    page ;
-6. `prepare:page-realization` et `verify:page-realization` encadrent la
-   réalisation de la page ;
-7. la session, le relais nginx et la politique de sécurité sont fournis par la
+6. la session, le relais nginx et la politique de sécurité sont fournis par la
    coque.
+
+L'atelier ne réalise plus l'interface d'une page : le bon de travail et la
+grammaire fermée sont retirés
+([ADR 0104](./docs/adr/0104-retrait-de-la-grammaire-heritee.md), « Retrait de
+la grammaire héritée »).
 
 Chaque commande lit les entrées du produit, publie sous plan relu
 (`--dry-run`, puis `--apply <plan_id>`) et refuse toute sortie hors du produit.
@@ -69,7 +72,6 @@ indépendants.
 L'IA est libre d'écrire l'interface d'une page. Cette liberté s'exerce dans un
 **cadre d'éléments fourni** par l'atelier :
 
-- le bon de travail de la page (fichiers autorisés, contrats, routes) ;
 - les lectures, actions et compositions générées ;
 - la session, les jetons de service et les erreurs fournis par la coque ;
 - les primitives officielles de la pile (Angular, CDK, Material si qualifié).
