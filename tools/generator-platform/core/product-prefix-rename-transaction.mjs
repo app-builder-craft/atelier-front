@@ -4,10 +4,12 @@
 // atomique. Le journal vit à côté du produit ; le point de non-retour est la
 // phase `verified`, posée après la post-condition `derived` et les contrôles
 // natifs. Avant elle, toute reprise revient à l'état d'avant, décidée par
-// l'état OBSERVÉ (empreintes), jamais par la phase seule.
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
-import { basename, dirname, relative, resolve, sep } from 'node:path';
+// l'état OBSERVÉ (empreintes), jamais par la phase seule. Journal, état
+// observé des arbres, retour, fin et nettoyage viennent de la brique commune
+// (`product-transaction.mjs`) ; restent ici le contenu du journal, la bascule
+// du manifeste d'espace et les contrôles propres au renommage.
+import { readdir, readFile } from 'node:fs/promises';
+import { basename, resolve } from 'node:path';
 
 import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
 import { repositoryRoot } from '../validate-ir.mjs';
@@ -31,7 +33,6 @@ import {
     pathExists,
     readProductFile,
     stageGeneratedTree,
-    treeInventory,
     verifyGeneratedTree,
 } from './external-application-paths.mjs';
 import { PAGE_COMPOSITION_TOOL } from './external-publication-paths.mjs';
@@ -39,7 +40,6 @@ import { sha256 } from './generation-manifest.mjs';
 import {
     removeTreeAndSync,
     renameAndSync,
-    syncTreeDirectories,
     withProductWriterLocks,
     writeDocument,
 } from './generation-transaction.mjs';
@@ -48,10 +48,20 @@ import {
     planProductPrefixRename,
     renderAppForPrefix,
 } from './product-prefix-rename.mjs';
+import {
+    completeTrees,
+    exactKeys,
+    planTreesRevert,
+    poseTransactionJournal,
+    readTransactionJournal,
+    removeStagingDirectories,
+    revertTrees,
+    swapTree,
+    writeTransactionJournal,
+} from './product-transaction.mjs';
 
 const APP_MANIFEST = SIGNATURE_FILES.appManifest;
 const WORKSPACE_MANIFEST = SIGNATURE_FILES.workspaceManifest;
-const JOURNAL = 'journal.json';
 const PREVIOUS_WORKSPACE = 'workspace.previous.json';
 const HEX = /^[a-f0-9]{64}$/;
 const APP_NAME = /^[a-z][a-z0-9-]*$/;
@@ -81,12 +91,6 @@ function notDerived(app, path) {
     );
 }
 
-const exactKeys = (value, keys) =>
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.keys(value).sort().join('\0') === [...keys].sort().join('\0');
-
 function journalOf(plan) {
     return {
         schema_version: '1.0.0',
@@ -112,12 +116,6 @@ function journalOf(plan) {
     };
 }
 
-async function writeJournal(root, journal) {
-    const temporary = resolve(root, `.journal-${randomUUID()}.tmp`);
-    await writeDocument(temporary, `${JSON.stringify(journal, null, 2)}\n`);
-    await renameAndSync(temporary, resolve(root, JOURNAL));
-}
-
 const JOURNAL_KEYS = [
     'schema_version',
     'kind',
@@ -140,127 +138,59 @@ const JOURNAL_APP_KEYS = [
     'files',
 ];
 
-async function readJournal(root, planId) {
-    let journal;
-    try {
-        journal = JSON.parse(await readFile(resolve(root, JOURNAL), 'utf8'));
-    } catch {
-        ambiguous('unreadable journal');
-    }
-    const valid =
-        exactKeys(journal, JOURNAL_KEYS) &&
-        journal.schema_version === '1.0.0' &&
-        journal.kind === 'product-prefix-rename-journal' &&
-        journal.plan_id === planId &&
-        RENAME_PHASES.includes(journal.phase) &&
-        [
-            journal.workspace_id_before,
-            journal.workspace_id_after,
-            journal.workspace_manifest_before_sha256,
-            journal.workspace_manifest_after_sha256,
-        ].every((value) => HEX.test(value ?? '')) &&
-        Array.isArray(journal.apps) &&
-        journal.apps.length > 0 &&
-        journal.apps.every(
-            (app) =>
-                exactKeys(app, JOURNAL_APP_KEYS) &&
-                APP_NAME.test(app.app_name ?? '') &&
-                HEX.test(app.manifest_before_sha256 ?? '') &&
-                HEX.test(app.manifest_after_sha256 ?? '') &&
-                app.candidate ===
-                    `.${app.app_name}.rename-candidate-${planId}` &&
-                app.previous === `.${app.app_name}.rename-previous-${planId}` &&
-                Array.isArray(app.files) &&
-                app.files.every(
-                    (file) =>
-                        exactKeys(file, ['path', 'bytes', 'sha256']) &&
-                        HEX.test(file.sha256 ?? '')
-                )
-        );
-    if (!valid) ambiguous('invalid journal');
-    return journal;
-}
-
-// Empreinte du manifeste d'un arbre EXACT selon son propre manifeste, sinon
-// `null` : un arbre changé n'est jamais déplacé.
-async function exactTreeManifestSha(root) {
-    try {
-        const text = (await readProductFile(root, APP_MANIFEST)).toString(
-            'utf8'
-        );
-        const files = { [APP_MANIFEST]: text };
-        for (const entry of JSON.parse(text).generated_files) {
-            const content = await readProductFile(root, entry.path);
-            if (
-                sha256(content) !== entry.sha256 ||
-                content.length !== entry.bytes
+const validJournal = (journal, planId) =>
+    exactKeys(journal, JOURNAL_KEYS) &&
+    journal.schema_version === '1.0.0' &&
+    journal.kind === 'product-prefix-rename-journal' &&
+    journal.plan_id === planId &&
+    RENAME_PHASES.includes(journal.phase) &&
+    [
+        journal.workspace_id_before,
+        journal.workspace_id_after,
+        journal.workspace_manifest_before_sha256,
+        journal.workspace_manifest_after_sha256,
+    ].every((value) => HEX.test(value ?? '')) &&
+    Array.isArray(journal.apps) &&
+    journal.apps.length > 0 &&
+    journal.apps.every(
+        (app) =>
+            exactKeys(app, JOURNAL_APP_KEYS) &&
+            APP_NAME.test(app.app_name ?? '') &&
+            HEX.test(app.manifest_before_sha256 ?? '') &&
+            HEX.test(app.manifest_after_sha256 ?? '') &&
+            app.candidate === `.${app.app_name}.rename-candidate-${planId}` &&
+            app.previous === `.${app.app_name}.rename-previous-${planId}` &&
+            Array.isArray(app.files) &&
+            app.files.every(
+                (file) =>
+                    exactKeys(file, ['path', 'bytes', 'sha256']) &&
+                    HEX.test(file.sha256 ?? '')
             )
-                return null;
-            files[entry.path] = content.toString('utf8');
-        }
-        await verifyGeneratedTree(root, files);
-        return sha256(text);
-    } catch {
-        return null;
-    }
-}
+    );
 
-// Candidat partiel ou complet : chaque fichier présent est celui inscrit au
-// journal, et aucun dossier n'est étranger à son inventaire.
-async function candidateWithin(root, artifacts) {
-    const expected = new Map(artifacts.map((entry) => [entry.path, entry]));
-    try {
-        for (const entry of await treeInventory(root)) {
-            const wanted = expected.get(entry.path);
-            if (
-                !wanted ||
-                wanted.sha256 !== entry.sha256 ||
-                wanted.bytes !== entry.bytes
-            )
-                return false;
-        }
-        const directories = [];
-        const visit = async (directory) => {
-            for (const entry of await readdir(directory, {
-                withFileTypes: true,
-            }))
-                if (entry.isDirectory()) {
-                    const absolute = resolve(directory, entry.name);
-                    directories.push(
-                        `${relative(root, absolute).split(sep).join('/')}/`
-                    );
-                    await visit(absolute);
-                }
-        };
-        await visit(root);
-        return directories.every((prefix) =>
-            [...expected.keys()].some((path) => path.startsWith(prefix))
-        );
-    } catch {
-        return false;
-    }
-}
+const readJournal = (root, planId) =>
+    readTransactionJournal(
+        root,
+        (journal) => validJournal(journal, planId),
+        ambiguous
+    );
 
 const workspaceManifestPath = (productRoot) =>
     resolve(productRoot, WORKSPACE_MANIFEST);
 
-async function trees(productRoot, app) {
-    const apps = resolve(productRoot, 'apps');
-    const output = resolve(apps, app.app_name);
-    const candidate = resolve(apps, app.candidate);
-    const previous = resolve(apps, app.previous);
-    const [hasOutput, hasCandidate, hasPrevious] = await Promise.all(
-        [output, candidate, previous].map(pathExists)
-    );
-    return {
-        output,
-        candidate,
-        previous,
-        hasOutput,
-        hasCandidate,
-        hasPrevious,
-    };
-}
+// Arbres de chaque appli inscrite au journal, dans apps/ : noms, artefacts du
+// candidat et empreintes de manifeste attendues avant et après.
+const appsRoot = (productRoot) => resolve(productRoot, 'apps');
+const journalTrees = (journal) =>
+    journal.apps.map((app) => ({
+        name: app.app_name,
+        candidate: app.candidate,
+        previous: app.previous,
+        files: app.files,
+        before: app.manifest_before_sha256,
+        after: app.manifest_after_sha256,
+        label: `app ${app.app_name}`,
+    }));
 
 // Retour à l'état d'avant (phase < verified), décidé par l'état observé.
 // Tout est contrôlé AVANT le premier déplacement : un état ambigu est refusé
@@ -287,57 +217,18 @@ async function revertRename(productRoot, journal) {
         if (content !== before && content !== after)
             ambiguous('switch temporary drifted');
     }
-    const actions = [];
-    for (const app of journal.apps) {
-        const state = await trees(productRoot, app);
-        const label = `app ${app.app_name}`;
-        const outputSha = state.hasOutput
-            ? await exactTreeManifestSha(state.output)
-            : undefined;
-        if (state.hasPrevious) {
-            if (
-                (await exactTreeManifestSha(state.previous)) !==
-                app.manifest_before_sha256
-            )
-                ambiguous(`${label} previous tree drifted`);
-            if (state.hasOutput) {
-                if (state.hasCandidate) ambiguous(`${label} has several trees`);
-                if (outputSha !== app.manifest_after_sha256)
-                    ambiguous(`${label} renamed tree drifted`);
-                actions.push({ kind: 'unswap', state });
-            } else {
-                if (
-                    state.hasCandidate &&
-                    !(await candidateWithin(state.candidate, app.files))
-                )
-                    ambiguous(`${label} candidate drifted`);
-                actions.push({ kind: 'restore', state });
-            }
-            continue;
-        }
-        if (outputSha !== app.manifest_before_sha256)
-            ambiguous(`${label} tree drifted`);
-        if (state.hasCandidate) {
-            if (!(await candidateWithin(state.candidate, app.files)))
-                ambiguous(`${label} candidate drifted`);
-            actions.push({ kind: 'dispose', state });
-        }
-    }
+    const actions = await planTreesRevert(
+        appsRoot(productRoot),
+        journalTrees(journal),
+        ambiguous
+    );
     // Contrôles faits : déplacements, chacun atomique et rejouable.
     if (hasTemporary) await removeTreeAndSync(temporary);
     if (copy) {
         await writeDocument(temporary, copy);
         await renameAndSync(temporary, workspaceManifestPath(productRoot));
     }
-    for (const { kind, state } of actions) {
-        if (kind === 'unswap') {
-            await renameAndSync(state.output, state.candidate);
-            await renameAndSync(state.previous, state.output);
-        } else if (kind === 'restore')
-            await renameAndSync(state.previous, state.output);
-        if (await pathExists(state.candidate))
-            await removeTreeAndSync(state.candidate);
-    }
+    await revertTrees(actions);
     await removeTreeAndSync(root);
 }
 
@@ -350,39 +241,18 @@ async function completeRename(productRoot, journal) {
         (await pathExists(switchTemporary(productRoot, journal.plan_id)))
     )
         ambiguous('verified rename does not match its workspace manifest');
-    const previous = [];
-    for (const app of journal.apps) {
-        const state = await trees(productRoot, app);
-        if (
-            state.hasCandidate ||
-            !state.hasOutput ||
-            (await exactTreeManifestSha(state.output)) !==
-                app.manifest_after_sha256
-        )
-            ambiguous(`app ${app.app_name} renamed tree drifted`);
-        if (state.hasPrevious) {
-            if (
-                (await exactTreeManifestSha(state.previous)) !==
-                app.manifest_before_sha256
-            )
-                ambiguous(`app ${app.app_name} previous tree drifted`);
-            previous.push(state.previous);
-        }
-    }
-    for (const path of previous) await removeTreeAndSync(path);
+    await completeTrees(
+        appsRoot(productRoot),
+        journalTrees(journal),
+        ambiguous
+    );
     await removeTreeAndSync(root);
 }
 
 // Dossiers de préparation d'un journal jamais posé : sans effet, retirés sous
 // verrou du produit.
-async function removeStaging(productRoot) {
-    const prefix = stagingPrefix(productRoot);
-    for (const entry of await readdir(dirname(productRoot), {
-        withFileTypes: true,
-    }))
-        if (entry.name.startsWith(prefix) && entry.isDirectory())
-            await removeTreeAndSync(resolve(dirname(productRoot), entry.name));
-}
+const removeStaging = (productRoot) =>
+    removeStagingDirectories(productRoot, stagingPrefix(productRoot));
 
 // Post-condition `derived` (A) : depuis l'espace basculé, préfixe scellé
 // relu, coque et compositions rendues avec lui (renderers réels), comparées à
@@ -527,27 +397,16 @@ export async function publishProductPrefixRename(options, dependencies = {}) {
             const journal = journalOf(plan);
             // `prepared` : copie de l'ancien manifeste et journal écrits dans
             // un dossier de préparation, puis posés par un seul renommage.
-            const staging = await mkdtemp(
-                resolve(
-                    dirname(plan.productRoot),
-                    stagingPrefix(plan.productRoot)
-                )
+            await poseTransactionJournal(
+                plan.productRoot,
+                stagingPrefix(plan.productRoot),
+                root,
+                [[PREVIOUS_WORKSPACE, plan.workspace_manifest_before]],
+                journal
             );
-            try {
-                await writeDocument(
-                    resolve(staging, PREVIOUS_WORKSPACE),
-                    plan.workspace_manifest_before
-                );
-                await writeJournal(staging, journal);
-                await syncTreeDirectories(staging);
-                await renameAndSync(staging, root);
-            } catch (error) {
-                await removeTreeAndSync(staging);
-                throw error;
-            }
             const step = async (name) => {
                 journal.phase = name;
-                await writeJournal(root, journal);
+                await writeTransactionJournal(root, journal);
                 await phase(name, plan);
             };
             try {
@@ -577,10 +436,13 @@ export async function publishProductPrefixRename(options, dependencies = {}) {
                     await verifyGeneratedTree(app.candidate, app.next);
                 }
                 await step('staged');
-                for (const app of plan.apps) {
-                    await swap(app.outputAbsolute, app.previous);
-                    await swap(app.candidate, app.outputAbsolute);
-                }
+                for (const app of plan.apps)
+                    await swapTree(
+                        app.outputAbsolute,
+                        app.candidate,
+                        app.previous,
+                        swap
+                    );
                 await step('swapped');
                 const temporary = switchTemporary(
                     plan.productRoot,
