@@ -750,9 +750,10 @@ des autres commandes tant qu’elle n’est pas reprise et application non scell
 Un test nommé « limite connue » montre qu’une forge complète, sceau recalculé,
 passe. Le runner injecté ne prouve aucune compilation.
 `check:external-application-shells` publie, dans chaque coque avec session des
-produits A et B, une sortie sous `generated/` puis le remplacement d’une page
-qui la consomme. Il exécute réellement la chaîne native et rejoue les refus «
-fichier ajouté à la main » et « registre falsifié » sur le produit installé.
+produits A et B, une sortie sous `generated/` puis sa republication déclarée
+(`replaced`, empreinte d’avant liée à la première). Il exécute réellement la
+chaîne native et rejoue les refus « fichier ajouté à la main » et « registre
+falsifié » sur le produit installé.
 
 Limites :
 

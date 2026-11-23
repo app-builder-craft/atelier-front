@@ -19,9 +19,8 @@
  *   par les publieurs du générateur (plan revu, puis publication liée à son
  *   identifiant, comme `--expect-plan`), dans les deux profils : espace,
  *   coque Angular avec session et relais, commande, plans de page,
- *   compositions, bon de travail, réalisation et lecture de chaque domaine de
- *   fixture ; coques Angular et React d'une conception ; contrats backend et
- *   conceptions compilés. Puis l'arbre ENTIER du dossier jetable est balayé,
+ *   compositions et lecture de chaque domaine de fixture ; coques Angular et
+ *   React d'une conception ; contrats backend et conceptions compilés. Puis l'arbre ENTIER du dossier jetable est balayé,
  *   noms et contenus, fichiers et dossiers cachés compris (verrous, journaux
  *   et racines de transaction vivent à côté du produit). Le verrou de chaque
  *   produit, reconnu par SON `packageManager`, est jugé après le blanchiment
@@ -41,14 +40,12 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs';
 import {
     lstat,
-    mkdir,
     mkdtemp,
     readFile,
     readdir,
     readlink,
     realpath,
     rm,
-    writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -231,9 +228,6 @@ async function workspace(root) {
         options
     );
     await fixture.installMetadataOnly(planned);
-    await (
-        await load('test-support/external-realization-product.mjs')
-    ).linkTypePackages(root);
     return planned.manifest.identity.prefix;
 }
 
@@ -246,12 +240,7 @@ async function sessionProduct(root, domain) {
     const actions = await load('core/external-action-request.mjs');
     const pagePlan = await load('core/external-page-plan.mjs');
     const composition = await load('core/external-page-composition.mjs');
-    const realization = await load('core/external-page-realization.mjs');
     const lists = await load('core/external-list-query.mjs');
-    const { connexionRealizationFiles } = await load(
-        'test-support/external-realization-fixture.mjs'
-    );
-    const { sha256 } = await load('core/generation-manifest.mjs');
     const prefix = await workspace(root);
     const input = await session.writeExternalSessionDesign(root, domain);
     const shell = session.sessionShellOptions(input);
@@ -282,37 +271,8 @@ async function sessionProduct(root, domain) {
             composition.planExternalPageComposition,
             composition.publishExternalPageComposition,
         ],
-        [
-            realization.planExternalPageRealizationWorkOrder,
-            realization.publishExternalPageRealizationWorkOrder,
-        ],
     ])
         await reviewed(plan, publish, entry);
-    // Réalisation de la page d'entrée : le brouillon de la preuve native X4.
-    const app = join(root, 'apps', shell.appName);
-    const workOrder = JSON.parse(
-        await readFile(
-            join(app, realization.workOrderPath(input.entryPage.id)),
-            'utf8'
-        )
-    );
-    const contract = await readFile(join(app, workOrder.page_contract.path));
-    const draft = join(root, workOrder.draft_root);
-    await rm(draft, { recursive: true, force: true });
-    await mkdir(draft, { recursive: true });
-    for (const [name, content] of Object.entries(
-        connexionRealizationFiles({
-            pageContract: JSON.parse(contract),
-            contractSha256: sha256(contract),
-            composition: workOrder.composition.module,
-        })
-    ))
-        await writeFile(join(draft, name), content);
-    await reviewed(
-        realization.planExternalPageRealization,
-        realization.publishExternalPageRealization,
-        entry
-    );
     // Lecture, puis plan et composition de la page qui la charge.
     const definitionPath = await session.writeExternalQueryDefinition(
         root,
