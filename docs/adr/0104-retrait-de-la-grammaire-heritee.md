@@ -112,13 +112,22 @@ bout en bout, parce que :
    sert qu'aux applications internes de l'atelier ;
 2. tout fichier exécuté par ces commandes avant la cible `test` de l'interface
    (`project.json`, `eslint.config.mjs`, `vite.config.mts`, `tsconfig*`) est
-   possédé et exact ; la construction compile sans exécuter le code libre ;
+   possédé et exact. La construction n'exécute pas le code libre, à une
+   exception mesurée près (constat T-E8, analyse du lot 3) : avec Tailwind
+   4.3.3, une directive `@plugin` ou `@config` dans le CSS d'une page fait
+   importer par `build:production` le module de la zone libre qu'elle
+   désigne. Parade décidée : au commit 1b du lot 2, les contrôles natifs
+   lancent le lint AVANT la construction, et le lot 5 refuse `plugin` et
+   `config` par Stylelint ; entre-temps, seul le confinement (point 1) borne
+   ce cas, et aucune page de l'IA n'existe avant le 1b ;
 3. le test du mécanisme (`external-product-confinement.test.mjs`) reste en CI
    (`test:external-application-shells`).
 
 Condition : tant que l'interface n'a pas de cible `test`, aucun lot ne rend
-dans la zone libre un fichier de configuration exécuté par la construction
-(par exemple `postcss.config` ou `tailwind.config`).
+dans la zone libre un fichier que la construction exécute : fichier de
+configuration (`postcss.config`, `tailwind.config`) ou module désigné par une
+directive `@plugin`/`@config` d'un CSS traité par Tailwind ; l'ordre lint →
+construction des contrôles natifs n'est pas inversé.
 
 ## Conséquences
 
@@ -127,5 +136,10 @@ dans la zone libre un fichier de configuration exécuté par la construction
   n'existent plus.
 - Une conception dont une lecture a un champ nullable ou facultatif sans texte
   d'absence est refusée dès `compile:page-execution-plan`.
-- Un produit déjà créé ne reçoit `form-action 'none'` qu'en recréant son
-  application (la coque ne se republie pas).
+- La commande `update-app` n'existe pas encore : c'est elle qui apportera
+  les évolutions de l'espace aux applications déjà créées (réponse Q1 = A du
+  propriétaire ; lot 2, puis lot 9). Aujourd'hui, une application créée avant
+  ce changement ne reçoit `form-action 'none'` qu'en étant recréée (la coque
+  ne se republie pas) ; `rename-product-prefix` refuse sa coque, qui n'est
+  plus reproductible par le générateur courant
+  (`PRODUCT_SHELL_NOT_REPRODUCIBLE`).

@@ -9,7 +9,7 @@ métier.
 Un humain ou un LLM doit toujours lire le `README.md` et le `example-set.json`
 du même ensemble avant d'utiliser une image. Une image n'est applicable que si
 le contrat de page déclare les capacités qu'elle montre. Une preuve runtime et
-une validation humaine de la page réalisée restent obligatoires.
+une validation humaine de la page restent obligatoires.
 
 ## Ensembles disponibles
 
