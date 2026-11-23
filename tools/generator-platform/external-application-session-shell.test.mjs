@@ -397,7 +397,7 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
     assert.equal(directives.get('connect-src'), "'self'");
     assert.equal(directives.get('script-src'), "'self'");
     assert.equal(directives.get('base-uri'), "'self'");
-    assert.equal(directives.get('form-action'), "'self'");
+    assert.equal(directives.get('form-action'), "'none'");
     assert.equal(directives.get('object-src'), "'none'");
     assert.equal(directives.get('frame-src'), "'none'");
     assert.equal(directives.has('frame-ancestors'), false);

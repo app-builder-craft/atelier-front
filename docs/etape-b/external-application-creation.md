@@ -1076,7 +1076,7 @@ génère, et le registre la scelle :
 ```text
 default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self';
-manifest-src 'self'; frame-src 'none'; object-src 'none'; form-action 'self';
+manifest-src 'self'; frame-src 'none'; object-src 'none'; form-action 'none';
 base-uri 'self'; require-trusted-types-for 'script';
 trusted-types angular angular#bundler <p>-sw
 ```

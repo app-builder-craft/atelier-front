@@ -9,7 +9,12 @@
 //        serveur réellement arrêté, document servi par le service worker ;
 //   <p>-sw : seconde création refusée, nom hors liste refusé ; innerHTML et
 //        new Worker par chaîne toujours bloqués.
-// Usage : --browser-proof-root <racine d'une preuve native>.
+//   form-action : une soumission native de même origine est bloquée et
+//        signalée par chaque politique livrée qui porte `form-action 'none'`,
+//        document inchangé ; un formulaire `method="dialog"` reste permis.
+// La liste des vérifications est STATIQUE (`RELAY_BROWSER_CHECKS`) : un nom
+// hors liste est refusé et le compte attendu en dérive.
+// Usage : --browser-proof-root <racine d'une preuve native> [--mutations].
 import assert from 'node:assert/strict';
 import {
     cp,
@@ -24,6 +29,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    HOST_CONF,
     get,
     relayFixture,
     stage,
@@ -37,9 +43,81 @@ import {
 } from './core/atelier-signature.mjs';
 import { sealedProductPrefix } from './core/application-workspace-root.mjs';
 import { productForms } from './core/product-identity.mjs';
-import { externalCspHeader } from './renderers/external-content-security-policy.mjs';
+import {
+    externalCspHeader,
+    externalCspMeta,
+} from './renderers/external-content-security-policy.mjs';
 
 const READY_TIMEOUT_MS = 15_000;
+// Attente après la dernière violation attendue : une violation de plus serait
+// rapportée dans ce délai.
+const SETTLE_MS = 500;
+
+// Liste STATIQUE des vérifications de chaque coque : gabarits de noms, dont
+// `<kebab>` est la seule partie rendue (forme du préfixe du produit). Le compte
+// attendu en dérive ; il ne se déduit jamais des résultats obtenus.
+export const RELAY_BROWSER_CHECKS = Object.freeze([
+    '10-trusted-types-on-nginx',
+    '8-service-worker-registered',
+    '8-reload-new-document',
+    '<kebab>sw-policy-closed',
+    'sinks-still-blocked',
+    'cache-security',
+    '8-offline-document',
+    'form-action-none',
+    'form-dialog-allowed',
+]);
+
+export const relayBrowserCheckNames = (prefix) =>
+    RELAY_BROWSER_CHECKS.map((name) =>
+        name.replace('<kebab>', productForms(prefix).kebab)
+    );
+
+// Une politique porte-t-elle `form-action 'none'` ? Chaque politique livrée
+// (en-tête, balise meta) qui la porte rapporte sa propre violation (CSP3
+// §4.2.4) : le nombre attendu de violations en dérive.
+const FORM_ACTION_NONE = /(?:^|;)\s*form-action 'none'\s*(?:;|$)/;
+export const formActionSources = (policies) =>
+    policies.filter((policy) => FORM_ACTION_NONE.test(policy ?? '')).length;
+
+// Contre-mutations de la directive, sur la COPIE servie (jamais l'arbre du
+// dépôt) : `'none'` → `'self'` dans l'en-tête nginx, dans la balise meta, ou
+// dans les deux. Critères de mort spécifiques ; sous une seule source
+// affaiblie, la sonde comportementale reste verte (l'autre bloque).
+export const FORM_ACTION_MUTATIONS = Object.freeze([
+    Object.freeze({
+        id: 'form-action-header',
+        sources: Object.freeze(['header']),
+        killedBy: '10-trusted-types-on-nginx',
+        stillGreen: 'form-action-none',
+    }),
+    Object.freeze({
+        id: 'form-action-meta',
+        sources: Object.freeze(['meta']),
+        killedBy: '10-trusted-types-on-nginx',
+        stillGreen: 'form-action-none',
+    }),
+    Object.freeze({
+        id: 'form-action-both',
+        sources: Object.freeze(['header', 'meta']),
+        killedBy: 'form-action-none',
+    }),
+]);
+
+// Affaiblit la directive dans un fichier de la copie : exactement une
+// occurrence, sinon la contre-mutation s'arrête (ancre absente ou ambiguë).
+export async function weakenFormAction(path) {
+    const text = await readFile(path, 'utf8');
+    const count = text.split("form-action 'none'").length - 1;
+    if (count !== 1)
+        throw new Error(
+            `contre-mutation form-action : ${count} occurrence(s) dans ${path}`
+        );
+    await writeFile(
+        path,
+        text.replace("form-action 'none'", "form-action 'self'")
+    );
+}
 // Globale d'instrumentation du harnais et marqueur de redéploiement.
 const VIOLATIONS = signatureGlobal('Violations');
 const DEPLOY = signatureName('deploy');
@@ -104,6 +182,104 @@ export const EXPECTATIONS = {
     },
 };
 
+// Enregistreur des vérifications d'une coque : un nom hors de la liste
+// statique, ou une vérification lancée deux fois, arrête la preuve ; le compte
+// attendu ne peut donc pas être contourné.
+export function relayCheckRecorder(prefix) {
+    const results = {};
+    const declared = relayBrowserCheckNames(prefix);
+    const check = async (name, run) => {
+        if (!declared.includes(name) || Object.hasOwn(results, name))
+            throw new Error(`vérification non déclarée ou répétée : ${name}`);
+        try {
+            await run();
+            results[name] = 'PASS';
+        } catch (error) {
+            results[name] = `FAIL ${String(error.message).split('\n')[0]}`;
+        }
+    };
+    return { results, check };
+}
+
+// Sondes `form-action` (décision L10-2 = B), après la vérification 10 et par
+// DELTA du tableau de violations du document courant. Le formulaire est créé
+// par l'API du DOM (jamais innerHTML : Trusted Types).
+// - `form-action-none` : un formulaire POST de MÊME origine soumis par
+//   `requestSubmit()` est bloqué (au moins une violation dans le délai, même
+//   URL, composant routé présent) ; chaque entrée ajoutée vient de
+//   `form-action` ; leur nombre égale celui des politiques livrées qui portent
+//   `form-action 'none'` (en-tête servi, balise meta), au moins une.
+// - `form-dialog-allowed` : un `<form method="dialog">` dans un `<dialog open>`
+//   ferme le dialogue sans aucune violation (HTML : aucune navigation).
+export async function runFormActionChecks(
+    page,
+    check,
+    { violations, violationsName, servedHeader, routed }
+) {
+    const settle = () =>
+        page.evaluate(
+            (delay) => new Promise((done) => setTimeout(done, delay)),
+            SETTLE_MS
+        );
+    await check('form-action-none', async () => {
+        const href = page.url();
+        const before = (await violations()).length;
+        const meta = await page
+            .locator('meta[http-equiv="Content-Security-Policy"]')
+            .getAttribute('content');
+        const expected = formActionSources([servedHeader, meta]);
+        await page.evaluate(() => {
+            const form = document.createElement('form');
+            form.setAttribute('method', 'post');
+            form.setAttribute('action', '/sonde');
+            document.body.appendChild(form);
+            form.requestSubmit();
+        });
+        // Une soumission non bloquée navigue : l'attente échoue (délai ou
+        // contexte détruit), puis l'URL nomme la cause.
+        const reported = await page
+            .waitForFunction(
+                ([name, count]) => globalThis[name].length >= count,
+                [violationsName, before + Math.max(expected, 1)],
+                { timeout: READY_TIMEOUT_MS }
+            )
+            .then(
+                () => true,
+                () => false
+            );
+        if (reported) await settle();
+        assert.equal(page.url(), href, 'soumission native non bloquée');
+        assert.ok(reported, 'violation form-action non rapportée');
+        assert.ok((await page.locator(routed).count()) > 0, 'document changé');
+        const added = (await violations()).slice(before);
+        assert.ok(
+            added.every((entry) => entry.startsWith('form-action ')),
+            added.join(' | ')
+        );
+        assert.ok(
+            expected >= 1,
+            "aucune politique ne porte form-action 'none'"
+        );
+        assert.equal(added.length, expected);
+    });
+    await check('form-dialog-allowed', async () => {
+        const before = (await violations()).length;
+        const open = await page.evaluate(() => {
+            const dialog = document.createElement('dialog');
+            dialog.setAttribute('open', '');
+            const form = document.createElement('form');
+            form.setAttribute('method', 'dialog');
+            dialog.appendChild(form);
+            document.body.appendChild(dialog);
+            form.requestSubmit();
+            return dialog.open;
+        });
+        await settle();
+        assert.equal(open, false, 'dialogue resté ouvert');
+        assert.deepEqual((await violations()).slice(before), []);
+    });
+}
+
 // Assertions communes, quel que soit le serveur. `server.update(index)` remplace
 // index.html servi ; `server.stop()` arrête réellement le serveur.
 export async function runShellBrowserChecks(
@@ -114,15 +290,7 @@ export async function runShellBrowserChecks(
 ) {
     // Noms au préfixe du produit servi : caches, politique, CSP.
     const forms = productForms(prefix);
-    const results = {};
-    const check = async (name, run) => {
-        try {
-            await run();
-            results[name] = 'PASS';
-        } catch (error) {
-            results[name] = `FAIL ${String(error.message).split('\n')[0]}`;
-        }
-    };
+    const { results, check } = relayCheckRecorder(prefix);
     const context = await launched.newContext();
     await context.addInitScript((name) => {
         const violations = [];
@@ -136,19 +304,23 @@ export async function runShellBrowserChecks(
     const page = await context.newPage();
     const violations = () =>
         page.evaluate((name) => globalThis[name], VIOLATIONS);
+    // Politique servie en en-tête, lue AVANT toute assertion (les sondes
+    // `form-action` en dérivent leur compte, même si la vérification 10 échoue).
+    let servedHeader;
     try {
         await check('10-trusted-types-on-nginx', async () => {
             const response = await page.goto(origin + '/');
+            servedHeader = response.headers()['content-security-policy'];
             assert.equal(response.status(), 200);
-            assert.equal(
-                response.headers()['content-security-policy'],
-                externalCspHeader(prefix)
+            assert.equal(servedHeader, externalCspHeader(prefix));
+            // En-tête ET balise meta égaux, chacun, au texte rendu par l'atelier.
+            const meta = page.locator(
+                'meta[http-equiv="Content-Security-Policy"]'
             );
+            assert.equal(await meta.count(), 1);
             assert.equal(
-                await page
-                    .locator('meta[http-equiv="Content-Security-Policy"]')
-                    .count(),
-                1
+                await meta.getAttribute('content'),
+                externalCspMeta(prefix)
             );
             await page
                 .locator(ROUTED)
@@ -285,6 +457,15 @@ export async function runShellBrowserChecks(
                 assert.ok(!new URL(url).pathname.startsWith('/api'), url);
             }
         });
+        // Après la vérification 10 (qui exige un tableau VIDE) et après les
+        // vérifications 8 qui l'exigent aussi dans le même document ; avant
+        // l'arrêt du serveur.
+        await runFormActionChecks(page, check, {
+            violations,
+            violationsName: VIOLATIONS,
+            servedHeader,
+            routed: ROUTED,
+        });
         await check('8-offline-document', async () => {
             const cached = await page.evaluate(async () =>
                 Promise.all(
@@ -400,6 +581,7 @@ export async function runRelayBrowserChecks({
     variant,
     prefix,
     mutateServiceWorker = false,
+    weakenFormActionIn = [],
 }) {
     // Le relais est rendu au préfixe du produit servi : sa CSP, son dossier
     // nginx et son filtre doivent être ceux du build.
@@ -418,6 +600,14 @@ export async function runRelayBrowserChecks({
                 (await readFile(join(root, 'html', 'sw.js'), 'utf8')) +
                     SW_CACHES_API
             );
+        // Contre-mutations `form-action` : la copie de l'en-tête, la balise
+        // meta de la copie du build, ou les deux.
+        const formActionFiles = {
+            header: join(root, HOST_CONF, 'content-security-policy.conf'),
+            meta: index,
+        };
+        for (const source of weakenFormActionIn)
+            await weakenFormAction(formActionFiles[source]);
         return await withRelay(
             root,
             table[0].variable,
@@ -491,18 +681,53 @@ async function main() {
             if (red) killed += 1;
             else failed += 1;
         }
+    // Contre-mutations `form-action`, par coque : une ligne par mutant et par
+    // coque ; mort SPÉCIFIQUE (la vérification nommée rougit) ; sous une seule
+    // source affaiblie, la sonde comportementale reste verte (l'autre source
+    // bloque encore : intersection des deux politiques).
+    let formActionKilled = 0;
+    const formActionMutants = process.argv.includes('--mutations')
+        ? FORM_ACTION_MUTATIONS.length * shells.length
+        : 0;
+    if (formActionMutants)
+        for (const shell of shells)
+            for (const mutation of FORM_ACTION_MUTATIONS) {
+                const mutated = await runRelayBrowserChecks({
+                    ...shell,
+                    browser,
+                    weakenFormActionIn: mutation.sources,
+                });
+                const red = mutated[mutation.killedBy] !== 'PASS';
+                const green =
+                    !mutation.stillGreen ||
+                    mutated[mutation.stillGreen] === 'PASS';
+                console.log(
+                    `${red && green ? 'PASS' : 'FAIL'} nginx-relay-browser/mutation ${mutation.id} ${shell.app} -> ${mutation.killedBy} ${red ? 'red' : 'still green'}${mutation.stillGreen ? `, ${mutation.stillGreen} ${mutated[mutation.stillGreen]}` : ''}`
+                );
+                if (red && green) formActionKilled += 1;
+                else failed += 1;
+            }
     for (const [name, outcome] of Object.entries(results)) {
         console.log(
             `${outcome === 'PASS' ? 'PASS' : 'FAIL'} nginx-relay-browser/${name}${outcome === 'PASS' ? '' : ' ' + outcome.slice(5)}`
         );
         if (outcome !== 'PASS') failed += 1;
     }
+    const expected = RELAY_BROWSER_CHECKS.length * shells.length;
     console.log(
-        `nginx-relay-browser checks=${Object.keys(results).length} failed=${failed}`
+        `nginx-relay-browser checks=${Object.keys(results).length}/${expected} failed=${failed}`
     );
     process.exitCode =
-        failed || Object.keys(results).length !== 7 * shells.length ? 1 : 0;
+        failed ||
+        Object.keys(results).length !== expected ||
+        formActionKilled !== formActionMutants
+            ? 1
+            : 0;
     if (killed) console.log(`nginx-relay-browser mutations killed=${killed}`);
+    if (formActionMutants)
+        console.log(
+            `nginx-relay-browser form-action mutations killed=${formActionKilled}/${formActionMutants}`
+        );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

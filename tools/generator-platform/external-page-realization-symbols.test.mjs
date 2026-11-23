@@ -513,7 +513,7 @@ test('X4-sécurité 2 : gabarit réduit, une entrée de liste par cas, politique
     const meta = externalCspMeta(FIXTURE_PREFIX);
     assert.equal(
         meta,
-        `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'none'; object-src 'none'; form-action 'self'; base-uri 'self'; require-trusted-types-for 'script'; trusted-types angular angular#bundler ${FIXTURE_PREFIX}-sw`
+        `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'self'; require-trusted-types-for 'script'; trusted-types angular angular#bundler ${FIXTURE_PREFIX}-sw`
     );
     assert.equal(
         externalCspHeader(FIXTURE_PREFIX),
