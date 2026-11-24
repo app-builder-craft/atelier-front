@@ -11,8 +11,14 @@ import test from 'node:test';
 import {
     cellFailureDetail,
     cellFailureNote,
+    nativeDocumentFixture,
+    proveCellCalls,
 } from './proof-support/external-document-native.mjs';
 import { record } from './proof-support/external-application-runtime.mjs';
+import {
+    installMetadataOnly,
+    prepareFixture,
+} from './test-support/external-application-fixture.mjs';
 
 const CELL = 'A/angular-pwa';
 const APP = 'ext03a-a-angular-pwa';
@@ -143,4 +149,42 @@ test('la ligne FAIL porte le complément, la sortie de l’enfant reste écarté
         `FAIL EXT03a/${CELL}/native-cell exit=1 call=${APP}:lint call_exit=1`
     );
     assert.ok(!session.lines.some((line) => line.includes('sortie privée')));
+});
+
+test('cellule réelle, runner injecté : l’appel natif en échec est celui que la note nomme', async (t) => {
+    // Plan réel de la création (cellule A), aucun natif : l'appel du `lint`
+    // de l'interface échoue ; la note reçoit son label, pris dans la liste
+    // du plan, et son code de sortie.
+    const prepared = await prepareFixture(t, ['angular-pwa', 'react-spa']);
+    await installMetadataOnly(prepared.plan);
+    const fixture = await nativeDocumentFixture(prepared.root, 'A');
+    const failing = `${APP}-interface:lint`;
+    const reported = [];
+    const notes = [];
+    await assert.rejects(
+        proveCellCalls({
+            root: prepared.root,
+            cell: CELL,
+            fixture,
+            execute: (args) => ({
+                status: args[1] === 'run' && args[2] === failing ? 1 : 0,
+                signal: null,
+                stdout: '',
+                stderr: '',
+            }),
+            report: (label, result) => {
+                reported.push(label);
+                if (result.status !== 0) throw new Error(`échec ${label}`);
+            },
+            onFailure: (note) => {
+                notes.push(note);
+            },
+        })
+    );
+    assert.equal(reported.at(-1), failing);
+    assert.deepEqual(notes, [{ call: failing, control: '', exit: 1 }]);
+    assert.equal(
+        cellFailureDetail(JSON.parse(JSON.stringify(notes[0])), CELL),
+        `call=${failing} call_exit=1`
+    );
 });

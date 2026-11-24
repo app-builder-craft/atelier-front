@@ -171,16 +171,18 @@ async function readCellFailure(contextPath, cell) {
     }
 }
 
-// The test runner stays in the trusted workshop; every compiler/Nx child is
-// executed by the existing native sandbox with no workshop mount and no network.
-export async function provePreparedDocumentCell(root, cell, contextPath) {
-    const context = JSON.parse(await readFile(contextPath, 'utf8'));
-    const { fixture, session, receiptPath } = nativeCellContext(
-        context,
-        root,
-        cell,
-        contextPath
-    );
+// Appels natifs d'une cellule (CI #48) : label de chaque appel, liste fermée
+// du plan de la création (`nativeRunLabels`, reçue par `onPlan`) et appel en
+// échec ; sur un échec, la note fermée est remise à `onFailure` avant que
+// l'erreur ne remonte. Exécution et compte rendu injectés.
+export async function proveCellCalls({
+    root,
+    cell,
+    fixture,
+    execute,
+    report,
+    onFailure,
+}) {
     const labels = [];
     let expected = [];
     let failed = null;
@@ -193,29 +195,50 @@ export async function provePreparedDocumentCell(root, cell, contextPath) {
                 : args[0].endsWith('check-workspace.mjs')
                   ? 'workspace-contract'
                   : 'native-compiler';
-        const result = confinedNode(session, root, args);
+        const result = execute(args);
         if (result.status !== 0 || result.signal)
             failed = { label, exit: result.status ?? 'interrupted' };
-        record(session, `EXT03a/${cell}/${label}`, result);
+        report(label, result);
         labels.push(label);
     };
-    let receipt;
     try {
-        receipt = await proveNativeDocumentCell(root, cell, {
+        const receipt = await proveNativeDocumentCell(root, cell, {
             fixture,
             run,
             onPlan: (plan) => {
                 expected = nativeRunLabels(plan);
             },
         });
+        return { labels, receipt };
     } catch (error) {
-        await writeFile(
-            `${contextPath}.failure.json`,
-            json(cellFailureNote({ error, failed, expected })),
-            { flag: 'wx', mode: 0o600 }
-        );
+        await onFailure(cellFailureNote({ error, failed, expected }));
         throw error;
     }
+}
+
+// The test runner stays in the trusted workshop; every compiler/Nx child is
+// executed by the existing native sandbox with no workshop mount and no network.
+export async function provePreparedDocumentCell(root, cell, contextPath) {
+    const context = JSON.parse(await readFile(contextPath, 'utf8'));
+    const { fixture, session, receiptPath } = nativeCellContext(
+        context,
+        root,
+        cell,
+        contextPath
+    );
+    const { labels, receipt } = await proveCellCalls({
+        root,
+        cell,
+        fixture,
+        execute: (args) => confinedNode(session, root, args),
+        report: (label, result) =>
+            record(session, `EXT03a/${cell}/${label}`, result),
+        onFailure: (note) =>
+            writeFile(`${contextPath}.failure.json`, json(note), {
+                flag: 'wx',
+                mode: 0o600,
+            }),
+    });
     // C-B2 : liste dérivée du plan de création (sans session : test de la
     // coque, lint des trois projets avant la construction).
     assert.deepEqual(labels, receipt.native_labels);
