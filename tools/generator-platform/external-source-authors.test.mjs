@@ -22,9 +22,14 @@ import { writeApplicationDesignFixture } from './test-support/application-design
 import {
     fixtureParent,
     installMetadataOnly,
+    prepareFixture,
     snapshotTree,
     TOOLS_ROOT,
 } from './test-support/external-application-fixture.mjs';
+import {
+    nativeDocumentFixture,
+    SHARED_DOCUMENT_SOURCE,
+} from './proof-support/external-document-native.mjs';
 import {
     backendArgs,
     compileDocumentFixture,
@@ -314,4 +319,25 @@ test('P-M3a à P-M3c : empreintes de contrat selon le mode', async (t) => {
             `INTERNAL_DESIGN_CONTRACT_DIGEST ${escape(design.backend_contracts[0].snapshot_uri)}`
         )
     );
+});
+
+// CI #48 sur `be7bf4e9`, cellule EXT03a/A : les documents de A, dont le brief
+// vit HORS de `descriptions/` (`examples/…`, contre-exemple T11), compilés par
+// les CLI réelles. La ligne `SOURCES_A_LIER` relisait l'espace en
+// CONSOMMATEUR (voisins documentaires refusés) : la commande échouait après
+// son plan. Elle le relit désormais comme son plan, en auteur.
+test('CI #48 : un auteur dont un document vit hors de descriptions/ réussit et n’imprime rien à lier', async (t) => {
+    const prepared = await prepareFixture(t, ['angular-pwa', 'react-spa']);
+    const fixture = await nativeDocumentFixture(prepared.root, 'A');
+    assert.ok(
+        fixture.design.sources.some(
+            (source) => source.snapshot_uri === SHARED_DOCUMENT_SOURCE
+        )
+    );
+    const { receipts } = await compileDocumentFixture(fixture);
+    for (const receipt of receipts) {
+        assert.equal(receipt.apply.status, 0, receipt.tool);
+        assert.deepEqual(toBind(receipt.preview.stderr), [], receipt.tool);
+        assert.deepEqual(toBind(receipt.apply.stderr), [], receipt.tool);
+    }
 });

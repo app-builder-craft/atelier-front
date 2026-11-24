@@ -1,10 +1,7 @@
 import { lstat } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
-import {
-    planCompilationWorkspace,
-    readOwnedWorkspace,
-} from './application-workspace.mjs';
+import { planCompilationWorkspace } from './application-workspace.mjs';
 import { sourcesToBindLines } from './application-sources.mjs';
 import {
     assertPhysicalPath,
@@ -70,17 +67,34 @@ const AUTHOR_COMMANDS = Object.freeze({
 // V3.6 point 1 : un auteur qui laisse le produit périmé imprime une ligne
 // `SOURCES_A_LIER` par source à lier, sur la sortie d'erreur (la sortie
 // standard du plan reste du JSON), lue dans l'état du produit à la fin de la
-// commande.
+// commande, par la MÊME lecture que celle de son plan : l'espace d'un auteur,
+// où les voisins documentaires sont admis (CI #48 sur `be7bf4e9` : lu en
+// consommateur, un document hors de `descriptions/` faisait échouer la
+// commande après son plan).
 export async function reportSourcesToBind({ workspaceRoot, targetRoot, kind }) {
-    if (targetRoot === undefined) return [];
-    const workspace = await readOwnedWorkspace({
+    const context = await beginCompilationContext({
         workspaceRoot,
         targetRoot,
-        command: AUTHOR_COMMANDS[kind],
     });
+    if (!context) return [];
+    const workspace = await authorWorkspace(context, kind, []);
     const lines = sourcesToBindLines(workspace.stale_sources);
     for (const line of lines) process.stderr.write(`${line}\n`);
     return lines;
+}
+
+// Espace relu par un auteur : documents voisins admis (`planCompilationWorkspace`),
+// classe de sa commande (fraîcheur rapportée, intégrité exigée).
+function authorWorkspace(context, kind, inputPaths) {
+    return planCompilationWorkspace({
+        workspaceRoot: context.toolsRoot,
+        targetRoot: context.productRoot,
+        profiles: context.marker.profiles,
+        githubRepository: context.marker.github_repository,
+        reviewOwner: context.marker.review_owner,
+        inputPaths,
+        command: AUTHOR_COMMANDS[kind],
+    });
 }
 
 // Without targetRoot the existing library protocol, hashes and paths are used.
@@ -219,15 +233,10 @@ export async function bindCompilationContext(
     } catch (error) {
         if (error.code !== 'ENOENT') throw error;
     }
-    const workspace = await planCompilationWorkspace({
-        workspaceRoot: context.toolsRoot,
-        targetRoot: context.productRoot,
-        profiles: context.marker.profiles,
-        githubRepository: context.marker.github_repository,
-        reviewOwner: context.marker.review_owner,
-        inputPaths: [...inputs.map((input) => input.path), outputPath],
-        command: AUTHOR_COMMANDS[kind],
-    });
+    const workspace = await authorWorkspace(context, kind, [
+        ...inputs.map((input) => input.path),
+        outputPath,
+    ]);
     if (sha256(workspace.files[MARKER]) !== context.markerSha256)
         fail('workspace marker changed during planning');
     const code = {};
