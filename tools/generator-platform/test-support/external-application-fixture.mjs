@@ -39,7 +39,7 @@ export const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 // comparées et reste écarté (EXT01 v7). Forme FERMÉE, sinon rien : aucun
 // chemin hors de l'atelier, aucune dépendance installée, aucun `..`.
 const ASSERT_OPERATOR = /^[a-z][A-Za-z]{1,30}$/;
-const ATELIER_LOCATION =
+const CODE_LOCATION =
     /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+\.m?js:\d{1,6}:\d{1,6}$/;
 function assertionControl(error) {
     const operator = ASSERT_OPERATOR.test(error.operator ?? '')
@@ -52,7 +52,7 @@ function assertionControl(error) {
         if (!url?.startsWith(root)) continue;
         const candidate = url.slice(root.length);
         if (
-            ATELIER_LOCATION.test(candidate) &&
+            CODE_LOCATION.test(candidate) &&
             !candidate.split('/').includes('node_modules')
         )
             location = candidate;
