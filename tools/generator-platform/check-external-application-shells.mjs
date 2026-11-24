@@ -8,7 +8,6 @@ import { pathToFileURL } from 'node:url';
 import { provisionBrowser } from '../library-setup/browser-provisioning.mjs';
 import {
     planApplicationWorkspace,
-    planExternalApplicationShell,
     publishApplicationWorkspace,
     publishExternalApplicationShell,
 } from './core/application-workspace.mjs';
@@ -38,6 +37,7 @@ import {
 import {
     assertNativeCellLabels,
     nativeDocumentFixture,
+    reviewCellShells,
     runNativeDocumentCell,
 } from './proof-support/external-document-native.mjs';
 import {
@@ -128,26 +128,19 @@ export async function main(argv = process.argv.slice(2)) {
             const fixture = await nativeDocumentFixture(root, kind);
             const currentPlans = [];
             const shells = [];
-            for (const profile of ['angular-pwa', 'react-spa']) {
-                const receipt = await runNativeDocumentCell(
-                    session,
-                    fixture,
-                    profile
-                );
-                const shell = {
-                    workspaceRoot: TOOLS_ROOT,
-                    targetRoot: root,
-                    appName: `ext03a-${kind.toLowerCase()}-${profile}`,
-                    profile,
-                    designPath: fixture.designPath,
-                    experienceId: fixture.design.experiences[0].id,
-                };
-                const plan = await planExternalApplicationShell(shell);
+            // Plans relus après TOUTES les cellules du produit (CI #48).
+            for (const { shell, plan, receipt } of await reviewCellShells(
+                root,
+                kind,
+                fixture,
+                ['angular-pwa', 'react-spa'],
+                (profile) => runNativeDocumentCell(session, fixture, profile)
+            )) {
                 await verifyPlanTrees(plan);
                 assertNativeCellLabels(receipt, plan);
                 currentPlans.push(plan);
                 allPlans.push(plan);
-                shells.push({ ...shell, expectedPlanId: plan.plan_id });
+                shells.push(shell);
             }
             if (kind === 'A') {
                 await qualifySharedSourceRemoval(

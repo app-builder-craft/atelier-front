@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 import { nativeRunLabels } from '../core/application-native-controls.mjs';
+import { planExternalApplicationShell } from '../core/application-workspace.mjs';
 import { toolEnv } from '../core/atelier-signature.mjs';
 import { isWithin } from '../core/external-application-paths.mjs';
 import {
@@ -263,6 +264,35 @@ export function assertNativeCellLabels(receipt, plan) {
         expected,
         'native cell plan labels'
     );
+}
+
+// CI #48 (run 45377254689, sur 845fa02e) : le plan d'une création LIE la
+// liaison des sources de TOUTES les autres applis du produit (v3 V3.5 b
+// point 2) ; un plan relu devient donc périmé dès qu'une autre appli est
+// créée après lui (point 3 : « plan périmé »), à juste titre. Les plans des
+// coques d'un produit sont relus APRÈS toutes ses cellules, dans l'état que
+// la reprise (T9–T12) appliquera.
+export async function reviewCellShells(root, kind, fixture, profiles, runCell) {
+    const receipts = [];
+    for (const profile of profiles) receipts.push(await runCell(profile));
+    const reviewed = [];
+    for (const [index, profile] of profiles.entries()) {
+        const shell = {
+            workspaceRoot: TOOLS_ROOT,
+            targetRoot: root,
+            appName: `ext03a-${kind.toLowerCase()}-${profile}`,
+            profile,
+            designPath: fixture.designPath,
+            experienceId: fixture.design.experiences[0].id,
+        };
+        const plan = await planExternalApplicationShell(shell);
+        reviewed.push({
+            shell: { ...shell, expectedPlanId: plan.plan_id },
+            plan,
+            receipt: receipts[index],
+        });
+    }
+    return reviewed;
 }
 
 export async function runNativeDocumentCell(session, fixture, profile) {

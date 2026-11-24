@@ -19,9 +19,11 @@ import {
     nativeCellContext,
     nativeCellEnvironment,
     nativeDocumentFixture,
+    reviewCellShells,
     runNativeDocumentCell,
     SHARED_DOCUMENT_SOURCE,
 } from './proof-support/external-document-native.mjs';
+import { publishExternalApplicationShell } from './core/application-workspace.mjs';
 import { toolEnv } from './core/atelier-signature.mjs';
 import {
     qualifySharedSourceRemoval,
@@ -243,4 +245,43 @@ test('EXT03a/CI A : source partagée retirée, refusée par le vérificateur de 
         hash(await readFile(join(prepared.root, SHARED_DOCUMENT_SOURCE))),
         hash(await readFile(join(TOOLS_ROOT, SHARED_DOCUMENT_SOURCE)))
     );
+});
+
+// CI #48 (run 45377254689, sur 845fa02e) : `reviewed shell plan is stale` à
+// la reprise T9–T12 du produit B. Le plan de la 1re coque, relu avant la
+// création de la 2e, liait une liaison des autres applis vide ; la 2e la
+// remplit (v3 V3.5 b point 2). Produit B léger, deux cellules sans natif,
+// plans relus par la preuve, puis reprise de CHAQUE coque sous son plan relu.
+test('EXT03a/CI B : plans des coques relus après toutes les cellules ; reprise de chaque coque admise', async (t) => {
+    const prepared = await prepareFixture(t, ['angular-pwa', 'react-spa']);
+    await installMetadataOnly(prepared.plan);
+    const fixture = await nativeDocumentFixture(prepared.root, 'B');
+    const cells = [];
+    const reviewed = await reviewCellShells(
+        prepared.root,
+        'B',
+        fixture,
+        ['angular-pwa', 'react-spa'],
+        async (profile) => {
+            cells.push(profile);
+            return proveNativeDocumentCell(prepared.root, `B/${profile}`, {
+                fixture,
+                // Aucun natif : seul le plan et les fichiers comptent ici.
+                run: () => undefined,
+            });
+        }
+    );
+    assert.deepEqual(cells, ['angular-pwa', 'react-spa']);
+    assert.deepEqual(
+        reviewed.map(({ shell }) => shell.appName),
+        ['ext03a-b-angular-pwa', 'ext03a-b-react-spa']
+    );
+    for (const { shell, plan, receipt } of reviewed) {
+        assert.equal(shell.expectedPlanId, plan.plan_id);
+        assert.ok(receipt.native_labels.length > 0);
+        const result = await publishExternalApplicationShell(shell, {
+            run: () => undefined,
+        });
+        assert.equal(result.recovered, true, shell.appName);
+    }
 });
