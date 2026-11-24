@@ -22,6 +22,7 @@ import {
     record,
     targetArguments,
 } from './external-application-runtime.mjs';
+import { SHARED_DOCUMENT_SOURCE } from './external-document-native.mjs';
 
 export async function fileMutation(
     session,
@@ -59,7 +60,14 @@ export async function fileMutation(
     if (failure) throw failure;
 }
 
-export async function displacedEntry(session, product, path, run, diagnostic) {
+export async function displacedEntry(
+    session,
+    product,
+    path,
+    run,
+    diagnostic,
+    scope
+) {
     const source = resolve(product, path);
     assert.ok(isWithin(product, source));
     await assertPhysicalPath(dirname(source));
@@ -67,7 +75,7 @@ export async function displacedEntry(session, product, path, run, diagnostic) {
     await mkdir(holdingRoot, { recursive: true });
     const holding = resolve(holdingRoot, hash(path));
     assert.equal(await pathExists(holding), false);
-    const label = `missing/${path}`;
+    const label = scope ? `missing/${scope}/${path}` : `missing/${path}`;
     record(session, `${label}/before`, await run());
     let failure;
     try {
@@ -84,6 +92,43 @@ export async function displacedEntry(session, product, path, run, diagnostic) {
     record(session, `${label}/restored`, await run());
     await session.save();
     if (failure) throw failure;
+}
+
+// CI #48 (run 45369887977, sur aaf98f3d) : depuis le commit 3, la fraîcheur
+// des sources liées a QUITTÉ `check-workspace.mjs` (v2 R2.4 point 2, L-19) ;
+// le retrait de la source partagée du produit A est refusé par le
+// vérificateur PAR APPLI (la cible `check-socle` du socle, dont dépend le
+// `lint` de la coque et de l'interface) de CHAQUE appli qui la lie. Le
+// diagnostic attendu est la ligne fermée, comparée comme chaîne.
+export const SHARED_SOURCE_MISSING = `SOURCES_STALE design ${SHARED_DOCUMENT_SOURCE} (missing) ; `;
+export const sharedSourceRefusal = Object.freeze({
+    test: (output) =>
+        output
+            .split('\n')
+            .some((line) => line.startsWith(SHARED_SOURCE_MISSING)),
+});
+export const sharedSourceGuard = (appName) => [
+    `${WORKSPACE.support}/check-socle.mjs`,
+    '--app',
+    appName,
+];
+
+export async function qualifySharedSourceRemoval(
+    session,
+    product,
+    appNames,
+    execute
+) {
+    assert.ok(appNames.length > 0);
+    for (const appName of appNames)
+        await displacedEntry(
+            session,
+            product,
+            SHARED_DOCUMENT_SOURCE,
+            () => execute(sharedSourceGuard(appName)),
+            sharedSourceRefusal,
+            appName
+        );
 }
 
 // Lot 2 : une page est une AMORCE de l'interface (chemin relatif au

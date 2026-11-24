@@ -13,7 +13,6 @@ import {
     publishExternalApplicationShell,
 } from './core/application-workspace.mjs';
 import { verifyGeneratedTree } from './core/external-application-paths.mjs';
-import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from './renderers/application-workspace-renderer.mjs';
 import {
     formatProofStop,
     snapshotTree,
@@ -29,10 +28,10 @@ import {
     withPublished,
 } from './proof-support/external-application-runtime.mjs';
 import {
-    displacedEntry,
     instrumentProduct,
     qualifyBrowser,
     qualifyMutations,
+    qualifySharedSourceRemoval,
     qualifyWeights,
 } from './proof-support/external-application-checks.mjs';
 
@@ -40,7 +39,6 @@ import {
     assertNativeCellLabels,
     nativeDocumentFixture,
     runNativeDocumentCell,
-    SHARED_DOCUMENT_SOURCE,
 } from './proof-support/external-document-native.mjs';
 import {
     publishNativeSessionShell,
@@ -152,15 +150,11 @@ export async function main(argv = process.argv.slice(2)) {
                 shells.push({ ...shell, expectedPlanId: plan.plan_id });
             }
             if (kind === 'A') {
-                await displacedEntry(
+                await qualifySharedSourceRemoval(
                     session,
                     root,
-                    SHARED_DOCUMENT_SOURCE,
-                    () =>
-                        confinedNode(session, root, [
-                            `${WORKSPACE.support}/check-workspace.mjs`,
-                        ]),
-                    /Échec du contrat workspace/
+                    shells.map((shell) => shell.appName),
+                    (args) => confinedNode(session, root, args)
                 );
             } else {
                 // Preserve recovery, mutation, confinement and browser T9–T18.

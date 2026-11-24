@@ -1,14 +1,20 @@
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import {
     hash,
+    installMetadataOnly,
     prepareFixture,
     TOOLS_ROOT,
 } from './test-support/external-application-fixture.mjs';
-import { NATIVE_CELLS } from './test-support/external-document-fixture.mjs';
+import {
+    NATIVE_CELLS,
+    proveNativeDocumentCell,
+} from './test-support/external-document-fixture.mjs';
 import {
     nativeCellContext,
     nativeCellEnvironment,
@@ -17,6 +23,11 @@ import {
     SHARED_DOCUMENT_SOURCE,
 } from './proof-support/external-document-native.mjs';
 import { toolEnv } from './core/atelier-signature.mjs';
+import {
+    qualifySharedSourceRemoval,
+    SHARED_SOURCE_MISSING,
+    sharedSourceRefusal,
+} from './proof-support/external-application-checks.mjs';
 
 for (const cell of NATIVE_CELLS) {
     test(`EXT03a/CI closed cell binding ${cell}`, () => {
@@ -140,5 +151,96 @@ test('EXT03a/CI failed child keeps a private diagnostic and stops', async (t) =>
     await assert.rejects(
         readFile(join(root, 'cell-A-angular-pwa.json.receipt.json')),
         { code: 'ENOENT' }
+    );
+});
+
+// CI #48 (run 45369887977, sur aaf98f3d) : `missing/<brief>/red exit=0`. Le
+// retrait de la source partagée de A était confié à `check-workspace.mjs`,
+// que la fraîcheur des sources liées a quitté au commit 3 (L-19) ; il l'est
+// au vérificateur PAR APPLI de chaque appli qui la lie. Produit A léger, deux
+// applis créées (runner natif injecté) ; la commande lancée doit être celle de
+// la cible `check-socle` du socle de l'appli, lue dans le produit.
+test('EXT03a/CI A : source partagée retirée, refusée par le vérificateur de CHAQUE appli qui la lie', async (t) => {
+    const prepared = await prepareFixture(t, ['angular-pwa', 'react-spa']);
+    await installMetadataOnly(prepared.plan);
+    const fixture = await nativeDocumentFixture(prepared.root, 'A');
+    const apps = [];
+    for (const profile of ['angular-pwa', 'react-spa']) {
+        await proveNativeDocumentCell(prepared.root, `A/${profile}`, {
+            fixture,
+            // Aucun natif : seul le plan et les fichiers comptent ici.
+            run: () => undefined,
+        });
+        apps.push(`ext03a-a-${profile}`);
+    }
+    const { socleDrifts } = await import(
+        pathToFileURL(join(prepared.root, '.atelier/support/check-socle.mjs'))
+            .href
+    );
+    const sessionRoot = await mkdtemp(join(tmpdir(), 'ext03a-missing-'));
+    t.after(() => rm(sessionRoot, { recursive: true, force: true }));
+    const session = {
+        root: sessionRoot,
+        lines: [],
+        save: async () => undefined,
+    };
+    const calls = [];
+    const execute = async (args) => {
+        const app = args[2];
+        const project = JSON.parse(
+            await readFile(
+                join(prepared.root, 'libs', `${app}-socle`, 'project.json'),
+                'utf8'
+            )
+        );
+        // La preuve lance la commande de la cible du produit, à l'identique.
+        assert.equal(
+            `node ${args.join(' ')}`,
+            project.targets['check-socle'].options.command
+        );
+        calls.push(app);
+        const lines = await socleDrifts(app);
+        return {
+            status: lines.length ? 1 : 0,
+            signal: null,
+            stdout: '',
+            stderr: lines.map((line) => `${line}\n`).join(''),
+        };
+    };
+    const write = process.stdout.write;
+    process.stdout.write = () => true;
+    try {
+        await qualifySharedSourceRemoval(session, prepared.root, apps, execute);
+    } finally {
+        process.stdout.write = write;
+    }
+    assert.deepEqual(
+        calls,
+        apps.flatMap((app) => [app, app, app])
+    );
+    assert.deepEqual(
+        session.lines,
+        apps.flatMap((app) =>
+            ['before', 'red', 'restored'].map(
+                (step) =>
+                    `PASS missing/${app}/${SHARED_DOCUMENT_SOURCE}/${step} exit=${step === 'red' ? 1 : 0}`
+            )
+        )
+    );
+    // Le diagnostic est la ligne fermée, jamais un échec quelconque de
+    // l'espace (forme de la CI : « Échec du contrat workspace. » seul).
+    assert.equal(
+        sharedSourceRefusal.test('Échec du contrat workspace.\n'),
+        false
+    );
+    assert.equal(
+        sharedSourceRefusal.test(
+            `Échec du contrat workspace.\n${SHARED_SOURCE_MISSING}lancer update-app\n`
+        ),
+        true
+    );
+    assert.equal(
+        hash(await readFile(join(prepared.root, SHARED_DOCUMENT_SOURCE))),
+        hash(await readFile(join(TOOLS_ROOT, SHARED_DOCUMENT_SOURCE)))
     );
 });
