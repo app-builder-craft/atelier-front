@@ -20,11 +20,11 @@ import {
     interfaceRoot,
     PAGE_MODULE,
     ROOT_PATH_ALIASES,
-    SOCLE_ALIAS,
     SOCLE_COQUE_ENTRY,
     SOCLE_ENTRY,
     SOCLE_PAGES_DIR,
     SOCLE_SESSION_DIR,
+    socleAlias,
     socleCoqueAlias,
     socleLibraryName,
     socleRoot,
@@ -55,7 +55,7 @@ export function coquePaths(appName) {
 // Spécifieurs de la coque : API publique du socle, entrée de la coque et
 // carte des pages de l'interface.
 export const coqueSpecifiers = (appName) => ({
-    socle: SOCLE_ALIAS.replace('*', appName),
+    socle: socleAlias(appName),
     coque: socleCoqueAlias(appName),
     pages: interfaceAlias(appName),
 });

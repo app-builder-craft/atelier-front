@@ -73,10 +73,15 @@ export const ROOT_PATH_ALIASES = Object.freeze({
 // d'une appli importer l'entrée d'une autre sans aucun refus.
 const SOCLE_COQUE_SCOPE = '@socle-coque/';
 export const socleCoqueAlias = (appName) => `${SOCLE_COQUE_SCOPE}${appName}`;
-// Spécifieurs d'une appli par les deux motifs (l'étoile vaut le nom).
-export const socleAlias = (appName) => SOCLE_ALIAS.replace('*', appName);
+// Spécifieur d'une appli par un motif : l'étoile vaut le nom, à TOUTES ses
+// occurrences, et le nom est inséré tel quel (aucun motif de remplacement de
+// `String.prototype.replace`, `$&` ou `$1`, n'est interprété). Découpage et
+// jointure natifs, plutôt qu'un remplacement de la première occurrence.
+export const fillAliasPattern = (pattern, appName) =>
+    pattern.split('*').join(appName);
+export const socleAlias = (appName) => fillAliasPattern(SOCLE_ALIAS, appName);
 export const interfaceAlias = (appName) =>
-    INTERFACE_ALIAS.replace('*', appName);
+    fillAliasPattern(INTERFACE_ALIAS, appName);
 
 // Portées npm masquées par ces alias : la garde du catalogue des
 // bibliothèques refuse tout paquet qui commence par l'une d'elles (V3.4

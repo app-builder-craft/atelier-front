@@ -15,14 +15,18 @@ import {
 } from './core/product-identity.mjs';
 import {
     ALIAS_SCOPES,
+    fillAliasPattern,
     FIXED_NAMES,
     INTERFACE_ALIAS,
+    interfaceAlias,
     ROOT_PATH_ALIASES,
     SAMPLE_EMAIL,
     SAMPLE_TEXT,
     SOCLE_ALIAS,
+    socleAlias,
     socleCoqueAlias,
 } from './core/socle-names.mjs';
+import { coqueSpecifiers } from './renderers/external-product-layout.mjs';
 import { SHELL_PACKAGES } from './renderers/application-workspace-renderer.mjs';
 import { TOOLS_ROOT } from './test-support/external-application-fixture.mjs';
 import { DISTINCTIVE_PREFIX } from './test-support/distinctive-prefix.mjs';
@@ -108,4 +112,22 @@ test('les portées des alias ne masquent aucun paquet du catalogue ni de la coqu
                 !name.startsWith(scope),
                 `${name} est masqué par ${scope}`
             );
+});
+
+// Revue Fable du 1b, B-2 (CodeQL `js/incomplete-sanitization`) : l'étoile d'un
+// motif vaut le nom à TOUTES ses occurrences, et le nom est inséré tel quel
+// (aucun motif de remplacement `$&`, `$'` ou `$1` interprété). Formes
+// fautives éprouvées : `replace` (première occurrence seule) et `replaceAll`
+// à chaîne de remplacement (motifs `$` interprétés).
+test('alias : étoile remplacée partout, nom inséré tel quel, une seule dérivation', () => {
+    assert.equal(fillAliasPattern('@x/*/*', 'app'), '@x/app/app');
+    assert.equal(fillAliasPattern('@x/*', 'a$&b'), '@x/a$&b');
+    assert.equal(socleAlias('observatory'), '@socle/observatory');
+    assert.equal(interfaceAlias('observatory'), '@interface/observatory');
+    for (const name of ['a$&b', "a$'b", 'a$1b']) {
+        assert.equal(socleAlias(name), `@socle/${name}`, name);
+        assert.equal(interfaceAlias(name), `@interface/${name}`, name);
+        assert.equal(coqueSpecifiers(name).socle, socleAlias(name), name);
+        assert.equal(coqueSpecifiers(name).pages, interfaceAlias(name), name);
+    }
 });
