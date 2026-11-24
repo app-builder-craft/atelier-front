@@ -10,7 +10,6 @@ import {
 } from '../renderers/application-workspace-renderer.mjs';
 import { nxConfinementEnvironment } from '../../library-setup/sandbox.mjs';
 import { validateApplicationDesignWithDependencies } from './application-design.mjs';
-import { SIGNATURE_FILES } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import { runConfinedProductCommand } from './external-product-confinement.mjs';
 import {
@@ -31,7 +30,19 @@ import {
     WORKSPACE_MANIFEST_VERSION,
 } from './external-application-paths.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
-import { sealShellManifest } from './application-ownership.mjs';
+import {
+    applicationRoots,
+    sealShellManifest,
+} from './application-ownership.mjs';
+import { nativeControls } from './application-native-controls.mjs';
+import {
+    filesUnder,
+    openTransaction,
+    transactionTrees,
+} from './application-transaction.mjs';
+import { swapTree } from './product-transaction.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
+import { LIBS_ROOT } from './socle-names.mjs';
 import {
     inputFilePath,
     ownedFiles,
@@ -41,6 +52,7 @@ import {
 } from './application-workspace-root.mjs';
 import {
     commitDirectoryTransaction,
+    renameAndSync,
     withProductWriterLocks,
 } from './generation-transaction.mjs';
 
@@ -123,8 +135,9 @@ async function workspaceSnapshot(context, options, profiles) {
 }
 
 // Public workspace creation and shell generation retain strict ownership.
-// `internal.recoveringApp` est réservé à la reprise sous verrou d'une
-// publication (application-publication.mjs) ; ce n'est pas une option publique.
+// `internal.transaction` (plan_id) est réservé à une transaction d'appli en
+// cours, sous verrou (création, publication : lot 2, V5.2) : son journal et
+// ses arbres de travail sont tolérés ; ce n'est pas une option publique.
 // Identifiant de l'espace produit : empreinte de ses champs déclarés.
 export function workspaceId(fields) {
     return sha256(stableStringify(fields));
@@ -244,7 +257,7 @@ async function planWorkspace(options, documentSources, internal = {}) {
         inputPaths: options.inputPaths ?? [],
         output: context.productRoot,
         candidate: workspaceCandidate(context.productRoot, planId),
-        recoveringApp: internal.recoveringApp,
+        transaction: internal.transaction,
         // Réservé au renommage du préfixe et à sa reprise (plan_id du
         // renommage) : ses arbres de travail et son journal sont tolérés.
         renaming: internal.renaming,
@@ -446,8 +459,10 @@ export async function renamedWorkspaceManifest(manifest, prefix) {
     return { manifest: next, text };
 }
 
-export async function planExternalApplicationShell(options) {
-    const workspace = await readOwnedWorkspace(options);
+// `internal.transaction` : la création elle-même, sous verrou, qui relit son
+// plan pendant sa transaction (lot 2, V5.2).
+export async function planExternalApplicationShell(options, internal = {}) {
+    const workspace = await readOwnedWorkspace(options, internal);
     const profile = options.profile ?? 'angular-pwa';
     if (!workspace.profiles.includes(profile))
         externalFailure('profile absent from workspace plan');
@@ -459,17 +474,20 @@ export async function planExternalApplicationShell(options) {
         prefix: workspace.manifest.identity.prefix,
     });
     // ADR-0103 : le manifeste de la coque extérieure naît scellé au produit.
-    const manifestPath = `apps/${options.appName}/${SIGNATURE_FILES.appManifest}`;
+    const manifestPath = appManifestPath(options.appName);
     const sealed = sealShellManifest(
-        JSON.parse(rendered.files[SIGNATURE_FILES.appManifest]),
+        JSON.parse(rendered.files[manifestPath]),
         workspace.manifest.workspace_id
     );
-    rendered.files[SIGNATURE_FILES.appManifest] = (
+    rendered.files[manifestPath] = (
         await canonicalizeGeneratedFiles({
             [manifestPath]: JSON.stringify(sealed, null, 2) + '\n',
         })
     )[manifestPath];
-    const treeSha = sha256(stableStringify(fileArtifacts(rendered.files)));
+    // Lot 2 (V5.1) : trois racines, chacune créée depuis l'absence ; les
+    // amorces de l'interface sont écrites par la création, sans être possédées.
+    const written = { ...rendered.files, ...rendered.seeds };
+    const treeSha = sha256(stableStringify(fileArtifacts(written)));
     const binding = {
         tools_root: workspace.toolsRoot,
         target_root: workspace.productRoot,
@@ -495,11 +513,6 @@ export async function planExternalApplicationShell(options) {
         experience_id: options.experienceId,
         output: `apps/${options.appName}`,
         outputAbsolute: resolve(workspace.productRoot, 'apps', options.appName),
-        candidate: resolve(
-            workspace.productRoot,
-            'apps',
-            `.${options.appName}.external-candidate-${planId}`
-        ),
         root: workspace.productRoot,
         toolsRoot: workspace.toolsRoot,
         tree_sha256: treeSha,
@@ -509,6 +522,12 @@ export async function planExternalApplicationShell(options) {
             provenance: 'scellé dans l’espace',
         },
         files: rendered.files,
+        seeds: rendered.seeds,
+        roots: applicationRoots(options.appName).map((root) => ({
+            root,
+            files: filesUnder(written, root),
+            before: null,
+        })),
         external_workspace: binding,
         compiler: profile === 'angular-pwa' ? 'ngc' : 'tsc',
         compiler_validation:
@@ -516,6 +535,63 @@ export async function planExternalApplicationShell(options) {
         workspace,
         installation,
     };
+}
+
+// Lot 2 (L-14) : avant tout échange, chaque candidat de BIBLIOTHÈQUE est
+// compilé seul par son propre `tsconfig.lib.json`, sans émettre (ngc en
+// Angular, `strictTemplates` ; tsc en React). La coque, dont les alias visent
+// les racines définitives, est compilée après l'échange par sa construction.
+export async function compileLibraryCandidates(plan, trees, run) {
+    const angular = plan.profile === 'angular-pwa';
+    for (const tree of trees) {
+        if (!tree.root.startsWith(`${LIBS_ROOT}/`)) continue;
+        await run(
+            process.execPath,
+            [
+                installedBin(
+                    plan,
+                    angular ? '@angular/compiler-cli' : 'typescript',
+                    angular ? 'ngc' : 'tsc'
+                ),
+                '-p',
+                resolve(tree.parent, tree.candidate, 'tsconfig.lib.json'),
+                '--noEmit',
+            ],
+            plan.root
+        );
+    }
+}
+
+// Arbres d'une transaction égaux à l'octet à leur contenu attendu, à leur
+// place définitive (`output`) ou de candidat.
+export async function verifyTransactionTrees(trees, where = 'output') {
+    for (const tree of trees)
+        await verifyGeneratedTree(
+            resolve(
+                tree.parent,
+                where === 'output' ? tree.name : tree.candidate
+            ),
+            tree.content
+        );
+}
+
+// C-B2 : les contrôles natifs de l'appli, dans l'ordre de la liste unique
+// (lint, PUIS construction, PUIS tests), chacun suivi de `after(label)`.
+export async function runNativeControls(plan, files, run, after) {
+    for (const control of nativeControls(plan.app_name, files)) {
+        await run(
+            process.execPath,
+            [
+                installedBin(plan, 'nx', 'nx'),
+                'run',
+                control.label,
+                '--skipNxCache',
+                '--outputStyle=stream',
+            ],
+            plan.root
+        );
+        await after(control.label);
+    }
 }
 
 // X4-sécurité : chaque commande du produit tourne confinée (aucun réseau,
@@ -557,76 +633,45 @@ export async function publishExternalApplicationShell(
 ) {
     if (!/^[a-f0-9]{64}$/.test(options.expectedPlanId ?? ''))
         externalFailure('external creation requires a reviewed plan');
-    const initial = await planExternalApplicationShell(options);
-    if (options.expectedPlanId !== initial.plan_id)
-        externalFailure('reviewed shell plan is stale');
+    if (!/^[a-z][a-z0-9-]*$/.test(options.appName ?? ''))
+        externalFailure('invalid app name');
     const run = dependencies.run ?? runExternalApplicationCommand;
     const phase = dependencies.phase ?? (() => undefined);
-    // Lot MARQUE, commit 3 (B) : verrou du produit, puis celui de l'appli.
-    const outputs = [initial.outputAbsolute];
-    return withProductWriterLocks(initial.root, outputs, async () => {
+    // Injectable pour éprouver un arrêt à chaque échange de racine.
+    const swap = dependencies.rename ?? renameAndSync;
+    // Lot MARQUE, commit 3 (B) : verrou du produit, puis celui de l'appli,
+    // pris AVANT le plan (lot 2) : une commande concurrente bute sur le
+    // verrou ; une transaction interrompue, sur son journal.
+    const { productRoot } = await externalApplicationContext({
+        workspaceRoot: options.workspaceRoot ?? repositoryRoot,
+        targetRoot: options.targetRoot,
+    });
+    const outputs = [resolve(productRoot, 'apps', options.appName)];
+    return withProductWriterLocks(productRoot, outputs, async () => {
         const plan = await planExternalApplicationShell(options);
-        if (plan.plan_id !== initial.plan_id)
-            externalFailure('shell changed under lock');
+        if (plan.plan_id !== options.expectedPlanId)
+            externalFailure('reviewed shell plan is stale');
+        const internal = { transaction: plan.plan_id };
         const recheck = async () => {
-            const current = await planExternalApplicationShell(options);
+            const current = await planExternalApplicationShell(
+                options,
+                internal
+            );
             if (current.plan_id !== plan.plan_id)
                 externalFailure('shell inputs changed during publication');
         };
-        const hadOutput = await pathExists(plan.outputAbsolute);
-        const hadCandidate = await pathExists(plan.candidate);
-        if (hadOutput)
-            await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-        else await stageGeneratedTree(plan.candidate, plan.files);
-        const compilerPackage =
-            plan.profile === 'angular-pwa'
-                ? '@angular/compiler-cli'
-                : 'typescript';
-        const compilationRoot = hadOutput
-            ? plan.outputAbsolute
-            : plan.candidate;
-        await phase('candidate-staged', plan);
-        await recheck();
-        await run(
-            process.execPath,
-            [
-                installedBin(plan, compilerPackage, plan.compiler),
-                '-p',
-                resolve(compilationRoot, 'tsconfig.app.json'),
-                '--noEmit',
-            ],
-            plan.root
+        const trees = transactionTrees(
+            plan.root,
+            'creation',
+            plan.plan_id,
+            plan.roots
         );
-        await verifyGeneratedTree(compilationRoot, plan.files);
-        await phase('compiled', plan);
-        await recheck();
-        let published = hadOutput;
-        try {
-            if (!hadOutput) {
-                await commitDirectoryTransaction({
-                    outputRoot: plan.outputAbsolute,
-                    candidateRoot: plan.candidate,
-                    expectedState: 'absent',
-                });
-                published = true;
-            }
-            await phase('published', plan);
-            for (const target of ['build:production', 'lint', 'test']) {
-                await run(
-                    process.execPath,
-                    [
-                        installedBin(plan, 'nx', 'nx'),
-                        'run',
-                        `${plan.app_name}:${target}`,
-                        '--skipNxCache',
-                        '--outputStyle=stream',
-                    ],
-                    plan.root
-                );
-                await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-                await phase(target, plan);
+        const controls = async () => {
+            await runNativeControls(plan, plan.files, run, async (label) => {
+                await verifyTransactionTrees(trees);
+                await phase(label, plan);
                 await recheck();
-            }
+            });
             await run(
                 process.execPath,
                 [
@@ -639,33 +684,64 @@ export async function publishExternalApplicationShell(
             );
             await assertSourceWeight(plan.root);
             await recheck();
-            await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+            await verifyTransactionTrees(trees);
+        };
+        // Rejeu d'une création déjà faite : ses trois racines sont exactes ;
+        // les contrôles sont relancés.
+        if (await pathExists(plan.outputAbsolute)) {
+            await verifyTransactionTrees(trees);
+            await controls();
             await phase('verified', plan);
+            return { plan, recovered: true };
+        }
+        // `libs/` naît avec la première appli ; s'il est créé ici, il est
+        // inscrit au journal et retiré au retour arrière (s'il est vide).
+        const libs = resolve(plan.root, LIBS_ROOT);
+        const created = !(await pathExists(libs));
+        const transaction = await openTransaction(
+            plan.root,
+            'creation',
+            plan.plan_id,
+            plan.app_name,
+            trees,
+            { createdDirectories: created ? [LIBS_ROOT] : [] }
+        );
+        try {
+            await assertPhysicalPath(libs, { missing: true });
+            await mkdir(libs, { recursive: true });
+            await assertPhysicalPath(libs);
+            for (const tree of trees)
+                await stageGeneratedTree(
+                    resolve(tree.parent, tree.candidate),
+                    tree.content
+                );
+            await phase('candidate-staged', plan);
             await recheck();
-            await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-            return { plan, recovered: hadOutput || hadCandidate };
+            await compileLibraryCandidates(plan, trees, run);
+            await verifyTransactionTrees(trees, 'candidate');
+            await phase('compiled', plan);
+            await recheck();
+            await transaction.step('staged');
+            for (const tree of trees) {
+                await swapTree(tree, swap);
+                await phase(`swapped:${tree.root}`, plan);
+            }
+            await transaction.step('swapped');
+            await phase('published', plan);
+            await controls();
+            await transaction.step('verified');
+            await phase('verified', plan);
+            await transaction.complete();
+            return { plan, recovered: false };
         } catch (error) {
-            if (
-                published &&
-                !hadOutput &&
-                !(await pathExists(plan.candidate))
-            ) {
-                // A changed/foreign tree is never moved for recovery. Leave
-                // evidence in place and fail; exact owned output may roll back.
-                try {
-                    await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-                    await commitDirectoryTransaction({
-                        outputRoot: plan.candidate,
-                        candidateRoot: plan.outputAbsolute,
-                        expectedState: 'absent',
-                    });
-                } catch (rollbackError) {
-                    throw new AggregateError(
-                        [error, rollbackError],
-                        'external application: rollback refused; inspect the owned tree locally',
-                        { cause: rollbackError }
-                    );
-                }
+            try {
+                await transaction.settle();
+            } catch (rollbackError) {
+                throw new AggregateError(
+                    [error, rollbackError],
+                    'external application: creation rollback refused; run recover:application-publication',
+                    { cause: rollbackError }
+                );
             }
             throw error;
         }

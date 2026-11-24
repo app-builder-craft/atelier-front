@@ -41,7 +41,7 @@
     "check:framework-purity": "node tools/check-framework-purity.mjs",
     "check:framework-purity:destructive": "node tools/check-framework-purity-destructive.mjs",
     "check:generator-platform:core": "node --test tools/generator-platform/*.test.mjs",
-    "check:generator-platform:angular": "node tools/generator-platform/prepare-stack-tests.mjs angular && tsc -p tools/generator-platform/tsconfig.angular-tests.json && (cd tools/generator-platform/.stack-test-runtime/application-session-native && node ../../page-realization-oracle-runner.mjs --oracle test --app observatory --profile angular-pwa)",
+    "check:generator-platform:angular": "node tools/generator-platform/prepare-stack-tests.mjs angular && tsc -p tools/generator-platform/.stack-test-runtime/angular/tsconfig.typecheck.json && (cd tools/generator-platform/.stack-test-runtime/application-session-native && node ../../page-realization-oracle-runner.mjs --oracle test --app observatory --profile angular-pwa)",
     "check:generator-platform": "bun run check:generator-platform:core && bun run check:generator-platform:angular",
     "check:publication-durability": "node tools/generator-platform/check-publication-durability.mjs && node --test tools/generator-platform/publication-durability.test.mjs tools/generator-platform/generation-transaction.test.mjs",
     "check:agent-operating-model": "node --test tools/check-agent-operating-model.test.mjs && node tools/check-agent-operating-model.mjs",

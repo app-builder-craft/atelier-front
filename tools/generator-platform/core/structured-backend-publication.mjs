@@ -179,7 +179,7 @@ export async function planStructuredBackendPublication({
         workspaceRoot,
         targetRoot,
     });
-    assertCompilationPaths(context, definitionPath, outputPath);
+    await assertCompilationPaths(context, definitionPath, outputPath);
     const root =
         context?.productRoot ?? (await realpath(resolve(workspaceRoot)));
     const definition = await readDefinition(root, definitionPath);
@@ -285,8 +285,8 @@ async function planAdoptedBackendPublication(options) {
         const root = options.targetRoot;
         const limits = new Map();
         const sizes = new Map();
-        function register(path, limit) {
-            observationIO.inputPath(path, guarded.marker);
+        async function register(path, limit) {
+            await observationIO.inputPath(root, path, guarded.marker);
             limits.set(path, Math.min(limits.get(path) ?? limit, limit));
         }
         async function reader(sourceRoot, path) {
@@ -305,7 +305,7 @@ async function planAdoptedBackendPublication(options) {
             sizes.set(path, content.length);
             return content;
         }
-        register(options.definitionPath, 65536);
+        await register(options.definitionPath, 65536);
         const definitionBytes = await reader(root, options.definitionPath);
         const definition = observationIO.parse(definitionBytes);
         assertReferenceAdoptionDefinition(definition);
@@ -317,8 +317,8 @@ async function planAdoptedBackendPublication(options) {
             ]).size !== 3
         )
             rejectObservation('OBS_BINDING');
-        register(definition.basis.snapshot_uri, 1048576);
-        register(definition.decision.snapshot_uri, 65536);
+        await register(definition.basis.snapshot_uri, 1048576);
+        await register(definition.decision.snapshot_uri, 65536);
         const basisBytes = await reader(root, definition.basis.snapshot_uri);
         const basis = observationIO.parse(basisBytes);
         const decisionBytes = await reader(
@@ -358,7 +358,7 @@ async function planAdoptedBackendPublication(options) {
         });
         if (basis.sources.length > 16) rejectObservation('OBS_LIMIT');
         for (const source of basis.sources)
-            register(source.snapshot_uri, 65536);
+            await register(source.snapshot_uri, 65536);
         let readError;
         const errors = await verifyBackendContractSnapshots(
             contract,
@@ -383,7 +383,7 @@ async function planAdoptedBackendPublication(options) {
             context.markerSha256 !== guarded.markerHash
         )
             rejectObservation('OBS_ROOT');
-        assertCompilationPaths(
+        await assertCompilationPaths(
             context,
             options.definitionPath,
             options.outputPath
@@ -450,7 +450,7 @@ async function planObservedBackendPublication(options) {
         const context = await beginCompilationContext(options);
         if (sha256(context.toolsRoot) !== input.toolsRootHash)
             rejectObservation('OBS_ROOT');
-        assertCompilationPaths(
+        await assertCompilationPaths(
             context,
             options.definitionPath,
             options.outputPath

@@ -10,11 +10,14 @@ import {
     planExternalActionRequest,
     publishExternalActionRequest,
 } from '../core/external-action-request.mjs';
-import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
-import { verifyGeneratedTree } from '../core/external-application-paths.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import { TOOLS_ROOT } from '../test-support/external-application-fixture.mjs';
 import { assertProductOnlyImports } from '../test-support/external-publication-fixture.mjs';
 import { writeExternalActionDefinitions } from '../test-support/external-session-fixture.mjs';
+import {
+    nativeLabels,
+    verifyPlanTrees,
+} from './external-application-runtime.mjs';
 import { nativePublicationRunner } from './external-publication-native.mjs';
 
 export async function proveNativeActionRequest(session, shell) {
@@ -56,11 +59,11 @@ export async function proveNativeActionRequest(session, shell) {
         { run }
     );
     assert.equal(result.replayed, false);
-    assert.equal(labels.length, 5);
-    await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+    assert.deepEqual(labels, nativeLabels(plan));
+    await verifyPlanTrees(plan);
     // T11 : la sortie n'importe que les paquets installés du produit et ses
     // propres fichiers ; aucun module de l'atelier, aucun de ses chemins.
-    const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
+    const manifest = JSON.parse(plan.files[appManifestPath(plan.app_name)]);
     assertProductOnlyImports(
         Object.fromEntries(
             plan.changes.map(({ path }) => [path, plan.files[path]])

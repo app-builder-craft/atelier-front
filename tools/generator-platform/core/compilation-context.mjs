@@ -4,11 +4,11 @@ import { dirname, resolve, sep } from 'node:path';
 import { planCompilationWorkspace } from './application-workspace.mjs';
 import {
     assertPhysicalPath,
+    assertSourcePath,
     externalApplicationContext,
     readProductFile,
-    safeRelativePath,
 } from './external-application-paths.mjs';
-import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
+import { SIGNATURE_FILES } from './atelier-signature.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { withProductWriterLocks } from './generation-transaction.mjs';
 
@@ -36,17 +36,6 @@ const COMPILATION_FILES = [
     'tools/generator-platform/validate-ir.mjs',
     'tools/generator-platform/schemas/observation-evidence.schema.json',
 ];
-const RESERVED_ROOTS = new Set([
-    'apps',
-    'node_modules',
-    SIGNATURE.dir,
-    '.git',
-    '.nx',
-    '.angular',
-    'dist',
-    'coverage',
-    'tmp',
-]);
 
 function fail(message) {
     throw new Error(`external compilation: ${message}`);
@@ -87,10 +76,17 @@ export async function beginCompilationContext({ workspaceRoot, targetRoot }) {
     };
 }
 
-function inputPath(context, path) {
-    safeRelativePath(path);
+// Lot 2 (V3.1, §V4.6 point 1) : toute référence que lit ou écrit un auteur
+// passe le contrôle unique `assertSourcePath` (racines réservées du produit,
+// `libs` compris, et chemin physique) ; les fichiers d'espace et le verrou
+// restent refusés ici en plus. Un chemin encore absent est admis : sa
+// lecture, plus loin, exige le fichier.
+async function inputPath(context, path) {
+    await assertSourcePath(context.productRoot, path, {
+        missing: true,
+        label: 'document',
+    });
     if (
-        RESERVED_ROOTS.has(path.split('/')[0]) ||
         (context.marker.files ?? []).some((file) => file.path === path) ||
         path === 'bun.lock'
     )
@@ -98,10 +94,10 @@ function inputPath(context, path) {
     return path;
 }
 
-export function assertCompilationPaths(context, sourcePath, outputPath) {
+export async function assertCompilationPaths(context, sourcePath, outputPath) {
     if (!context) return;
-    inputPath(context, sourcePath);
-    inputPath(context, outputPath);
+    await inputPath(context, sourcePath);
+    await inputPath(context, outputPath);
     if (sourcePath === outputPath) fail('output must not replace an input');
 }
 
@@ -115,22 +111,22 @@ async function collectInputs(
     additionalInputs
 ) {
     const hashes = new Map([
-        [inputPath(context, sourcePath), sha256(sourceContent)],
+        [await inputPath(context, sourcePath), sha256(sourceContent)],
     ]);
-    const add = (reference) => {
+    const add = async (reference) => {
         if (reference?.snapshot_uri === undefined) return;
-        const path = inputPath(context, reference.snapshot_uri);
+        const path = await inputPath(context, reference.snapshot_uri);
         if (!/^[a-f0-9]{64}$/.test(reference.sha256 ?? ''))
             fail('snapshot digest required');
         if (hashes.has(path) && hashes.get(path) !== reference.sha256)
             fail('conflicting snapshot digests');
         hashes.set(path, reference.sha256);
     };
-    for (const source of document.sources ?? []) add(source);
-    for (const reference of additionalInputs) add(reference);
+    for (const source of document.sources ?? []) await add(source);
+    for (const reference of additionalInputs) await add(reference);
     if (kind === 'design') {
         for (const reference of document.backend_contracts ?? []) {
-            add(reference);
+            await add(reference);
             const bytes = await inputReader(
                 context.productRoot,
                 reference.snapshot_uri
@@ -138,7 +134,7 @@ async function collectInputs(
             if (sha256(bytes) !== reference.sha256)
                 fail('backend snapshot drift');
             const contract = JSON.parse(bytes.toString('utf8'));
-            for (const source of contract.sources ?? []) add(source);
+            for (const source of contract.sources ?? []) await add(source);
         }
     }
     const inputs = [];
@@ -172,7 +168,7 @@ export async function bindCompilationContext(
     }
 ) {
     if (!context) return undefined;
-    assertCompilationPaths(context, sourcePath, outputPath);
+    await assertCompilationPaths(context, sourcePath, outputPath);
     const inputs = await collectInputs(
         context,
         sourcePath,

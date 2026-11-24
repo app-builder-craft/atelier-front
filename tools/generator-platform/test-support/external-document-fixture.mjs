@@ -9,6 +9,7 @@ import {
     planExternalApplicationShell,
     publishExternalApplicationShell,
 } from '../core/application-workspace.mjs';
+import { nativeRunLabels } from '../core/application-native-controls.mjs';
 import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import {
     readProductFile,
@@ -427,7 +428,9 @@ export async function proveNativeDocumentCell(root, cell, prepared = {}) {
         result = JSON.parse(applied.stdout);
         assert.equal(result.status, 'created');
     }
-    await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+    // Lot 2 : les trois racines de l'appli, chacune exacte.
+    for (const { root: tree, files } of plan.roots)
+        await verifyGeneratedTree(join(root, tree), files);
     const manifest = JSON.parse(
         await readFile(
             join(plan.outputAbsolute, SIGNATURE_FILES.appManifest),
@@ -457,5 +460,7 @@ export async function proveNativeDocumentCell(root, cell, prepared = {}) {
             tree_sha256: plan.tree_sha256,
             routes,
         },
+        // C-B2 : appels du runner attendus de cette création.
+        native_labels: nativeRunLabels(plan),
     };
 }

@@ -748,14 +748,23 @@ test('coque session Angular opt-in, React refusée avant sortie et pages ancienn
         prefix: FIXTURE_PREFIX,
     };
     const rendered = await renderAngularPwaShell(options);
-    assert.ok(rendered.files['src/app/session/session.store.ts']);
-    assert.equal(rendered.pages.length, 6);
-    assert.equal(rendered.files['src/app/access.guard.ts'], undefined);
-    assert.doesNotMatch(
-        rendered.files['src/app/app.ts'],
-        /localStorage|sessionStorage/
+    // Lot 2 (V5.1) : rendu relatif au produit ; la session va au socle, la
+    // coque garde le reste.
+    assert.ok(
+        rendered.files['libs/session-proof-socle/src/session/session.store.ts']
     );
-    assert.match(rendered.files['src/app/app.ts'], /app-main/);
+    assert.equal(
+        rendered.files['apps/session-proof/src/app/session/session.store.ts'],
+        undefined
+    );
+    assert.equal(rendered.pages.length, 6);
+    assert.equal(
+        rendered.files['apps/session-proof/src/app/access.guard.ts'],
+        undefined
+    );
+    const app = rendered.files['apps/session-proof/src/app/app.ts'];
+    assert.doesNotMatch(app, /localStorage|sessionStorage/);
+    assert.match(app, /app-main/);
     await assert.rejects(
         renderReactSpaShell(options),
         /APP_SESSION_REACT_UNSUPPORTED/

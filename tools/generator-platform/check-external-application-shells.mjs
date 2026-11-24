@@ -25,6 +25,8 @@ import {
     installRealPackages,
     proofSession,
     record,
+    verifyPlanTrees,
+    withPublished,
 } from './proof-support/external-application-runtime.mjs';
 import {
     displacedEntry,
@@ -138,7 +140,7 @@ export async function main(argv = process.argv.slice(2)) {
                     experienceId: fixture.design.experiences[0].id,
                 };
                 const plan = await planExternalApplicationShell(shell);
-                await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+                await verifyPlanTrees(plan);
                 currentPlans.push(plan);
                 allPlans.push(plan);
                 shells.push({ ...shell, expectedPlanId: plan.plan_id });
@@ -216,14 +218,14 @@ export async function main(argv = process.argv.slice(2)) {
             // X1 : publications scellées sous plan dans cette coque.
             const publishing = performance.now();
             const published = await proveNativePublication(session, shell);
-            shell.plan = { ...shell.plan, files: published.files };
+            shell.plan = withPublished(shell.plan, published);
             session.lines.push(
                 `X1/${domain} elapsed_ms=${Math.round(performance.now() - publishing)}`
             );
             // X2 : commande de connexion 2.1 publiée sous plan dans cette coque.
             const commanding = performance.now();
             const command = await proveNativeActionRequest(session, shell);
-            shell.plan = { ...shell.plan, files: command.files };
+            shell.plan = withPublished(shell.plan, command);
             session.lines.push(
                 `X2/${domain} elapsed_ms=${Math.round(performance.now() - commanding)}`
             );
@@ -233,7 +235,7 @@ export async function main(argv = process.argv.slice(2)) {
                 session,
                 shell
             );
-            shell.plan = { ...shell.plan, files: composition.files };
+            shell.plan = withPublished(shell.plan, composition);
             session.lines.push(
                 `X3/${domain} elapsed_ms=${Math.round(performance.now() - composing)}`
             );
@@ -241,7 +243,7 @@ export async function main(argv = process.argv.slice(2)) {
             // lecture (C3a, C3b, C4), sur l'état laissé par X3.
             const reading = performance.now();
             const read = await proveNativeListQuery(session, shell);
-            shell.plan = { ...shell.plan, files: read.files };
+            shell.plan = withPublished(shell.plan, read);
             session.lines.push(
                 `X5/${domain} elapsed_ms=${Math.round(performance.now() - reading)}`
             );
@@ -270,8 +272,7 @@ export async function main(argv = process.argv.slice(2)) {
         await verifyGeneratedTree(instrumentation.proof, instrumentation.files);
         await rm(instrumentation.proof, { recursive: true });
         await qualifySessionBrowser(session, sessionShells, browser);
-        for (const plan of allPlans)
-            await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+        for (const plan of allPlans) await verifyPlanTrees(plan);
         assert.deepEqual(
             await snapshotTree(TOOLS_ROOT),
             sourceBefore,

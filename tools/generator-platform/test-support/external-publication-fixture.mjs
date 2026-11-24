@@ -1,10 +1,12 @@
 // Produit fictif avec une coque Angular avec session, pour les publications
 // extérieures sous plan (ADR-0103). Le runner injecté ne compile rien.
 import assert from 'node:assert/strict';
-import { cp, readFile, rename, rm } from 'node:fs/promises';
+import { cp, readdir, readFile, rename, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 
-import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
+import { transactionJournalRoot } from '../core/application-transaction.mjs';
+import { pageModulePath } from '../core/external-publication-paths.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import {
     planExternalApplicationShell,
     publishExternalApplicationShell,
@@ -24,8 +26,11 @@ import {
     writeExternalSessionDesign,
 } from './external-session-fixture.mjs';
 
-export const MANIFEST = SIGNATURE_FILES.appManifest;
-export const NOTICE = 'src/app/generated/x1-proof/notice.ts';
+// Lot 2 (V5.1) : une publication écrit dans le SOCLE de son appli ; chemins
+// relatifs au produit. Fichier d'essai sous la zone des commandes, et module
+// de page du socle de la page d'entrée (remplaçable, C-B3 ii).
+export const noticePath = (appName) =>
+    `libs/${appName}-socle/src/actions/x1-proof/notice.ts`;
 
 export async function sessionApp(t, domain, edit) {
     const fixture = await prepareFixture(t);
@@ -38,13 +43,14 @@ export async function sessionApp(t, domain, edit) {
         { run: () => undefined }
     );
     const app = join(fixture.root, 'apps', shell.appName);
-    const page = `src/app/pages/${input.entryPage.id}/page.component.ts`;
     return {
         ...fixture,
         input,
         shell,
         app,
-        page,
+        manifestPath: appManifestPath(shell.appName),
+        notice: noticePath(shell.appName),
+        page: pageModulePath(shell.appName, input.entryPage.id),
         workspaceId: plan.workspace.manifest.workspace_id,
         base: {
             workspaceRoot: TOOLS_ROOT,
@@ -54,8 +60,10 @@ export async function sessionApp(t, domain, edit) {
     };
 }
 
-export const readManifest = async (app) =>
-    JSON.parse(await readFile(join(app, MANIFEST), 'utf8'));
+export const readManifest = async (product) =>
+    JSON.parse(
+        await readFile(join(product.root, product.manifestPath), 'utf8')
+    );
 
 export function publication(product, files, tool = 'generate:action-request') {
     return { ...product.base, tool, files };
@@ -85,33 +93,53 @@ export async function publish(options, dependencies = {}) {
     return { plan, result, labels };
 }
 
-// Arrêt brutal après l'échange : arbre neuf en place, ancien mis de côté.
-export async function interruptAfterSwap(product, options) {
+// Arrêt brutal à une phase (`published` par défaut : les deux racines
+// échangées) : l'état COMPLET du produit et le journal sont copiés à cette
+// phase, puis rendus après le retour arrière de l'échec simulé, comme si le
+// processus avait été tué là.
+export async function interruptAt(product, options, at = 'published') {
     const plan = await planApplicationPublication(options);
-    const copies = ['interrupted-new', 'interrupted-old'].map((name) =>
-        join(product.root, name)
+    const journal = transactionJournalRoot(
+        product.root,
+        'publication',
+        plan.plan_id
     );
+    const copies = {
+        product: join(product.parent, 'interrupted-product'),
+        journal: join(product.parent, 'interrupted-journal'),
+    };
     await assert.rejects(
         publishApplicationPublication(
             { ...options, expectedPlanId: plan.plan_id },
             {
                 run: () => undefined,
                 phase: async (name) => {
-                    if (name !== 'published') return;
-                    await cp(product.app, copies[0], { recursive: true });
-                    await cp(plan.previous, copies[1], { recursive: true });
+                    if (name !== at) return;
+                    await cp(product.root, copies.product, {
+                        recursive: true,
+                        verbatimSymlinks: true,
+                    });
+                    await cp(journal, copies.journal, { recursive: true });
                     throw new Error('stop');
                 },
             }
         ),
         /stop/
     );
-    await rename(product.app, join(product.root, 'apps', '.discard'));
-    await rm(join(product.root, 'apps', '.discard'), { recursive: true });
-    await rename(copies[0], product.app);
-    await rename(copies[1], plan.previous);
+    await rm(product.root, { recursive: true });
+    await rename(copies.product, product.root);
+    await rename(copies.journal, journal);
+    // Les verrous copiés appartiennent au processus vivant ; dans un arrêt
+    // réel, ils sont morts et repris par le verrou lui-même (prouvé par
+    // l'arrêt SIGKILL de create-app).
+    for (const space of ['apps', 'libs'])
+        for (const name of await readdir(join(product.root, space)))
+            if (/\.generation-lock/.test(name))
+                await rm(join(product.root, space, name), { recursive: true });
     return plan;
 }
+export const interruptAfterSwap = (product, options) =>
+    interruptAt(product, options, 'published');
 
 // T11 : la sortie n'importe que les paquets installés du produit et ses propres
 // fichiers possédés ; aucun module ni chemin de l'atelier.

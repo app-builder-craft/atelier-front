@@ -2,8 +2,10 @@
 // renommage d'un produit extérieur ajoute à chaque appli un enregistrement
 // `rename-product-prefix` (ADR-0103) ; aucun enregistrement existant n'est
 // réécrit. Sa zone est DÉRIVÉE ici : les chemins dont le rendu en `q` diffère
-// du rendu en `p` (coque et compositions), plus la paire de scripts d'entrée
-// nginx. Ce module ne fait que planifier ; la transaction est dans
+// du rendu en `p` (la coque), plus la paire de scripts d'entrée nginx. Lot 2
+// (V5.3) : le socle et l'interface ne portent aucune forme du préfixe ;
+// MARQUE ne s'étend pas à `libs/` et ne re-rend plus les compositions, qui y
+// vivent. Ce module ne fait que planifier ; la transaction est dans
 // `product-prefix-rename-transaction.mjs`.
 import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -20,6 +22,8 @@ import {
     renamedWorkspaceManifest,
     renderExternalShellFiles,
 } from './application-workspace.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
+import { filesUnder } from './application-transaction.mjs';
 import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import {
@@ -27,11 +31,6 @@ import {
     readProductFile,
     relayEnvshPath,
 } from './external-application-paths.mjs';
-import { expectedExternalPageCompositionFiles } from './external-page-composition.mjs';
-import {
-    PAGE_COMPOSITION_TOOL,
-    pageCompositionRoot,
-} from './external-publication-paths.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import {
     PRODUCT_NAME_FAMILIES,
@@ -40,10 +39,10 @@ import {
     productNameForms,
 } from './product-identity.mjs';
 import { prefixContext } from './product-prefix.mjs';
+import { coqueRoot } from './socle-names.mjs';
 
 const APP_MANIFEST = SIGNATURE_FILES.appManifest;
 const WORKSPACE_MANIFEST = SIGNATURE_FILES.workspaceManifest;
-const COMPOSITION_MANIFEST = 'generation-manifest.json';
 
 // Liaison du renommage : tout ce que son `plan_id` engage (S3). Exportée,
 // avec `renamePlanId`, comme `publicationBinding`.
@@ -88,12 +87,6 @@ function shellNotReproducible(appName, path) {
     );
 }
 
-function compositionNotReproducible(appName) {
-    externalFailure(
-        `PRODUCT_COMPOSITION_NOT_REPRODUCIBLE: app ${appName} composition is not reproducible by the current generator; republish it with generate:page-composition before renaming`
-    );
-}
-
 function prefixInPublication(appName, path, writer) {
     externalFailure(
         `PRODUCT_PREFIX_IN_PUBLICATION: app ${appName} path ${path} written by ${writer} depends on the prefix; it cannot be renamed`
@@ -117,78 +110,39 @@ function shellFields(manifest) {
     );
 }
 
-function splitShell(files) {
-    const { [APP_MANIFEST]: manifest, ...rest } = files;
+// Rendu de la coque, chemins relatifs au produit (trois racines, lot 2) :
+// manifeste à part.
+function splitShell(files, appName) {
+    const { [appManifestPath(appName)]: manifest, ...rest } = files;
     return { manifest: JSON.parse(manifest), files: rest };
 }
 
-async function currentFiles(root, manifest) {
+// Fichiers possédés de l'appli, relatifs au produit.
+async function currentFiles(productRoot, manifest) {
     const files = {};
     for (const entry of manifest.generated_files)
-        files[entry.path] = (await readProductFile(root, entry.path)).toString(
-            'utf8'
-        );
+        files[entry.path] = (
+            await readProductFile(productRoot, entry.path)
+        ).toString('utf8');
     return files;
 }
 
-// Pages dont la composition est publiée : celles dont le manifeste de
-// génération est dans l'inventaire, au chemin de `pageCompositionRoot`.
-function composedPages(inventory) {
-    const pages = [];
-    for (const path of inventory.keys()) {
-        const pageId = path.split('/')[4];
-        if (
-            /^page_[a-f0-9]{16}$/.test(pageId ?? '') &&
-            path === `${pageCompositionRoot(pageId)}/${COMPOSITION_MANIFEST}`
-        )
-            pages.push(pageId);
-    }
-    return pages.sort();
-}
-
-async function compositionFiles(options, appName, pageId, internal) {
-    try {
-        return await expectedExternalPageCompositionFiles(
-            {
-                workspaceRoot: options.workspaceRoot,
-                targetRoot: options.targetRoot,
-                appName,
-                pageId,
-            },
-            internal
-        );
-    } catch (error) {
-        throw Object.assign(
-            new Error(
-                `external application: PRODUCT_COMPOSITION_NOT_REPRODUCIBLE: app ${appName} page ${pageId} composition is not reproducible by the current generator; republish it with generate:page-composition before renaming`
-            ),
-            { cause: error }
-        );
-    }
-}
-
-// Rendus d'une appli : coque et compositions, avec un préfixe. `renderShell`
-// est injectable pour éprouver la post-condition `derived` (D.6) ; la phase
-// `derived` rend toujours avec les renderers réels.
+// Rendu d'une appli avec un préfixe : la coque et ses bibliothèques, telles
+// que `create-app` les rend. `renderShell` est injectable pour éprouver la
+// post-condition `derived` (D.6) ; la phase `derived` rend toujours avec les
+// renderers réels.
 export async function renderAppForPrefix(
     workspace,
-    options,
     manifest,
-    pages,
     prefix,
-    { renderShell = renderExternalShellFiles, internal = {} } = {}
+    { renderShell = renderExternalShellFiles } = {}
 ) {
-    const shell = splitShell(await renderShell(workspace, manifest, prefix));
-    const compositions = {};
-    for (const pageId of pages)
-        Object.assign(
-            compositions,
-            await compositionFiles(options, manifest.app_name, pageId, {
-                ...internal,
-                prefix,
-            })
-        );
-    return { shell, compositions };
+    return {
+        shell: splitShell(
+            await renderShell(workspace, manifest, prefix),
+            manifest.app_name
+        ),
+    };
 }
 
 const replacedChange = (path, before, content) => ({
@@ -199,10 +153,12 @@ const replacedChange = (path, before, content) => ({
     before: { sha256: before.sha256, bytes: before.bytes },
 });
 
-// Zone dérivée d'une appli (S2), après le contrôle de reproductibilité : la
-// coque et chaque composition rendues en `p` reproduisent chaque fichier dont
-// elles sont le dernier écrivain ; un chemin dont le rendu change avec le
-// préfixe doit être dans la zone structurelle (`renameMayReplace`).
+// Zone dérivée d'une appli (S2), après le contrôle de reproductibilité : le
+// rendu en `p` reproduit chaque fichier dont la coque (ou un renommage) est le
+// dernier écrivain, sur les trois racines ; un chemin dont le rendu change
+// avec le préfixe doit être dans la zone structurelle (`renameMayReplace`,
+// coque seulement) : un fichier du socle ou de l'interface qui dépendrait du
+// préfixe fait refuser le renommage.
 function deriveChanges(app, before, after, prefixes) {
     const { name, inventory, writers, files } = app;
     if (shellFields(before.shell.manifest) !== shellFields(app.manifest))
@@ -213,35 +169,25 @@ function deriveChanges(app, before, after, prefixes) {
         );
     const explained = new Set();
     const changes = [];
-    const compare = (family, pathsBefore, pathsAfter, notReproducible) => {
-        for (const [path, content] of Object.entries(pathsBefore)) {
-            const writer = writers.get(path);
-            if (writer === undefined) notReproducible(path);
-            const zone =
-                writer === 'shell' ||
-                writer === RENAME_TOOL ||
-                (family === 'composition' && writer === PAGE_COMPOSITION_TOOL);
-            if (zone) {
-                if (files[path] !== content) notReproducible(path);
-                explained.add(path);
-            }
-            const next = pathsAfter[path];
-            if (next === undefined || next === content) continue;
-            if (!zone || !renameMayReplace(path, writer, inventory))
-                prefixInPublication(name, path, writer);
-            changes.push(replacedChange(path, inventory.get(path), next));
+    for (const [path, content] of Object.entries(before.shell.files)) {
+        const writer = writers.get(path);
+        if (writer === undefined) shellNotReproducible(name, path);
+        const zone = writer === 'shell' || writer === RENAME_TOOL;
+        if (zone) {
+            if (files[path] !== content) shellNotReproducible(name, path);
+            explained.add(path);
         }
-    };
-    compare('shell', before.shell.files, after.shell.files, (path) =>
-        shellNotReproducible(name, path)
-    );
-    compare('composition', before.compositions, after.compositions, () =>
-        compositionNotReproducible(name)
-    );
-    // Seule différence de structure admise : la paire de scripts d'entrée.
+        const next = after.shell.files[path];
+        if (next === undefined || next === content) continue;
+        if (!zone || !renameMayReplace(path, writer, name))
+            prefixInPublication(name, path, writer);
+        changes.push(replacedChange(path, inventory.get(path), next));
+    }
+    // Seule différence de structure admise : la paire de scripts d'entrée,
+    // sous la coque.
     const relay = {
-        before: relayEnvshPath(prefixes.before),
-        after: relayEnvshPath(prefixes.after),
+        before: `${coqueRoot(name)}/${relayEnvshPath(prefixes.before)}`,
+        after: `${coqueRoot(name)}/${relayEnvshPath(prefixes.after)}`,
     };
     const removed = Object.keys(before.shell.files).filter(
         (path) => !Object.hasOwn(after.shell.files, path)
@@ -249,11 +195,7 @@ function deriveChanges(app, before, after, prefixes) {
     const added = Object.keys(after.shell.files).filter(
         (path) => !Object.hasOwn(before.shell.files, path)
     );
-    const structure =
-        Object.keys(before.compositions).sort().join('\0') !==
-        Object.keys(after.compositions).sort().join('\0');
     if (
-        structure ||
         removed.length !== added.length ||
         removed.length > 1 ||
         (removed.length === 1 &&
@@ -279,12 +221,11 @@ function deriveChanges(app, before, after, prefixes) {
             bytes: Buffer.byteLength(content),
         });
     }
-    // Tout fichier écrit en dernier par la coque, un renommage ou une
-    // composition est expliqué par un rendu ; sinon il vient d'un autre
-    // générateur.
+    // Tout fichier écrit en dernier par la coque ou un renommage est expliqué
+    // par un rendu ; sinon il vient d'un autre générateur. Un fichier publié
+    // (socle) n'est pas re-rendu : il reste égal à l'octet.
     for (const [path, writer] of writers) {
         if (explained.has(path)) continue;
-        if (writer === PAGE_COMPOSITION_TOOL) compositionNotReproducible(name);
         if (writer === 'shell' || writer === RENAME_TOOL)
             shellNotReproducible(name, path);
     }
@@ -357,29 +298,24 @@ export async function planProductPrefixRename(
             manifest.generated_files.map((entry) => [entry.path, entry])
         );
         const writers = lastWriters(manifest, workspaceIdBefore);
-        const pages = composedPages(inventory);
         const app = {
             name,
             manifest,
             inventory,
             writers,
-            files: await currentFiles(root, manifest),
+            files: await currentFiles(workspace.productRoot, manifest),
         };
         const renderBefore = await renderAppForPrefix(
             workspace,
-            options,
             manifest,
-            pages,
             before,
-            { internal, renderShell: dependencies.renderShell }
+            { renderShell: dependencies.renderShell }
         );
         const renderAfter = await renderAppForPrefix(
             workspace,
-            options,
             manifest,
-            pages,
             after,
-            { internal, renderShell: dependencies.renderShell }
+            { renderShell: dependencies.renderShell }
         );
         const changes = deriveChanges(app, renderBefore, renderAfter, {
             before,
@@ -393,12 +329,8 @@ export async function planProductPrefixRename(
             manifestText,
             manifest_before_sha256: sha256(manifestText),
             files: app.files,
-            pages,
             changes,
-            rendered: {
-                ...renderAfter.shell.files,
-                ...renderAfter.compositions,
-            },
+            rendered: renderAfter.shell.files,
         });
     }
     if (apps.length === 0) externalFailure('rename requires at least one app');
@@ -424,14 +356,22 @@ export async function planProductPrefixRename(
             app.record,
             renamed.manifest.workspace_id
         );
-        const manifestPath = `apps/${app.app_name}/${APP_MANIFEST}`;
+        const manifestPath = appManifestPath(app.app_name);
         const nextText = (
             await canonicalizeGeneratedFiles({
                 [manifestPath]: JSON.stringify(next, null, 2) + '\n',
             })
         )[manifestPath];
+        // Lot 2 : le renommage ne change que la coque ; ses arbres (avant,
+        // après) sont relatifs à `apps/<app>`, son inventaire au produit.
+        app.product = applyChanges(app.files, app.changes, app.rendered);
+        const coque = coqueRoot(app.app_name);
+        app.current = {
+            ...filesUnder(app.files, coque),
+            [APP_MANIFEST]: app.manifestText,
+        };
         app.next = {
-            ...applyChanges(app.files, app.changes, app.rendered),
+            ...filesUnder(app.product, coque),
             [APP_MANIFEST]: nextText,
         };
         app.manifest_after_sha256 = sha256(nextText);
@@ -449,8 +389,9 @@ export async function planProductPrefixRename(
             planId
         );
         const nextWriters = lastWriters(next, renamed.manifest.workspace_id);
+        // Contre-preuve sur les trois racines (inventaire, relatif au produit).
         assertOnlyPrefix(
-            app.next,
+            app.product,
             after,
             (path) =>
                 `app ${app.app_name} path ${path} written by ${nextWriters.get(path)}`

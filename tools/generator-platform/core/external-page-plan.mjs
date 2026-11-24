@@ -4,14 +4,15 @@
 // `generate:action-request` et ceux des lectures publiées par
 // `generate:list-query` (X5 C4). Il est publié dans le registre scellé de
 // l'application (ADR-0103), et la composition le recompile pour le vérifier.
-import { SIGNATURE_FILES } from './atelier-signature.mjs';
+import { pageContractPath } from './application-ownership.mjs';
+import { escapeRegExp } from './atelier-signature.mjs';
 import { compilePageExecutionPlan } from './page-execution-plan.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import { ownedProductContext } from './application-workspace-root.mjs';
 import {
     planApplicationPublication,
     publicApplicationPublicationPlan,
-    publishApplicationPublication,
+    publishRenderedPublication,
 } from './application-publication.mjs';
 import { sessionApplication } from './external-action-request.mjs';
 import { externalFailure } from './external-application-paths.mjs';
@@ -27,6 +28,11 @@ import {
 } from './external-publication-paths.mjs';
 import { sha256 } from './generation-manifest.mjs';
 import { loadJson, repositoryRoot } from '../validate-ir.mjs';
+import {
+    SOCLE_ACTIONS_DIR,
+    SOCLE_QUERIES_DIR,
+    socleRoot,
+} from './socle-names.mjs';
 
 export {
     assertPageId,
@@ -37,13 +43,16 @@ export {
     publishingTool,
 } from './external-publication-paths.mjs';
 
-const MODEL =
-    /^src\/app\/generated\/actions\/([a-z0-9][a-z0-9._-]*)\/execution-model\.json$/;
-const QUERY_MODEL =
-    /^src\/app\/generated\/queries\/([a-z0-9][a-z0-9._-]*)\/execution-model\.json$/;
+// Modèle d'exécution publié sous un dossier du socle de l'appli (lot 2).
+export const publishedModelPattern = (appName, directory) =>
+    new RegExp(
+        `^${escapeRegExp(`${socleRoot(appName)}/${directory}/`)}([a-z0-9][a-z0-9._-]*)/execution-model\\.json$`
+    );
 
 // Modèles publiés par un outil, lus exacts dans le registre de l'application.
-async function publishedModels(app, prefix, pattern, tool) {
+// Lot 2 (V5.1 règle 4) : la référence est le chemin de l'inventaire, relatif
+// au produit.
+async function publishedModels(app, pattern, tool) {
     const models = [];
     for (const { path } of app.manifest.generated_files) {
         const match = pattern.exec(path);
@@ -51,7 +60,7 @@ async function publishedModels(app, prefix, pattern, tool) {
         const document = await ownedAppFile(app, path);
         models.push({
             id: match[1],
-            uri: `${prefix}/${path}`,
+            uri: path,
             document,
             model: JSON.parse(document.toString('utf8')),
         });
@@ -92,22 +101,19 @@ const schemas = () =>
 // Compilation déterministe depuis l'état courant de l'application : mêmes
 // fichiers possédés, mêmes octets de plan.
 export async function compileOwnedPagePlan(app, appName, pageId) {
-    const pagePath = `${SIGNATURE_FILES.pages}/${assertPageId(pageId)}.json`;
+    const pagePath = pageContractPath(appName, assertPageId(pageId));
     if (!app.manifest.generated_files.some((entry) => entry.path === pagePath))
         externalFailure('page is not declared by the application');
     const pageDocument = await ownedAppFile(app, pagePath);
     const page = JSON.parse(pageDocument.toString('utf8')).page;
-    const prefix = `apps/${appName}`;
     const models = await publishedModels(
         app,
-        prefix,
-        MODEL,
+        publishedModelPattern(appName, SOCLE_ACTIONS_DIR),
         ACTION_REQUEST_TOOL
     );
     const queries = await publishedModels(
         app,
-        prefix,
-        QUERY_MODEL,
+        publishedModelPattern(appName, SOCLE_QUERIES_DIR),
         LIST_QUERY_TOOL
     );
     // Les modèles que la page n'utilise pas ne changent pas son plan.
@@ -130,7 +136,7 @@ export async function compileOwnedPagePlan(app, appName, pageId) {
     try {
         plan = compilePageExecutionPlan({
             pageContract: {
-                uri: `${prefix}/${pagePath}`,
+                uri: pagePath,
                 sha256: sha256(pageDocument),
                 document: pageDocument,
             },
@@ -151,7 +157,7 @@ export async function compileOwnedPagePlan(app, appName, pageId) {
         // Message fermé : première ligne du compilateur, sans chemin local.
         externalFailure(`page plan refused (${error.message.split('\n')[0]})`);
     }
-    const path = pagePlanPath(pageId);
+    const path = pagePlanPath(appName, pageId);
     return {
         plan,
         path,
@@ -189,7 +195,7 @@ async function renderExternalPagePlan(options) {
             // manifeste de l'application.
             inputs: [],
             omitUnchanged: true,
-            coveredPrefix: `${pageOutputRoot(options.pageId)}/plan/`,
+            coveredPrefix: `${pageOutputRoot(options.appName, options.pageId)}/plan/`,
         },
     };
 }
@@ -212,14 +218,10 @@ export function publicExternalPagePlan(plan) {
 }
 
 export async function publishExternalPagePlan(options, dependencies) {
-    if (!/^[a-f0-9]{64}$/.test(options.expectedPlanId ?? ''))
-        externalFailure('publication requires a reviewed plan');
-    const rendered = await renderExternalPagePlan(options);
-    return {
-        ...(await publishApplicationPublication(
-            { ...rendered.publication, expectedPlanId: options.expectedPlanId },
-            dependencies
-        )),
-        page_id: rendered.pageId,
-    };
+    const { rendered, result } = await publishRenderedPublication(
+        options,
+        renderExternalPagePlan,
+        dependencies
+    );
+    return { ...result, page_id: rendered.pageId };
 }

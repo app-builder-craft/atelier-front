@@ -86,24 +86,33 @@ export async function displacedEntry(session, product, path, run, diagnostic) {
     if (failure) throw failure;
 }
 
+// Lot 2 : une page est une AMORCE de l'interface (chemin relatif au
+// produit) ; son lint est celui du projet de l'interface.
+const seedPage = (plan, angular) =>
+    Object.keys(plan.seeds ?? {}).find((path) =>
+        path.endsWith(angular ? '/page.component.ts' : '/page.tsx')
+    );
+
 export async function qualifyMutations(session, product, plan) {
     const angular = plan.profile === 'angular-pwa';
-    const publicPage = Object.keys(plan.files).find(
-        (path) =>
-            path.startsWith('src/app/pages/') &&
-            path.endsWith(angular ? 'page.component.ts' : 'page.tsx')
-    );
+    const publicPage = seedPage(plan, angular);
     assert.ok(publicPage, 'Page de fixture absente');
     const compile = () =>
         confinedNode(session, product, compilerArguments(plan));
     const lint = () =>
+        confinedNode(
+            session,
+            product,
+            targetArguments(plan, 'lint', `${plan.app_name}-interface`)
+        );
+    const coqueLint = () =>
         confinedNode(session, product, targetArguments(plan, 'lint'));
     const unit = () =>
         confinedNode(session, product, targetArguments(plan, 'test'));
     await fileMutation(
         session,
         product,
-        `${plan.output}/${publicPage}`,
+        publicPage,
         (value) => value + '\nexport const typeMutation: string = 1;\n',
         compile,
         /TS2322/
@@ -111,7 +120,7 @@ export async function qualifyMutations(session, product, plan) {
     await fileMutation(
         session,
         product,
-        `${plan.output}/${publicPage}`,
+        publicPage,
         (value) => value + '\nconsole.log("fictitious lint mutation");\n',
         lint,
         /no-console/
@@ -119,7 +128,7 @@ export async function qualifyMutations(session, product, plan) {
     await fileMutation(
         session,
         product,
-        `${plan.output}/${publicPage}`,
+        publicPage,
         (value) =>
             value +
             '\nexport function anyMutation(value: any) { return value; }\n',
@@ -129,7 +138,7 @@ export async function qualifyMutations(session, product, plan) {
     await fileMutation(
         session,
         product,
-        `${plan.output}/${publicPage}`,
+        publicPage,
         (value) => '/* eslint-disable no-debugger */\n' + value,
         lint,
         /Unused eslint-disable directive/
@@ -138,7 +147,7 @@ export async function qualifyMutations(session, product, plan) {
         await fileMutation(
             session,
             product,
-            `${plan.output}/${publicPage}`,
+            publicPage,
             (value) =>
                 value.replace('</h1>', '</h1>{{ missingTemplateMember }}'),
             compile,
@@ -173,7 +182,7 @@ export async function qualifyMutations(session, product, plan) {
         session,
         product,
         `${plan.output}/eslint.config.mjs`,
-        lint,
+        coqueLint,
         /eslint.config|config file/
     );
     const dependency = angular ? '@angular/core' : '@vitejs/plugin-react';
@@ -312,15 +321,11 @@ export async function qualifyBrowser(session, product, plans, browser) {
         const publicTitle = new RegExp(
             fixture.publicTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         );
-        const page = Object.keys(plan.files).find(
-            (path) =>
-                path.startsWith('src/app/pages/') &&
-                path.endsWith(angular ? 'page.component.ts' : 'page.tsx')
-        );
+        const page = seedPage(plan, angular);
         await fileMutation(
             session,
             product,
-            `${plan.output}/${page}`,
+            page,
             (value) => value.replace('<h1', '<h1 hidden'),
             () => {
                 build();

@@ -18,6 +18,7 @@ import {
     installedBin,
     readOwnedWorkspace,
     runExternalApplicationCommand,
+    runNativeControls,
 } from './application-workspace.mjs';
 import {
     pendingRenameJournals,
@@ -35,7 +36,6 @@ import {
     stageGeneratedTree,
     verifyGeneratedTree,
 } from './external-application-paths.mjs';
-import { PAGE_COMPOSITION_TOOL } from './external-publication-paths.mjs';
 import { sha256 } from './generation-manifest.mjs';
 import {
     removeTreeAndSync,
@@ -43,6 +43,7 @@ import {
     withProductWriterLocks,
     writeDocument,
 } from './generation-transaction.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import {
     assertOnlyPrefix,
     planProductPrefixRename,
@@ -110,6 +111,9 @@ function journalOf(plan) {
             manifest_after_sha256: app.manifest_after_sha256,
             candidate: basename(app.candidate),
             previous: basename(app.previous),
+            // Lot 2 (V5.2) : états d'avant et d'après de l'arbre de la coque,
+            // en LISTES D'ARTÉFACTS (brique généralisée).
+            before_files: fileArtifacts(app.current),
             files: fileArtifacts(app.next),
         })),
         phase: 'prepared',
@@ -135,8 +139,16 @@ const JOURNAL_APP_KEYS = [
     'manifest_after_sha256',
     'candidate',
     'previous',
+    'before_files',
     'files',
 ];
+const validArtifacts = (files) =>
+    Array.isArray(files) &&
+    files.every(
+        (file) =>
+            exactKeys(file, ['path', 'bytes', 'sha256']) &&
+            HEX.test(file.sha256 ?? '')
+    );
 
 const validJournal = (journal, planId) =>
     exactKeys(journal, JOURNAL_KEYS) &&
@@ -160,12 +172,8 @@ const validJournal = (journal, planId) =>
             HEX.test(app.manifest_after_sha256 ?? '') &&
             app.candidate === `.${app.app_name}.rename-candidate-${planId}` &&
             app.previous === `.${app.app_name}.rename-previous-${planId}` &&
-            Array.isArray(app.files) &&
-            app.files.every(
-                (file) =>
-                    exactKeys(file, ['path', 'bytes', 'sha256']) &&
-                    HEX.test(file.sha256 ?? '')
-            )
+            validArtifacts(app.before_files) &&
+            validArtifacts(app.files)
     );
 
 const readJournal = (root, planId) =>
@@ -178,17 +186,17 @@ const readJournal = (root, planId) =>
 const workspaceManifestPath = (productRoot) =>
     resolve(productRoot, WORKSPACE_MANIFEST);
 
-// Arbres de chaque appli inscrite au journal, dans apps/ : noms, artefacts du
-// candidat et empreintes de manifeste attendues avant et après.
+// Arbres de chaque appli inscrite au journal, dans apps/ : noms et listes
+// d'artéfacts d'avant et d'après (le candidat).
 const appsRoot = (productRoot) => resolve(productRoot, 'apps');
-const journalTrees = (journal) =>
+const journalTrees = (productRoot, journal) =>
     journal.apps.map((app) => ({
+        parent: appsRoot(productRoot),
         name: app.app_name,
         candidate: app.candidate,
         previous: app.previous,
         files: app.files,
-        before: app.manifest_before_sha256,
-        after: app.manifest_after_sha256,
+        before: app.before_files,
         label: `app ${app.app_name}`,
     }));
 
@@ -218,8 +226,7 @@ async function revertRename(productRoot, journal) {
             ambiguous('switch temporary drifted');
     }
     const actions = await planTreesRevert(
-        appsRoot(productRoot),
-        journalTrees(journal),
+        journalTrees(productRoot, journal),
         ambiguous
     );
     // Contrôles faits : déplacements, chacun atomique et rejouable.
@@ -241,11 +248,7 @@ async function completeRename(productRoot, journal) {
         (await pathExists(switchTemporary(productRoot, journal.plan_id)))
     )
         ambiguous('verified rename does not match its workspace manifest');
-    await completeTrees(
-        appsRoot(productRoot),
-        journalTrees(journal),
-        ambiguous
-    );
+    await completeTrees(journalTrees(productRoot, journal), ambiguous);
     await removeTreeAndSync(root);
 }
 
@@ -255,10 +258,11 @@ const removeStaging = (productRoot) =>
     removeStagingDirectories(productRoot, stagingPrefix(productRoot));
 
 // Post-condition `derived` (A) : depuis l'espace basculé, préfixe scellé
-// relu, coque et compositions rendues avec lui (renderers réels), comparées à
-// l'octet aux fichiers écrits ET aux `changes` de l'enregistrement.
-async function assertDerived(plan, options) {
-    const internal = { renaming: plan.plan_id };
+// relu, coque rendue avec lui (renderers réels), comparée à l'octet aux
+// fichiers écrits ET aux `changes` de l'enregistrement ; le socle et
+// l'interface rendus restent égaux à l'octet aux fichiers du produit (lot 2,
+// V5.3).
+async function assertDerived(plan) {
     const sealed = await sealedProductPrefix(plan.productRoot);
     if (sealed !== plan.prefix_after) notDerived('-', WORKSPACE_MANIFEST);
     const context = {
@@ -267,7 +271,10 @@ async function assertDerived(plan, options) {
     };
     for (const app of plan.apps) {
         const text = (
-            await readProductFile(app.outputAbsolute, APP_MANIFEST)
+            await readProductFile(
+                plan.productRoot,
+                appManifestPath(app.app_name)
+            )
         ).toString('utf8');
         if (sha256(text) !== app.manifest_after_sha256)
             notDerived(app.app_name, APP_MANIFEST);
@@ -275,18 +282,11 @@ async function assertDerived(plan, options) {
         const record = manifest.ownership.publications.at(-1);
         if (record?.tool !== RENAME_TOOL || record.plan_id !== plan.plan_id)
             notDerived(app.app_name, APP_MANIFEST);
-        const rendered = await renderAppForPrefix(
-            context,
-            options,
-            manifest,
-            app.pages,
-            sealed,
-            { internal }
-        );
-        const files = { ...rendered.shell.files, ...rendered.compositions };
+        const rendered = await renderAppForPrefix(context, manifest, sealed);
+        const files = rendered.shell.files;
         const read = async (path) =>
-            (await pathExists(resolve(app.outputAbsolute, path)))
-                ? (await readProductFile(app.outputAbsolute, path)).toString(
+            (await pathExists(resolve(plan.productRoot, path)))
+                ? (await readProductFile(plan.productRoot, path)).toString(
                       'utf8'
                   )
                 : undefined;
@@ -309,9 +309,7 @@ async function assertDerived(plan, options) {
         for (const [path, content] of Object.entries(files)) {
             const writer = writers.get(path);
             if (
-                [RENAME_TOOL, 'shell', PAGE_COMPOSITION_TOOL].includes(
-                    writer
-                ) &&
+                [RENAME_TOOL, 'shell'].includes(writer) &&
                 (await read(path)) !== content
             )
                 notDerived(app.app_name, path);
@@ -320,8 +318,10 @@ async function assertDerived(plan, options) {
 }
 
 // Contrôles du point `verified`, sous le NOUVEL espace : sceaux et entrées
-// (readOwnedWorkspace), contrôles natifs de chaque appli, contrat de l'espace,
-// poids des sources, arbres exacts et contre-preuve dérivée.
+// (readOwnedWorkspace), contrôles natifs de chaque appli (C-B2 : la liste
+// unique, lue dans les configurations rendues ; jamais une boucle fixe sur la
+// coque, qui n'a plus de cible `test` à session), contrat de l'espace, poids
+// des sources, arbres exacts et contre-preuve dérivée.
 async function verifyRenamed(plan, options, run) {
     const internal = { renaming: plan.plan_id };
     const owned = async () => {
@@ -334,20 +334,12 @@ async function verifyRenamed(plan, options, run) {
     };
     await owned();
     for (const app of plan.apps)
-        for (const target of ['build:production', 'lint', 'test']) {
-            await run(
-                process.execPath,
-                [
-                    installedBin(plan, 'nx', 'nx'),
-                    'run',
-                    `${app.app_name}:${target}`,
-                    '--skipNxCache',
-                    '--outputStyle=stream',
-                ],
-                plan.productRoot
-            );
-            await verifyGeneratedTree(app.outputAbsolute, app.next);
-        }
+        await runNativeControls(
+            { ...plan, app_name: app.app_name, root: plan.productRoot },
+            app.product,
+            run,
+            () => verifyGeneratedTree(app.outputAbsolute, app.next)
+        );
     await run(
         process.execPath,
         [
@@ -436,13 +428,8 @@ export async function publishProductPrefixRename(options, dependencies = {}) {
                     await verifyGeneratedTree(app.candidate, app.next);
                 }
                 await step('staged');
-                for (const app of plan.apps)
-                    await swapTree(
-                        app.outputAbsolute,
-                        app.candidate,
-                        app.previous,
-                        swap
-                    );
+                for (const tree of journalTrees(plan.productRoot, journal))
+                    await swapTree(tree, swap);
                 await step('swapped');
                 const temporary = switchTemporary(
                     plan.productRoot,
@@ -451,7 +438,7 @@ export async function publishProductPrefixRename(options, dependencies = {}) {
                 await writeDocument(temporary, plan.workspace_manifest_after);
                 await swap(temporary, workspaceManifestPath(plan.productRoot));
                 await step('switched');
-                await assertDerived(plan, options);
+                await assertDerived(plan);
                 await step('derived');
                 await verifyRenamed(plan, options, run);
                 await step('verified');

@@ -458,14 +458,39 @@ ${[...services]
 `;
 }
 
-function sessionApp(design) {
+// Spécifieurs des modules de session vus de la coque. Mode interne : le
+// dossier de session de l'appli. Lot 2, mode extérieur (`layout`) : l'API
+// publique du socle et l'entrée réservée à la coque (V3.7.10).
+function sessionImports(layout) {
+    return layout
+        ? {
+              store: `import { ApplicationSession } from '${layout.socle}';\nimport { SESSION_CONFIGURATION } from '${layout.coque}';`,
+              menu: `import { ApplicationSessionMenu } from '${layout.socle}';`,
+              guard: `import { applicationSessionGuard } from '${layout.coque}';`,
+          }
+        : {
+              store: "import { ApplicationSession, SESSION_CONFIGURATION } from './session/session.store';",
+              menu: "import { ApplicationSessionMenu } from './session/session-menu';",
+              guard: "import { applicationSessionGuard } from './session/session.guard';",
+          };
+}
+
+// Chargement paresseux d'une page : son module dans l'appli (mode interne),
+// ou la carte des pages de l'interface (lot 2, V5.1 règle 6).
+export const angularPageLoader = (pageId, layout) =>
+    layout
+        ? `() => import('${layout.pages}').then((module) => module.pages.${pageId}())`
+        : `() => import('./pages/${pageId}/page.component').then((module) => module.PageComponent)`;
+
+function sessionApp(design, layout) {
+    const imports = sessionImports(layout);
     return `import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, Injector, afterNextRender, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
-import { ApplicationSession, SESSION_CONFIGURATION } from './session/session.store';
-import { ApplicationSessionMenu } from './session/session-menu';
+${imports.store}
+${imports.menu}
 
 @Component({
     selector: 'app-root', changeDetection: ChangeDetectionStrategy.OnPush,
@@ -526,12 +551,12 @@ export class App {
 `;
 }
 
-function sessionRoutes(config) {
+function sessionRoutes(config, layout) {
     return `import type { Routes } from '@angular/router';
-import { applicationSessionGuard } from './session/session.guard';
+${sessionImports(layout).guard}
 
 export const appRoutes: Routes = [
-${config.routes.map((route) => `    { path: ${JSON.stringify(route.path === '/' ? '' : route.path.slice(1))}, data: { page_id: ${JSON.stringify(route.page_id)} }, canActivate: [applicationSessionGuard], loadComponent: () => import('./pages/${route.page_id}/page.component').then((module) => module.PageComponent) },`).join('\n')}
+${config.routes.map((route) => `    { path: ${JSON.stringify(route.path === '/' ? '' : route.path.slice(1))}, data: { page_id: ${JSON.stringify(route.page_id)} }, canActivate: [applicationSessionGuard], loadComponent: ${angularPageLoader(route.page_id, layout)} },`).join('\n')}
     { path: '**', redirectTo: ${JSON.stringify(config.routes.find((route) => route.page_id === config.reconnect_page_id).path)} },
 ];
 `;
@@ -595,10 +620,14 @@ describe('applicationSessionGuard sans session', () => {
 `;
 }
 
+// `layout` (lot 2, mode extérieur seulement) : spécifieurs du socle, de
+// l'entrée de la coque et de la carte des pages ; absent, le mode interne
+// garde sa disposition à une racine.
 export async function renderAngularApplicationSession({
     design,
     experience,
     prefix,
+    layout,
 }) {
     const config = sessionRenderConfiguration(design, experience);
     const support = await renderSessionHostSupport();
@@ -617,9 +646,17 @@ export async function renderAngularApplicationSession({
         'src/app/session/session-menu.ts': navigationComponent(),
         'src/app/session/service-endpoints.ts':
             renderSessionEndpointTokens(config),
-        'src/app/app.ts': sessionApp(design),
-        'src/app/app.routes.ts': sessionRoutes(config),
-        'src/app/app.config.ts': `import { provideHttpClient, withInterceptors } from '@angular/common/http';
+        'src/app/app.ts': sessionApp(design, layout),
+        'src/app/app.routes.ts': sessionRoutes(config, layout),
+        'src/app/app.config.ts': layout
+            ? `import { provideBrowserGlobalErrorListeners, type ApplicationConfig } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { provideSocle } from '${layout.coque}';
+import { appRoutes } from './app.routes';
+
+export const appConfig: ApplicationConfig = { providers: [provideBrowserGlobalErrorListeners(), provideSocle(), provideRouter(appRoutes)] };
+`
+            : `import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideBrowserGlobalErrorListeners, type ApplicationConfig } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { appRoutes } from './app.routes';

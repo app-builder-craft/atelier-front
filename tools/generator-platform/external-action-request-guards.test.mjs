@@ -20,12 +20,14 @@ import {
     TOOLS_ROOT,
 } from './test-support/external-application-fixture.mjs';
 import {
-    MANIFEST,
-    sessionApp,
-} from './test-support/external-publication-fixture.mjs';
+    sessionEndpointsPath,
+    sessionIndexPath,
+} from './core/external-publication-paths.mjs';
+import { sessionApp } from './test-support/external-publication-fixture.mjs';
 import { writeExternalActionDefinitions } from './test-support/external-session-fixture.mjs';
 
-const ENDPOINTS = 'src/app/session/service-endpoints.ts';
+// Lot 2 (V5.1) : la session vit dans le socle ; chemins relatifs au produit.
+const endpointsOf = (product) => sessionEndpointsPath(product.shell.appName);
 
 async function actionProduct(t, domain) {
     const product = await sessionApp(t, domain);
@@ -112,7 +114,7 @@ test('X2 : jeton de service absent de la coque ou lié à un autre contrat, refu
     assert.deepEqual(await snapshotTree(product.root, []), before);
     // Déclaration contradictoire dans la coque (filtre ajouté avant le vrai) :
     // ambiguë, refusée par la garde avant même le contrôle du sceau.
-    const endpoints = join(product.app, ENDPOINTS);
+    const endpoints = join(product.root, endpointsOf(product));
     const original = await readFile(endpoints, 'utf8');
     await writeFile(
         endpoints,
@@ -134,7 +136,10 @@ test('X2 : jeton de service absent de la coque ou lié à un autre contrat, refu
 
 test('X2 : liaison de service lue dans la syntaxe de la coque, quel que soit le formatage', async (t) => {
     const product = await sessionApp(t, 'equipment-hire');
-    const source = await readFile(join(product.app, ENDPOINTS), 'utf8');
+    const source = await readFile(
+        join(product.root, endpointsOf(product)),
+        'utf8'
+    );
     const token = 'EQUIPMENT_HIRE_SERVICE_API_URL';
     const expected = {
         contract_id: 'equipment-hire-api',
@@ -194,10 +199,13 @@ test('X2 : liaison de service lue dans la syntaxe de la coque, quel que soit le 
 
 test('X2 : chaque moitié de la garde « coque avec session » refuse seule', async (t) => {
     const product = await actionProduct(t, 'equipment-hire');
-    const manifestPath = join(product.app, MANIFEST);
+    const manifestPath = join(product.root, product.manifestPath);
     const original = await readFile(manifestPath);
     const before = await snapshotTree(product.root, []);
-    for (const missing of ['src/app/session/index.ts', ENDPOINTS]) {
+    for (const missing of [
+        sessionIndexPath(product.shell.appName),
+        endpointsOf(product),
+    ]) {
         const manifest = JSON.parse(original.toString('utf8'));
         manifest.generated_files = manifest.generated_files.filter(
             (entry) => entry.path !== missing

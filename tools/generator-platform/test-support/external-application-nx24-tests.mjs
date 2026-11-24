@@ -12,6 +12,7 @@ import { basename, dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { planExternalApplicationShell } from '../core/application-workspace.mjs';
+import { filesUnder } from '../core/application-transaction.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
 import { renderAngularPwaShell } from '../renderers/angular-pwa-shell-renderer.mjs';
 import { renderReactSpaShell } from '../renderers/react-spa-shell-renderer.mjs';
@@ -74,7 +75,9 @@ test('T13 : configurations strictes et compilation/test/lint natifs locaux des d
     for (const profile of ['angular-pwa', 'react-spa']) {
         const fixture = await shellFixture(t, profile);
         const plan = await planExternalApplicationShell(fixture.shell);
-        const project = JSON.parse(plan.files['project.json']);
+        // Lot 2 : fichiers de la coque, relatifs à elle.
+        const coque = filesUnder(plan.files, `apps/${plan.app_name}`);
+        const project = JSON.parse(coque['project.json']);
         const nx = JSON.parse(fixture.plan.files['nx.json']);
         assert.equal(project.targets.lint.executor, undefined);
         assert.deepEqual(project.targets.lint.options, {
@@ -109,6 +112,7 @@ test('T13 : configurations strictes et compilation/test/lint natifs locaux des d
             assert.deepEqual(project.targets.build.dependsOn, [
                 '^build',
                 'typecheck',
+                '^typecheck',
             ]);
             assert.equal(
                 project.targets.build.defaultConfiguration,
@@ -135,9 +139,7 @@ test('T13 : configurations strictes et compilation/test/lint natifs locaux des d
             !JSON.stringify(project).includes('tools/generator-platform')
         );
         assert.doesNotMatch(
-            plan.files[
-                profile === 'angular-pwa' ? 'src/main.ts' : 'src/main.tsx'
-            ],
+            coque[profile === 'angular-pwa' ? 'src/main.ts' : 'src/main.tsx'],
             /console\./
         );
     }
@@ -348,15 +350,15 @@ test(
             // Préfixe que la préparation propose pour ce dépôt fictif.
             prefix: FIXTURE_PREFIX,
         });
+        // Lot 2 : la coque extérieure est rendue sur ses trois racines,
+        // chemins relatifs au produit ; la construction de la coque paquette
+        // l'interface (alias, `resolve.tsconfigPaths`) après la vérification
+        // de types des bibliothèques (`^typecheck`).
         const files = {
             ...workspace,
             'bun.lock': await readFile(join(TOOLS_ROOT, 'bun.lock')),
-            ...Object.fromEntries(
-                Object.entries(shell.files).map(([path, content]) => [
-                    `apps/${appName}/${path}`,
-                    content,
-                ])
-            ),
+            ...shell.files,
+            ...shell.seeds,
         };
         for (const [path, content] of Object.entries(files)) {
             await mkdir(dirname(join(root, path)), { recursive: true });

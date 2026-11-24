@@ -13,17 +13,23 @@ import {
     planApplicationPublication,
     publishApplicationPublication,
 } from '../core/application-publication.mjs';
-import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
-import { verifyGeneratedTree } from '../core/external-application-paths.mjs';
 import { sha256 } from '../core/generation-manifest.mjs';
+import { socleRoot } from '../core/socle-names.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import {
     hash,
     TOOLS_ROOT,
 } from '../test-support/external-application-fixture.mjs';
-import { confinedNode, record } from './external-application-runtime.mjs';
+import {
+    confinedNode,
+    nativeLabels,
+    record,
+    verifyPlanTrees,
+} from './external-application-runtime.mjs';
 
-const MANIFEST = SIGNATURE_FILES.appManifest;
-const NOTICE = 'src/app/generated/x1-proof/notice.ts';
+// Lot 2 : chemins relatifs au produit ; une publication écrit dans le socle.
+const proofPath = (appName, name) =>
+    `${socleRoot(appName)}/src/actions/x1-proof/${name}`;
 
 // Runner natif d'une publication : chaque commande du produit est exécutée
 // confinée, avec ses binaires installés, et inscrite au rapport.
@@ -51,15 +57,16 @@ async function publishNative(session, label, options, root) {
         { run }
     );
     assert.equal(result.recovered, false);
-    assert.equal(labels.length, 5);
-    await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-    assert.deepEqual(
-        (await readdir(resolve(root, 'apps'))).filter((name) =>
-            name.includes('-candidate-')
-        ),
-        [],
-        'Reste de publication'
-    );
+    assert.deepEqual(labels, nativeLabels(plan));
+    await verifyPlanTrees(plan);
+    for (const space of ['apps', 'libs'])
+        assert.deepEqual(
+            (await readdir(resolve(root, space))).filter((name) =>
+                name.includes('-candidate-')
+            ),
+            [],
+            'Reste de publication'
+        );
     session.lines.push(
         `${label} plan_id=${plan.plan_id} manifest_sha256=${plan.manifest_sha256}`
     );
@@ -97,7 +104,8 @@ export async function proveNativePublication(session, shell) {
         targetRoot: root,
         appName: shellPlan.app_name,
     };
-    // 1. Une sortie de générateur dans la zone generated/.
+    const NOTICE = proofPath(shellPlan.app_name, 'notice.ts');
+    // 1. Une sortie de générateur dans une zone de publication du socle.
     const generated = `export const X1_NOTICE = 'Publication X1 fictive (${domain}).';\n`;
     await publishNative(
         session,
@@ -123,8 +131,9 @@ export async function proveNativePublication(session, shell) {
         },
         root
     );
-    const appRoot = final.outputAbsolute;
-    const manifest = JSON.parse(final.files[MANIFEST]);
+    const manifest = JSON.parse(
+        final.files[appManifestPath(shellPlan.app_name)]
+    );
     verifyApplicationOwnership(manifest, manifest.ownership.workspace_id);
     assert.equal(manifest.ownership.publications.length, 2);
     const [, record] = manifest.ownership.publications;
@@ -148,7 +157,8 @@ export async function proveNativePublication(session, shell) {
         files: { [NOTICE]: "export const X1_NOTICE = 'suivante';\n" },
     };
     const planNext = () => planApplicationPublication(next);
-    const hand = join(appRoot, 'src/app/generated/x1-proof/hand.ts');
+    const handPath = proofPath(shellPlan.app_name, 'hand.ts');
+    const hand = join(root, handPath);
     const handText = 'export const hand = 1;\n';
     await refusal(
         session,
@@ -158,7 +168,7 @@ export async function proveNativePublication(session, shell) {
         /generated inventory drift/,
         planNext
     );
-    const manifestPath = join(appRoot, MANIFEST);
+    const manifestPath = join(root, appManifestPath(shellPlan.app_name));
     const original = await readFile(manifestPath);
     await refusal(
         session,
@@ -167,7 +177,7 @@ export async function proveNativePublication(session, shell) {
             await writeFile(hand, handText, { flag: 'wx' });
             const forged = JSON.parse(original.toString('utf8'));
             forged.generated_files.push({
-                path: 'src/app/generated/x1-proof/hand.ts',
+                path: handPath,
                 bytes: Buffer.byteLength(handText),
                 sha256: sha256(handText),
             });
@@ -196,6 +206,6 @@ export async function proveNativePublication(session, shell) {
         planNext
     );
     assert.equal(hash(await readFile(manifestPath)), hash(original));
-    await verifyGeneratedTree(appRoot, final.files);
+    await verifyPlanTrees(final);
     return final;
 }

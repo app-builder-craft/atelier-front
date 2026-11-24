@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// Reprise explicite d'une publication interrompue dans une application
-// extérieure (ADR-0103). Sans plan : la reprise annule un état interrompu
-// exact, ou le refuse comme ambigu et laisse tout en place.
+// Reprise explicite d'une transaction interrompue d'une application
+// extérieure (ADR-0103 ; lot 2, V5.2 : création ou publication). Sans plan :
+// la reprise lit le journal de la transaction, finit un état `verified`,
+// annule un état d'avant `verified` décidé par l'état observé, ou refuse un
+// état ambigu et laisse tout en place.
 import { pathToFileURL } from 'node:url';
 
 import { recoverApplicationPublication } from './generator-platform/core/application-publication.mjs';
@@ -17,15 +19,15 @@ function fail(message) {
     throw Object.assign(new Error(message), { code: CLI_USAGE });
 }
 
+// Lot 2 : chaque arbre est comparé à sa liste d'artéfacts inscrite au journal.
 const DRIFT = {
-    unlisted: 'fichier absent du manifeste de cet arbre',
-    modified: 'contenu différent du manifeste de cet arbre',
-    missing: 'fichier inscrit au manifeste mais absent',
-    manifest: 'manifeste d’application illisible',
+    unlisted: 'fichier absent de la liste de cet arbre au journal',
+    modified: 'contenu différent de la liste de cet arbre au journal',
+    missing: 'fichier inscrit au journal mais absent',
     entry: 'entrée spéciale ou lien symbolique',
-    tree: 'arbre non conforme à son manifeste',
-    partial: 'candidat partiel différent du plan courant',
-    several: 'plusieurs publications interrompues pour cette application',
+    tree: 'arbre non conforme à sa liste au journal',
+    several: 'plusieurs transactions interrompues pour cette application',
+    orphan: 'arbre de travail sans journal',
 };
 
 // M-3 : premier écart, en chemin relatif au produit, jamais un chemin local.
@@ -63,6 +65,7 @@ export async function main(argv = process.argv.slice(2)) {
                 schema_version: '1.0.0',
                 app_name: options.appName,
                 status: result.recovered ? 'recovered' : 'nothing-to-recover',
+                transactions: result.transactions,
             },
             null,
             2
@@ -82,7 +85,7 @@ if (
         console.error(
             `❌ ${known ? error.message : locked ? 'Une autre commande tient le verrou de cette application ; relancer la reprise quand elle est terminée.' : 'Reprise refusée ; inspecter le produit localement.'}`
         );
-        if (error.message.includes('ambiguous interrupted publication')) {
+        if (error.message.includes('ambiguous interrupted application')) {
             if (error.drift) console.error(`   ${describeDrift(error.drift)}`);
             console.error(
                 `   Rien n'a été déplacé. Marche à suivre : ${GUIDE}, section « Ownership et reprise ».`

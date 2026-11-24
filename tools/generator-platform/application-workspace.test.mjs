@@ -189,9 +189,14 @@ test('les versions directes sont exactes et sans catalog, alias ou script d’in
         assert.equal(pkg.scripts.postinstall, undefined);
         assert.equal(pkg.scripts.prepare, undefined);
         assert.equal(pkg.workspaces.catalog, undefined);
+        // Lot 2 (V3.4 point 1, forme relative imposée par TS5090) : les deux
+        // seuls alias, FIXES, à une étoile, sans préfixe ; oracle écrit ici.
         assert.deepEqual(
             JSON.parse(plan.files['tsconfig.base.json']).compilerOptions.paths,
-            {}
+            {
+                '@socle/*': ['./libs/*-socle/src/index.ts'],
+                '@interface/*': ['./libs/*-interface/src/index.ts'],
+            }
         );
     }
 });

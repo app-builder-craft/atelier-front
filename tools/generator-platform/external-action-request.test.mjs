@@ -23,6 +23,7 @@ import {
     planApplicationPublication,
     publishApplicationPublication,
 } from './core/application-publication.mjs';
+import { pendingTransactionJournals } from './core/application-transaction.mjs';
 import { canonicalizeGeneratedFiles } from './core/canonicalize-generated.mjs';
 import { verifyGeneratedTree } from './core/external-application-paths.mjs';
 import { sha256, stableStringify } from './core/generation-manifest.mjs';
@@ -84,7 +85,7 @@ test('X2 : commande de connexion publiée sous plan sur deux produits fictifs', 
                 `descriptions/session-${domain}/declared.json`,
             ].sort()
         );
-        const base = actionOutputRoot(plan.action_id);
+        const base = actionOutputRoot(product.shell.appName, plan.action_id);
         assert.ok(
             plan.changes.every(({ path }) => path.startsWith(`${base}/`))
         );
@@ -128,13 +129,16 @@ test('X2 : commande de connexion publiée sous plan sur deux produits fictifs', 
         assert.equal(result.replayed, false);
         assert.deepEqual(labels, [
             'native-compiler',
-            `${product.shell.appName}:build:production`,
             `${product.shell.appName}:lint`,
-            `${product.shell.appName}:test`,
+            `${product.shell.appName}-socle:lint`,
+            `${product.shell.appName}-interface:lint`,
+            `${product.shell.appName}:build:production`,
+            `${product.shell.appName}-socle:test`,
             'workspace-contract',
         ]);
-        await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-        const manifest = await readManifest(product.app);
+        for (const { root, files } of plan.roots)
+            await verifyGeneratedTree(join(plan.root, root), files);
+        const manifest = await readManifest(product);
         const record = manifest.ownership.publications.at(-1);
         assert.equal(record.tool, 'generate:action-request');
         assert.equal(record.plan_id, plan.plan_id);
@@ -177,7 +181,9 @@ test('X2 : régénération partielle déclarée ; aucun fichier ancien laissé s
     await writeFile(definitionPath, JSON.stringify(definition, null, 2) + '\n');
     const second = await planExternalActionRequest(product.options);
     const total = Object.keys(first.files).filter((path) =>
-        path.startsWith(`${actionOutputRoot(first.action_id)}/`)
+        path.startsWith(
+            `${actionOutputRoot(product.shell.appName, first.action_id)}/`
+        )
     ).length;
     assert.ok(second.changes.length > 0 && second.changes.length < total);
     assert.ok(second.changes.every(({ change }) => change === 'replaced'));
@@ -187,7 +193,7 @@ test('X2 : régénération partielle déclarée ; aucun fichier ancien laissé s
     );
     // Un fichier publié sous la sortie par une autre publication ne peut pas
     // rester orphelin : la régénération est refusée.
-    const extra = `${actionOutputRoot(first.action_id)}/extra.ts`;
+    const extra = `${actionOutputRoot(product.shell.appName, first.action_id)}/extra.ts`;
     const plan = await planApplicationPublication({
         ...product.base,
         tool: 'generate:action-request',
@@ -318,11 +324,11 @@ run() { return undefined; }, phase(phase) { if (phase === 'published') process.k
     assert.equal(result.signal, 'SIGKILL', result.stderr);
     await assert.rejects(
         planExternalApplicationShell({ ...product.shell, appName: 'other' }),
-        /interrupted publication pending/
+        /interrupted application publication pending/
     );
     await assert.rejects(
         planExternalActionRequest(product.options),
-        /interrupted publication pending/
+        /interrupted application publication pending/
     );
     // La même commande relue reprend, puis publie entièrement.
     const done = await publishExternalActionRequest(
@@ -331,7 +337,8 @@ run() { return undefined; }, phase(phase) { if (phase === 'published') process.k
     );
     assert.equal(done.recovered, true);
     assert.equal(done.replayed, false);
-    await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+    for (const { root, files } of plan.roots)
+        await verifyGeneratedTree(join(plan.root, root), files);
     await planExternalApplicationShell({ ...product.shell, appName: 'other' });
 });
 
@@ -361,13 +368,53 @@ test('X2/T8 : deux publications concurrentes de la même application, une seule 
         release();
     }
     assert.equal((await first).replayed, false);
-    const manifest = await readManifest(product.app);
+    const manifest = await readManifest(product);
     assert.equal(
         manifest.ownership.publications.filter(
             (record) => record.plan_id === plan.plan_id
         ).length,
         1
     );
+});
+
+// Lot 2 (V5.2) : pendant la transaction VIVANTE d'une autre opération (journal
+// posé, verrou tenu), une commande sans verrou nomme la génération en cours ;
+// elle ne la prend jamais pour une transaction interrompue à reprendre.
+test('X2/T8 bis : transaction vivante d’une autre opération : « another generation owns », jamais « interrupted »', async (t) => {
+    const product = await actionProduct(t, 'observatory');
+    const plan = await planExternalActionRequest(product.options);
+    let entered;
+    const started = new Promise((done) => (entered = done));
+    let release;
+    const barrier = new Promise((done) => (release = done));
+    const first = publishExternalActionRequest(
+        { ...product.options, expectedPlanId: plan.plan_id },
+        {
+            run: async () => {
+                entered();
+                await barrier;
+            },
+        }
+    );
+    await started;
+    try {
+        assert.equal(
+            (await pendingTransactionJournals(product.root)).length,
+            1
+        );
+        for (const attempt of [
+            () => planExternalActionRequest(product.options),
+            () =>
+                planExternalApplicationShell({
+                    ...product.shell,
+                    appName: 'other',
+                }),
+        ])
+            await assert.rejects(attempt(), /another generation owns/);
+    } finally {
+        release();
+    }
+    assert.equal((await first).replayed, false);
 });
 
 test('X2 : entrées et applications hors périmètre refusées avant toute écriture', async (t) => {

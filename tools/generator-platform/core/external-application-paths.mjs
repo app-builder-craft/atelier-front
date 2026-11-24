@@ -17,14 +17,44 @@ import {
     sep,
 } from 'node:path';
 
-import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
+import {
+    escapeRegExp,
+    SIGNATURE,
+    SIGNATURE_FILES,
+} from './atelier-signature.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { syncTreeDirectories } from './generation-transaction.mjs';
 import { PREFIX_PATTERN, productForms } from './product-identity.mjs';
+import { LIBS_ROOT } from './socle-names.mjs';
 
 export function externalFailure(code) {
     throw new Error(`external application: ${code}`);
 }
+
+// Lot 2 (conception v3, V3.1) : SOURCE UNIQUE des racines réservées d'un
+// produit. Les espaces de produit (`apps`, `libs`) n'appartiennent qu'à
+// l'atelier ; les racines d'exécution sont celles des outils natifs ; le
+// dossier de signature porte les marqueurs. Aucune garde n'en tient une copie.
+export const PRODUCT_SPACES = Object.freeze(['apps', LIBS_ROOT]);
+export const RUNTIME_ROOTS = Object.freeze([
+    'node_modules',
+    '.git',
+    '.nx',
+    '.angular',
+    'dist',
+    'coverage',
+    'tmp',
+]);
+export const PRODUCT_RESERVED_ROOTS = Object.freeze([
+    ...PRODUCT_SPACES,
+    SIGNATURE.dir,
+    ...RUNTIME_ROOTS,
+]);
+const RESERVED_ROOT_SET = new Set(PRODUCT_RESERVED_ROOTS);
+
+/** Premier segment d'un chemin relatif au produit pris dans une racine réservée. */
+export const isReservedProductPath = (path) =>
+    RESERVED_ROOT_SET.has(String(path).split('/')[0]);
 
 export async function pathExists(path) {
     try {
@@ -75,6 +105,27 @@ export async function assertPhysicalPath(path, { missing = false } = {}) {
     if ((await realpath(existing)) !== existing)
         externalFailure('non-canonical physical path');
     return absolute;
+}
+
+// Lot 2 (conception v4, §V4.6 point 1) : contrôle UNIQUE de toute référence
+// qu'un auteur lit ou écrit, et de tout chemin de fermeture des sources d'une
+// appli. Chemin relatif sûr (ni absolu, ni segment vide, `.` ou `..`, ni
+// caractère hors liste), hors de toute racine réservée, puis physique : ni
+// lien symbolique, ni ancêtre qui ne soit pas un dossier, ni chemin réel
+// différent. `missing` admet un fichier encore absent (sortie à écrire) ;
+// `label` nomme la référence dans le refus (« document » pour un auteur).
+export async function assertSourcePath(
+    root,
+    path,
+    { missing = false, label = 'source' } = {}
+) {
+    safeRelativePath(path);
+    if (isReservedProductPath(path))
+        externalFailure(
+            `${label} collides with a reserved workspace namespace`
+        );
+    await assertPhysicalPath(resolve(root, path), { missing });
+    return path;
 }
 
 // Version du manifeste d'espace : 1.1.0 depuis que le préfixe du produit

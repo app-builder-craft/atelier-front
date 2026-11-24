@@ -11,7 +11,7 @@ import { repositoryRoot } from '../validate-ir.mjs';
 import {
     planApplicationPublication,
     publicApplicationPublicationPlan,
-    publishApplicationPublication,
+    publishRenderedPublication,
 } from './application-publication.mjs';
 import {
     inputFilePath,
@@ -90,7 +90,7 @@ async function renderExternalListQuery(options) {
         throw error;
     }
     await assertDeclaredContract(app, target.model.backend_contract);
-    const base = queryOutputRoot(target.queryId);
+    const base = queryOutputRoot(options.appName, target.queryId);
     const files = Object.fromEntries(
         Object.entries(target.files).map(([path, content]) => [
             `${base}/${path}`,
@@ -98,7 +98,7 @@ async function renderExternalListQuery(options) {
         ])
     );
     const manifestPath = `${base}/generation-manifest.json`;
-    const modelPath = queryExecutionModelPath(target.queryId);
+    const modelPath = queryExecutionModelPath(options.appName, target.queryId);
     // C3b : le test de conformité de contrat, hors du plan d'artefacts, est
     // publié avec la lecture et lancé par le vitest installé du produit.
     Object.assign(
@@ -152,11 +152,9 @@ export function publicExternalListQueryPlan(plan) {
 }
 
 export async function publishExternalListQuery(options, dependencies) {
-    if (!/^[a-f0-9]{64}$/.test(options.expectedPlanId ?? ''))
-        externalFailure('publication requires a reviewed plan');
-    const rendered = await renderExternalListQuery(options);
-    const result = await publishApplicationPublication(
-        { ...rendered.publication, expectedPlanId: options.expectedPlanId },
+    const { rendered, result } = await publishRenderedPublication(
+        options,
+        renderExternalListQuery,
         dependencies
     );
     return {

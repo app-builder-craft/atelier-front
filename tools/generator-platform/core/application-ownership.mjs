@@ -7,9 +7,23 @@ import {
     relayEnvshPath,
     safeRelativePath,
 } from './external-application-paths.mjs';
-import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
+import {
+    escapeRegExp,
+    SIGNATURE,
+    SIGNATURE_FILES,
+} from './atelier-signature.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { PREFIX_PATTERN } from './product-identity.mjs';
+import {
+    coqueRoot,
+    INTERFACE_FREE_DIR,
+    interfaceRoot,
+    PAGE_MODULE,
+    SOCLE_ACTIONS_DIR,
+    SOCLE_PAGES_DIR,
+    SOCLE_QUERIES_DIR,
+    socleRoot,
+} from './socle-names.mjs';
 
 // Version du sceau : 1.0.0 tant que l'historique ne porte que des
 // publications ; 1.1.0 dès qu'il porte un enregistrement de renommage du
@@ -21,13 +35,9 @@ export const OWNERSHIP_RENAMED_SCHEMA_VERSION = '1.1.0';
 // publication, seul à pouvoir retirer un fichier.
 export const RENAME_TOOL = 'rename-product-prefix';
 // Derniers écrivains dont un renommage peut remplacer un fichier : la coque
-// (hors pages), un renommage précédent, la composition de page. Tout fichier
-// écrit en dernier par une autre publication est hors de sa zone.
-const RENAMEABLE_WRITERS = new Set([
-    'shell',
-    RENAME_TOOL,
-    'generate:page-composition',
-]);
+// et un renommage précédent. Lot 2 (V5.3) : la composition vit dans le socle,
+// hors de la coque ; MARQUE ne s'étend pas à `libs/` et ne la re-rend plus.
+const RENAMEABLE_WRITERS = new Set(['shell', RENAME_TOOL]);
 export const PUBLICATION_TOOLS = Object.freeze([
     'compile:page-execution-plan',
     'generate:action-request',
@@ -84,40 +94,97 @@ const inventoryEntries = (inventory) =>
         }))
         .sort((left, right) => left.path.localeCompare(right.path));
 
-function pageZone(path, inventory) {
-    const match = /^src\/app\/pages\/([^/]+)\/[^/].*$/.exec(path);
-    return Boolean(
-        match && inventory.has(`${SIGNATURE_FILES.pages}/${match[1]}.json`)
+// Lot 2 (V5.1, C-B3) : l'inventaire porte des chemins RELATIFS AU PRODUIT ;
+// toutes les publications écrivent dans le socle de leur appli. Contrat de
+// page déclaré par la coque, sous son dossier de signature.
+export const pageContractPath = (appName, pageId) =>
+    `${coqueRoot(appName)}/${SIGNATURE_FILES.pages}/${pageId}.json`;
+const SEGMENT = '[a-z0-9][a-z0-9._-]*';
+const PAGE_ID = 'page_[a-f0-9]{16}';
+
+// Zone de publication d'un chemin, construite depuis la disposition fixe du
+// socle (`socle-names.mjs`, source unique) : commande et lecture sous leur
+// dossier, page sous le sien si elle est DÉCLARÉE (contrat de page présent).
+// `pageModule` : le module de page du socle (V5.4). `null` hors de toute zone.
+export function publicationZone(appName, path, inventory) {
+    const socle = escapeRegExp(socleRoot(appName));
+    const primitive = new RegExp(
+        `^${socle}/(?:${escapeRegExp(SOCLE_ACTIONS_DIR)}|${escapeRegExp(SOCLE_QUERIES_DIR)})/${SEGMENT}/[^/].*$`
     );
+    if (primitive.test(path)) return { page: null, pageModule: false };
+    const page = new RegExp(
+        `^${socle}/${escapeRegExp(SOCLE_PAGES_DIR)}/(${PAGE_ID})/[^/].*$`
+    ).exec(path);
+    if (!page || !inventory.has(pageContractPath(appName, page[1])))
+        return null;
+    return {
+        page: page[1],
+        pageModule:
+            path ===
+            `${socleRoot(appName)}/${SOCLE_PAGES_DIR}/${page[1]}/${PAGE_MODULE}`,
+    };
 }
 
-// Zones fermées : ajout sous generated/ ou dans une page déclarée ; remplacement
-// d'un fichier de page de la coque ou d'un fichier ajouté par une publication.
-export function assertPublicationZone(path, change, inventory, published) {
+// Racines d'une appli (V3.1 point 4) : tout chemin de son inventaire est sous
+// l'une d'elles.
+export const applicationRoots = (appName) => [
+    coqueRoot(appName),
+    socleRoot(appName),
+    interfaceRoot(appName),
+];
+
+// Zone LIBRE de l'appli (V5.1) : les sources de l'interface, hors fichiers
+// possédés. Source unique de la vérification de la racine du produit, du
+// contrôle du produit et du test « rendus de la zone libre ⊆ amorces » (R-8a).
+export const isInterfaceFreePath = (appName, path) =>
+    path.startsWith(`${interfaceRoot(appName)}/${INTERFACE_FREE_DIR}/`);
+
+// Zone d'un chemin du produit pour l'appli : `owned` (dans l'inventaire),
+// `free` (sources de l'interface hors inventaire), sinon `null` (aucun
+// fichier ne peut y exister sans être possédé).
+export function productPathZone(appName, path, inventory) {
+    if (inventory.has(path)) return 'owned';
+    if (isInterfaceFreePath(appName, path)) return 'free';
+    return null;
+}
+
+// Zones fermées (V5.1 règle 1, C-B3) : un AJOUT dans une zone de publication ;
+// un REMPLACEMENT d'un fichier de l'inventaire, dans une zone, si son DERNIER
+// ÉCRIVAIN est un outil de publication, ou si c'est le module de page du socle
+// d'une page déclarée (quel que soit son dernier écrivain). Rien d'autre de la
+// coque ni de la configuration d'une bibliothèque. `published` (chemins
+// ajoutés) ne décide plus de la zone.
+export function assertPublicationZone(
+    path,
+    change,
+    inventory,
+    writers,
+    appName
+) {
     safeRelativePath(path);
-    if (
-        path.startsWith(`${SIGNATURE.dir}/`) ||
-        path.split('/').some((part) => part.startsWith('.'))
-    )
+    if (path.split('/').some((part) => part.startsWith('.')))
         externalFailure('publication outside declared zones');
-    const generated = /^src\/app\/generated\/[^/].*$/.test(path);
+    const zone = publicationZone(appName, path, inventory);
+    if (!zone) externalFailure('publication outside declared zones');
     if (change === 'added') {
         if (inventory.has(path))
             externalFailure('publication adds an owned file');
-        if (!generated && !pageZone(path, inventory))
-            externalFailure('publication outside declared zones');
     } else if (change === 'replaced') {
         if (!inventory.has(path))
             externalFailure('publication replaces an unowned file');
-        if (!published.has(path) && !pageZone(path, inventory))
+        if (
+            !PUBLICATION_TOOLS.includes(writers.get(path) ?? 'shell') &&
+            !zone.pageModule
+        )
             externalFailure('publication outside declared zones');
     } else externalFailure('publication change is invalid');
 }
 
 // Enregistrement de renommage : clés exactes, préfixes valides et différents,
 // identité d'espace d'avant ; `replaced` avec `before`, et au plus la paire
-// `removed`/`added` des scripts d'entrée nginx des deux préfixes, ensemble.
-function validRenameRecord(record) {
+// `removed`/`added` des scripts d'entrée nginx des deux préfixes, ensemble,
+// sous la coque de l'appli (chemins relatifs au produit, lot 2).
+function validRenameRecord(record, appName) {
     if (
         !exactKeys(record, [
             'plan_id',
@@ -170,14 +237,16 @@ function validRenameRecord(record) {
         added.length > 1 ||
         removed.length !== added.length ||
         (removed.length === 1 &&
-            (removed[0].path !== relayEnvshPath(record.prefix_before) ||
-                added[0].path !== relayEnvshPath(record.prefix_after)))
+            (removed[0].path !==
+                `${coqueRoot(appName)}/${relayEnvshPath(record.prefix_before)}` ||
+                added[0].path !==
+                    `${coqueRoot(appName)}/${relayEnvshPath(record.prefix_after)}`))
     )
         externalFailure('rename record outside its zone');
 }
 
-function validRecord(record) {
-    if (record?.tool === RENAME_TOOL) return validRenameRecord(record);
+function validRecord(record, appName) {
+    if (record?.tool === RENAME_TOOL) return validRenameRecord(record, appName);
     if (
         !exactKeys(record, ['plan_id', 'tool', 'files']) ||
         !HEX.test(record.plan_id) ||
@@ -205,23 +274,26 @@ function validRecord(record) {
 }
 
 // Zone d'un `replaced` de renommage, d'après le seul manifeste : dernier
-// écrivain coque (hors fichier de page), renommage ou composition, et jamais
-// le dossier de signature. Source unique du plan et de la vérification.
-export function renameMayReplace(path, writer, inventory) {
+// écrivain coque ou renommage, SOUS LA COQUE de l'appli, et jamais son
+// dossier de signature. Le socle et l'interface n'y entrent jamais (V5.3 : ils
+// ne portent aucune forme du préfixe). Source unique du plan et de la
+// vérification.
+export function renameMayReplace(path, writer, appName) {
+    const coque = `${coqueRoot(appName)}/`;
     return (
         RENAMEABLE_WRITERS.has(writer) &&
-        !(writer === 'shell' && pageZone(path, inventory)) &&
-        !path.startsWith(`${SIGNATURE.dir}/`)
+        path.startsWith(coque) &&
+        !path.startsWith(`${coque}${SIGNATURE.dir}/`)
     );
 }
 
 // Renommage, en avant : chaque `replaced` porte sur un fichier dont le
-// dernier écrivain est dans la zone (coque hors pages, renommage, composition)
-// ; la paire de scripts, écrite par la coque ou par un renommage, est retirée
+// dernier écrivain est dans la zone (coque, renommage) ; la paire de
+// scripts, écrite par la coque ou par un renommage, est retirée
 // puis ajoutée. Le script ajouté n'entre pas dans `published` : aucune
 // publication ne peut le remplacer, et nulle ne peut l'ajouter à nouveau (il
 // est dans l'inventaire).
-function applyRename(inventory, record, writers) {
+function applyRename(inventory, record, writers, appName) {
     const next = new Map(inventory);
     const nextWriters = new Map(writers);
     for (const file of record.files) {
@@ -247,7 +319,7 @@ function applyRename(inventory, record, writers) {
             nextWriters.delete(file.path);
             continue;
         }
-        if (!renameMayReplace(file.path, writer, inventory))
+        if (!renameMayReplace(file.path, writer, appName))
             externalFailure('rename record outside its zone');
         next.set(file.path, { sha256: file.sha256, bytes: file.bytes });
         nextWriters.set(file.path, RENAME_TOOL);
@@ -255,24 +327,31 @@ function applyRename(inventory, record, writers) {
     return { inventory: next, writers: nextWriters };
 }
 
-// Applique un enregistrement (publication ou renommage) à un inventaire, en
-// contrôlant ses zones. `writers` : dernier écrivain de chaque chemin
-// (`shell` par défaut).
+// Applique un enregistrement (publication ou renommage) à l'inventaire de
+// l'appli `appName`, en contrôlant ses zones. `writers` : dernier écrivain de
+// chaque chemin (`shell` par défaut).
 export function applyPublication(
     inventory,
     record,
     published,
-    writers = new Map()
+    writers,
+    appName
 ) {
-    validRecord(record);
+    validRecord(record, appName);
     if (record.tool === RENAME_TOOL) {
-        const renamed = applyRename(inventory, record, writers);
+        const renamed = applyRename(inventory, record, writers, appName);
         return { ...renamed, published: new Set(published) };
     }
     const next = new Map(inventory);
     const nextWriters = new Map(writers);
     for (const file of record.files) {
-        assertPublicationZone(file.path, file.change, inventory, published);
+        assertPublicationZone(
+            file.path,
+            file.change,
+            inventory,
+            writers,
+            appName
+        );
         if (file.change === 'replaced') {
             const current = inventory.get(file.path);
             if (
@@ -352,7 +431,7 @@ export function verifyApplicationOwnership(manifest, workspaceId) {
     // exactement l'inventaire créé par create-app.
     const shell = new Map(current);
     for (const record of [...ownership.publications].reverse()) {
-        validRecord(record);
+        validRecord(record, manifest.app_name);
         for (const file of record.files) {
             const entry = shell.get(file.path);
             // Un fichier retiré par un renommage est absent après lui ; on le
@@ -397,7 +476,8 @@ export function verifyApplicationOwnership(manifest, workspaceId) {
             state.inventory,
             record,
             state.published,
-            state.writers
+            state.writers,
+            manifest.app_name
         );
     }
     return {
@@ -434,7 +514,8 @@ export function publishedManifest(manifest, record, workspaceId) {
         inventoryMap(manifest.generated_files),
         record,
         published,
-        writers
+        writers,
+        manifest.app_name
     );
     const generated = inventoryEntries(inventory);
     const next = {
@@ -469,7 +550,8 @@ export function renamedManifest(manifest, record, workspaceIdAfter) {
         inventoryMap(manifest.generated_files),
         record,
         published,
-        writers
+        writers,
+        manifest.app_name
     );
     const generated = inventoryEntries(inventory);
     const next = {

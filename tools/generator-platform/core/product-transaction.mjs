@@ -1,22 +1,19 @@
-// Brique de transaction commune d'un produit extérieur, extraite TELLE QUELLE
-// de la transaction de MARQUE (`product-prefix-rename-transaction.mjs`,
-// ADR-0103) : journal posé puis réécrit par renommage atomique, à côté du
-// produit ; état OBSERVÉ des arbres (empreintes), jamais la phase seule ;
-// retour arrière et fin décidés par cet état, tout étant contrôlé AVANT le
-// premier déplacement ; nettoyage des dossiers de préparation. Les messages
-// d'état ambigu passent par la fonction `ambiguous` de l'appelant.
+// Brique de transaction commune d'un produit extérieur, extraite de la
+// transaction de MARQUE (`product-prefix-rename-transaction.mjs`, ADR-0103,
+// commit 1a) puis généralisée au commit 1b du lot 2 (conception v5, V5.2) :
+// journal posé puis réécrit par renommage atomique, à côté du produit ;
+// opération `tree` sur une racine ENTIÈREMENT possédée ou ABSENTE, dans
+// `apps/` ou `libs/` ; état OBSERVÉ de chaque arbre, comparé aux LISTES
+// D'ARTÉFACTS (chemin, empreinte, octets) inscrites au journal, jamais la
+// phase seule ; retour arrière et fin décidés par cet état, tout étant
+// contrôlé AVANT le premier déplacement ; nettoyage des dossiers de
+// préparation. Les messages d'état ambigu passent par la fonction
+// `ambiguous` de l'appelant.
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 
-import { SIGNATURE_FILES } from './atelier-signature.mjs';
-import {
-    pathExists,
-    readProductFile,
-    treeInventory,
-    verifyGeneratedTree,
-} from './external-application-paths.mjs';
-import { sha256 } from './generation-manifest.mjs';
+import { pathExists, treeInventory } from './external-application-paths.mjs';
 import {
     removeTreeAndSync,
     renameAndSync,
@@ -24,7 +21,6 @@ import {
     writeDocument,
 } from './generation-transaction.mjs';
 
-const APP_MANIFEST = SIGNATURE_FILES.appManifest;
 const JOURNAL = 'journal.json';
 
 export const exactKeys = (value, keys) =>
@@ -83,28 +79,70 @@ export async function removeStagingDirectories(productRoot, stagingPrefix) {
             await removeTreeAndSync(resolve(dirname(productRoot), entry.name));
 }
 
-// Empreinte du manifeste d'un arbre EXACT selon son propre manifeste, sinon
-// `null` : un arbre changé n'est jamais déplacé.
-export async function exactTreeManifestSha(root) {
+// Dossiers d'un arbre, chacun suivi de `/`.
+async function treeDirectories(root) {
+    const directories = [];
+    const visit = async (directory) => {
+        for (const entry of await readdir(directory, { withFileTypes: true }))
+            if (entry.isDirectory()) {
+                const absolute = resolve(directory, entry.name);
+                directories.push(
+                    `${relative(root, absolute).split(sep).join('/')}/`
+                );
+                await visit(absolute);
+            }
+    };
+    await visit(root);
+    return directories;
+}
+
+// Arbre EXACTEMENT égal à sa liste d'artéfacts : mêmes chemins, empreintes et
+// octets, aucun fichier ni dossier de plus. Un arbre changé n'est jamais
+// déplacé ; ce qui rend vérifiable une racine qui ne porte pas de manifeste
+// (le socle).
+export async function exactTree(root, artifacts) {
     try {
-        const text = (await readProductFile(root, APP_MANIFEST)).toString(
-            'utf8'
-        );
-        const files = { [APP_MANIFEST]: text };
-        for (const entry of JSON.parse(text).generated_files) {
-            const content = await readProductFile(root, entry.path);
+        const actual = await treeInventory(root);
+        if (actual.length !== artifacts.length) return false;
+        const expected = new Map(artifacts.map((entry) => [entry.path, entry]));
+        for (const entry of actual) {
+            const wanted = expected.get(entry.path);
             if (
-                sha256(content) !== entry.sha256 ||
-                content.length !== entry.bytes
+                !wanted ||
+                wanted.sha256 !== entry.sha256 ||
+                wanted.bytes !== entry.bytes
             )
-                return null;
-            files[entry.path] = content.toString('utf8');
+                return false;
         }
-        await verifyGeneratedTree(root, files);
-        return sha256(text);
+        return (await treeDirectories(root)).every((prefix) =>
+            artifacts.some((entry) => entry.path.startsWith(prefix))
+        );
     } catch {
-        return null;
+        return false;
     }
+}
+
+// Premier écart observé d'un arbre avec sa liste d'artéfacts, en chemin
+// relatif (M-3) : la commande de reprise le nomme sans chemin local. `tree` :
+// le nom de l'arbre, relatif au produit.
+export async function firstTreeDrift(root, artifacts, tree) {
+    let actual;
+    try {
+        actual = await treeInventory(root);
+    } catch {
+        return { tree, path: null, kind: 'entry' };
+    }
+    const expected = new Map(artifacts.map((entry) => [entry.path, entry]));
+    for (const entry of actual) {
+        const wanted = expected.get(entry.path);
+        if (!wanted) return { tree, path: entry.path, kind: 'unlisted' };
+        if (wanted.sha256 !== entry.sha256 || wanted.bytes !== entry.bytes)
+            return { tree, path: entry.path, kind: 'modified' };
+    }
+    const present = new Set(actual.map((entry) => entry.path));
+    for (const path of expected.keys())
+        if (!present.has(path)) return { tree, path, kind: 'missing' };
+    return { tree, path: null, kind: 'tree' };
 }
 
 // Candidat partiel ou complet : chaque fichier présent est celui inscrit au
@@ -121,21 +159,7 @@ export async function candidateWithin(root, artifacts) {
             )
                 return false;
         }
-        const directories = [];
-        const visit = async (directory) => {
-            for (const entry of await readdir(directory, {
-                withFileTypes: true,
-            }))
-                if (entry.isDirectory()) {
-                    const absolute = resolve(directory, entry.name);
-                    directories.push(
-                        `${relative(root, absolute).split(sep).join('/')}/`
-                    );
-                    await visit(absolute);
-                }
-        };
-        await visit(root);
-        return directories.every((prefix) =>
+        return (await treeDirectories(root)).every((prefix) =>
             [...expected.keys()].some((path) => path.startsWith(prefix))
         );
     } catch {
@@ -143,12 +167,13 @@ export async function candidateWithin(root, artifacts) {
     }
 }
 
-// Arbres d'une opération dans `parent` : sortie, candidat, arbre mis de côté.
-// `tree` : { name, candidate, previous } (noms dans `parent`).
-export async function treeState(parent, tree) {
-    const output = resolve(parent, tree.name);
-    const candidate = resolve(parent, tree.candidate);
-    const previous = resolve(parent, tree.previous);
+// Arbres d'une opération `tree` dans son dossier parent (`apps/` ou `libs/`) :
+// sortie, candidat, arbre mis de côté. `tree` : { parent, name, candidate,
+// previous } (noms dans `parent`, chemin absolu de `parent`).
+export async function treeState(tree) {
+    const output = resolve(tree.parent, tree.name);
+    const candidate = resolve(tree.parent, tree.candidate);
+    const previous = resolve(tree.parent, tree.previous);
     const [hasOutput, hasCandidate, hasPrevious] = await Promise.all(
         [output, candidate, previous].map(pathExists)
     );
@@ -163,54 +188,96 @@ export async function treeState(parent, tree) {
 }
 
 // Échange d'un arbre : la sortie est mise de côté, puis le candidat la
-// remplace ; `rename` est injectable pour éprouver chaque échange.
-export async function swapTree(output, candidate, previous, rename) {
-    await rename(output, previous);
+// remplace ; une racine ABSENTE avant (`before === null`, création) reçoit le
+// candidat sans rien mettre de côté. `rename` est injectable pour éprouver
+// chaque échange.
+export async function swapTree(tree, rename) {
+    const { output, candidate, previous } = await treeState(tree);
+    if (tree.before !== null) await rename(output, previous);
     await rename(candidate, output);
 }
 
 // Retour arrière des arbres (phase < verified), décidé par l'état observé.
 // Chaque arbre est contrôlé ici et AUCUN n'est déplacé : un état ambigu est
-// refusé avant le premier déplacement (règle C). `trees` : { name, candidate,
-// previous, files, before, after, label }, `before` et `after` étant les
-// empreintes de manifeste attendues.
-export async function planTreesRevert(parent, trees, ambiguous) {
+// refusé avant le premier déplacement (règle C). `trees` : { parent, name,
+// candidate, previous, files, before, label }, `files` étant la liste
+// d'artéfacts d'après (le candidat) et `before` celle d'avant, ou `null` pour
+// une racine absente avant. `ambiguous(message, drift)` reçoit aussi le
+// premier écart observé (M-3), que l'appelant peut nommer.
+export async function planTreesRevert(trees, ambiguous) {
     const actions = [];
+    const working = (tree, name) => `${dirname(tree.label)}/${name}`;
     for (const tree of trees) {
-        const state = await treeState(parent, tree);
+        const state = await treeState(tree);
         const label = tree.label;
-        const outputSha = state.hasOutput
-            ? await exactTreeManifestSha(state.output)
-            : undefined;
+        const drifted = async (message, root, artifacts, name = label) =>
+            ambiguous(message, await firstTreeDrift(root, artifacts, name));
         if (state.hasPrevious) {
-            if ((await exactTreeManifestSha(state.previous)) !== tree.before)
+            if (tree.before === null)
                 ambiguous(`${label} previous tree drifted`);
+            if (!(await exactTree(state.previous, tree.before)))
+                await drifted(
+                    `${label} previous tree drifted`,
+                    state.previous,
+                    tree.before,
+                    working(tree, tree.previous)
+                );
             if (state.hasOutput) {
                 if (state.hasCandidate) ambiguous(`${label} has several trees`);
-                if (outputSha !== tree.after)
-                    ambiguous(`${label} renamed tree drifted`);
+                if (!(await exactTree(state.output, tree.files)))
+                    await drifted(
+                        `${label} renamed tree drifted`,
+                        state.output,
+                        tree.files
+                    );
                 actions.push({ kind: 'unswap', state });
             } else {
                 if (
                     state.hasCandidate &&
                     !(await candidateWithin(state.candidate, tree.files))
                 )
-                    ambiguous(`${label} candidate drifted`);
+                    await drifted(
+                        `${label} candidate drifted`,
+                        state.candidate,
+                        tree.files,
+                        working(tree, tree.candidate)
+                    );
                 actions.push({ kind: 'restore', state });
             }
             continue;
         }
-        if (outputSha !== tree.before) ambiguous(`${label} tree drifted`);
+        if (tree.before === null) {
+            if (state.hasOutput) {
+                if (state.hasCandidate) ambiguous(`${label} has several trees`);
+                if (!(await exactTree(state.output, tree.files)))
+                    await drifted(
+                        `${label} created tree drifted`,
+                        state.output,
+                        tree.files
+                    );
+                actions.push({ kind: 'withdraw', state });
+                continue;
+            }
+        } else if (!state.hasOutput) ambiguous(`${label} tree drifted`);
+        else if (!(await exactTree(state.output, tree.before)))
+            await drifted(`${label} tree drifted`, state.output, tree.before);
         if (state.hasCandidate) {
             if (!(await candidateWithin(state.candidate, tree.files)))
-                ambiguous(`${label} candidate drifted`);
+                await drifted(
+                    `${label} candidate drifted`,
+                    state.candidate,
+                    tree.files,
+                    working(tree, tree.candidate)
+                );
             actions.push({ kind: 'dispose', state });
         }
     }
     return actions;
 }
 
-// Déplacements du retour arrière, chacun atomique et rejouable.
+// Déplacements du retour arrière, chacun atomique et rejouable. `withdraw` :
+// une racine créée par la transaction est retirée en passant par son nom de
+// candidat.
 export async function revertTrees(actions) {
     for (const { kind, state } of actions) {
         if (kind === 'unswap') {
@@ -218,6 +285,8 @@ export async function revertTrees(actions) {
             await renameAndSync(state.previous, state.output);
         } else if (kind === 'restore')
             await renameAndSync(state.previous, state.output);
+        else if (kind === 'withdraw')
+            await renameAndSync(state.output, state.candidate);
         if (await pathExists(state.candidate))
             await removeTreeAndSync(state.candidate);
     }
@@ -225,18 +294,21 @@ export async function revertTrees(actions) {
 
 // Fin des arbres (phase `verified`) : en avant, nettoyage seul, après
 // contrôle de CHAQUE arbre ; les arbres mis de côté sont alors retirés.
-export async function completeTrees(parent, trees, ambiguous) {
+export async function completeTrees(trees, ambiguous) {
     const previous = [];
     for (const tree of trees) {
-        const state = await treeState(parent, tree);
+        const state = await treeState(tree);
         if (
             state.hasCandidate ||
             !state.hasOutput ||
-            (await exactTreeManifestSha(state.output)) !== tree.after
+            !(await exactTree(state.output, tree.files))
         )
             ambiguous(`${tree.label} renamed tree drifted`);
         if (state.hasPrevious) {
-            if ((await exactTreeManifestSha(state.previous)) !== tree.before)
+            if (
+                tree.before === null ||
+                !(await exactTree(state.previous, tree.before))
+            )
                 ambiguous(`${tree.label} previous tree drifted`);
             previous.push(state.previous);
         }

@@ -20,7 +20,11 @@ import {
     publishApplicationWorkspace,
 } from '../core/application-workspace.mjs';
 import { signatureName } from '../core/atelier-signature.mjs';
-import { pathExists } from '../core/external-application-paths.mjs';
+import { filesUnder } from '../core/application-transaction.mjs';
+import {
+    pathExists,
+    stageGeneratedTree,
+} from '../core/external-application-paths.mjs';
 import { stableStringify } from '../core/generation-manifest.mjs';
 import { writeApplicationDesignFixture } from './application-design-fixture.mjs';
 
@@ -236,6 +240,19 @@ export async function shellFixture(t, profile = 'angular-pwa') {
             backendContractSchema: input.backendContractSchema,
         },
     };
+}
+
+// Lot 2 : fichiers de la coque d'un plan, relatifs à elle (inventaire et
+// plans relatifs au produit).
+export const coqueFiles = (plan) =>
+    filesUnder(plan.files, `apps/${plan.app_name}`);
+
+// Lot 2 : les trois racines d'un plan de création écrites à leur place, sans
+// transaction (état d'une appli déjà créée).
+export async function writePlanRoots(plan) {
+    await mkdir(join(plan.root, 'libs'), { recursive: true });
+    for (const { root, files } of plan.roots)
+        await stageGeneratedTree(join(plan.root, root), files);
 }
 
 export async function snapshotTree(root, excluded = ['node_modules', '.git']) {

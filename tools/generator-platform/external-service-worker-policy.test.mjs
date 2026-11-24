@@ -19,6 +19,7 @@ import {
 import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import { createApplicationSessionFixture } from './test-support/application-session-fixture.mjs';
 import { applicationDesign } from './test-support/application-design-fixture.mjs';
+import { coqueRoot } from './core/socle-names.mjs';
 import { hash } from './test-support/external-application-fixture.mjs';
 import { SESSION_FIXTURE_DOMAINS } from './test-support/external-session-fixture.mjs';
 
@@ -26,6 +27,17 @@ import { SESSION_FIXTURE_DOMAINS } from './test-support/external-session-fixture
 const SW_POLICY = `${FIXTURE_PREFIX}-sw`;
 const EXTERNAL_CSP_META = externalCspMeta(FIXTURE_PREFIX);
 const EXTERNAL_CSP_HEADER = externalCspHeader(FIXTURE_PREFIX);
+
+// Lot 2 (V5.1) : le rendu extérieur est relatif au produit ; `main.ts` et
+// `sw.js` restent à la coque. Vue de la coque par son chemin d'appli.
+function coqueView(files, appName) {
+    const prefix = `${coqueRoot(appName)}/`;
+    return Object.fromEntries(
+        Object.entries(files)
+            .filter(([path]) => path.startsWith(prefix))
+            .map(([path, content]) => [path.slice(prefix.length), content])
+    );
+}
 
 async function renderMains(t) {
     const data = await createApplicationSessionFixture({
@@ -44,7 +56,10 @@ async function renderMains(t) {
                 prefix: FIXTURE_PREFIX,
             })
         ).files;
-    return { atelier: await render(false), external: await render(true) };
+    return {
+        atelier: await render(false),
+        external: coqueView(await render(true), 'session-sw'),
+    };
 }
 
 function calls(source, name) {
@@ -332,18 +347,20 @@ const API_REQUESTS = [
 test('sw.js extérieur : jamais /api/ pris en charge, quelle que soit la destination ; mode atelier inchangé', async () => {
     const design = applicationDesign('a'.repeat(64), 'b'.repeat(64));
     const experience = design.experiences.find((entry) => !entry.session);
-    const render = async (externalWorkspace) =>
-        (
-            await renderAngularPwaShell({
-                design,
-                experienceId: experience.id,
-                appName: 'shell-sw',
-                designPath: 'design/shell.json',
-                designSha256: hash('shell'),
-                externalWorkspace,
-                prefix: FIXTURE_PREFIX,
-            })
-        ).files['public/sw.js'];
+    const render = async (externalWorkspace) => {
+        const { files } = await renderAngularPwaShell({
+            design,
+            experienceId: experience.id,
+            appName: 'shell-sw',
+            designPath: 'design/shell.json',
+            designSha256: hash('shell'),
+            externalWorkspace,
+            prefix: FIXTURE_PREFIX,
+        });
+        return (externalWorkspace ? coqueView(files, 'shell-sw') : files)[
+            'public/sw.js'
+        ];
+    };
     const atelier = await render(false);
     const external = await render(true);
     assert.doesNotMatch(atelier, /\/api/);

@@ -4,6 +4,10 @@ import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
 import { productForms } from '../core/product-identity.mjs';
 import { adaptExternalShellFiles } from './application-workspace-renderer.mjs';
+import {
+    coqueSpecifiers,
+    externalShellProduct,
+} from './external-product-layout.mjs';
 
 function sha256(content) {
     return createHash('sha256').update(content).digest('hex');
@@ -24,23 +28,37 @@ function escapedMarkup(value) {
     ).join('');
 }
 
+const VITE_PLUGINS = '    plugins: [react(), nxReadySignal()],';
+
 function componentName(page) {
     return `Page${page.id.replace(/[^a-zA-Z0-9]/g, '')}`;
 }
 
-function renderRoutes(pages, entryPage) {
+// Lot 2 (V5.1 règle 6), mode extérieur : chaque page est chargée
+// paresseusement par la carte des pages de l'interface (`layout.pages`) ;
+// le mode interne garde ses imports statiques.
+function renderRoutes(pages, entryPage, layout) {
     const guardImport = pages.some((page) => page.access.mode !== 'public')
         ? "import { AppAccessGate } from './access-policy';\n"
         : '';
-    const imports = pages
-        .map(
-            (page) =>
-                `import { ${componentName(page)} } from './pages/${page.id}/page';`
-        )
-        .join('\n');
+    const imports = layout
+        ? pages
+              .map(
+                  (page) =>
+                      `const ${componentName(page)} = lazy(() =>\n    import('${layout.pages}').then((module) => module.pages.${page.id}()).then((Page) => ({ default: Page }))\n);`
+              )
+              .join('\n')
+        : pages
+              .map(
+                  (page) =>
+                      `import { ${componentName(page)} } from './pages/${page.id}/page';`
+              )
+              .join('\n');
     const routes = pages
         .map((page) => {
-            const element = `<${componentName(page)} />`;
+            const element = layout
+                ? `<Suspense fallback={null}><${componentName(page)} /></Suspense>`
+                : `<${componentName(page)} />`;
             const guarded =
                 page.access.mode === 'public'
                     ? element
@@ -49,7 +67,7 @@ function renderRoutes(pages, entryPage) {
         })
         .join('\n');
 
-    return `import { Navigate, Route, Routes } from 'react-router';
+    return `${layout ? "import { lazy, Suspense } from 'react';\n" : ''}import { Navigate, Route, Routes } from 'react-router';
 
 ${guardImport}${imports}
 
@@ -258,8 +276,10 @@ function pageContract(design, experience, page, designPath, designSha256) {
     };
 }
 
-function placeholderPage(page) {
-    return `export function ${componentName(page)}() {
+// Amorce de page. Lot 2, mode extérieur : le module de page de l'interface
+// exporte `Page`, nom que lit la carte des pages (V5.1 règle 6).
+function placeholderPage(page, layout) {
+    return `export function ${layout ? 'Page' : componentName(page)}() {
     return (
         <main tabIndex={-1}>
             <h1>${escapedMarkup(page.title)}</h1>
@@ -315,6 +335,9 @@ export async function renderReactSpaShell({
         );
 
     const root = `apps/${appName}`;
+    // Lot 2 : en mode extérieur, la coque charge les pages par l'alias de
+    // l'interface ; le mode interne garde sa disposition à une racine.
+    const layout = externalWorkspace ? coqueSpecifiers(appName) : undefined;
     const escapedTitle = escapedMarkup(design.design.title);
     const files = {
         [SIGNATURE_FILES.libraries]: json({
@@ -483,7 +506,7 @@ export function App() {
     return <AppRoutes />;
 }
 `,
-        'src/app/app.routes.tsx': renderRoutes(pages, entryPage),
+        'src/app/app.routes.tsx': renderRoutes(pages, entryPage, layout),
         'src/app/access-policy.tsx': accessPolicy(forms),
         'src/app/access-policy.spec.ts': accessPolicySpec(),
         'src/styles.scss': `:root {
@@ -502,7 +525,10 @@ body {
 `,
     };
     for (const page of pages) {
-        files[`src/app/pages/${page.id}/page.tsx`] = placeholderPage(page);
+        files[`src/app/pages/${page.id}/page.tsx`] = placeholderPage(
+            page,
+            layout
+        );
         files[`${SIGNATURE_FILES.pages}/${page.id}.json`] = json(
             pageContract(design, experience, page, designPath, designSha256)
         );
@@ -512,6 +538,25 @@ body {
             profile: 'react-spa',
             appName,
             prefix,
+        });
+        // V3.4 point 7 : la coque résout les deux alias par l'option native de
+        // Vite (le greffon `nxViteTsPaths()` est inerte à la version installée).
+        if (files['vite.config.mts'].split(VITE_PLUGINS).length !== 2)
+            throw new Error(
+                'application shell: vite.config is not the shell config'
+            );
+        files['vite.config.mts'] = files['vite.config.mts'].replace(
+            VITE_PLUGINS,
+            `${VITE_PLUGINS}\n    resolve: { tsconfigPaths: true },`
+        );
+        return externalShellProduct({
+            profile: 'react-spa',
+            files,
+            appName,
+            pages,
+            experience,
+            designPath,
+            designSha256,
         });
     }
     const canonicalFiles = await canonicalizeGeneratedFiles(

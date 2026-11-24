@@ -20,14 +20,11 @@ import {
 } from '../renderers/angular-page-composition-renderer.mjs';
 import { loadJson, repositoryRoot } from '../validate-ir.mjs';
 import { bindRenderedArtifacts, buildArtifactPlan } from './artifact-plan.mjs';
-import {
-    ownedProductContext,
-    sealedProductPrefix,
-} from './application-workspace-root.mjs';
+import { ownedProductContext } from './application-workspace-root.mjs';
 import {
     planApplicationPublication,
     publicApplicationPublicationPlan,
-    publishApplicationPublication,
+    publishRenderedPublication,
 } from './application-publication.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import {
@@ -36,9 +33,16 @@ import {
     sessionApplication,
 } from './external-action-request.mjs';
 import { externalFailure } from './external-application-paths.mjs';
-import { compileOwnedPagePlan } from './external-page-plan.mjs';
+import {
+    compileOwnedPagePlan,
+    publishedModelPattern,
+} from './external-page-plan.mjs';
 import {
     ACTION_REQUEST_TOOL,
+    actionOutputRoot,
+    COMPOSITION_SESSION_MODULE,
+    compositionActionModule,
+    compositionQueryModule,
     LIST_QUERY_TOOL,
     ownedAppFile,
     PAGE_COMPOSITION_TOOL,
@@ -46,30 +50,30 @@ import {
     pageCompositionRoot,
     pagePlanPath,
     publishingTool,
+    queryOutputRoot,
 } from './external-publication-paths.mjs';
 import { buildGenerationManifest } from './generation-manifest.mjs';
 import { validatePageExecutionCapabilities } from './page-execution-plan.mjs';
+import {
+    SOCLE_ACTIONS_DIR,
+    SOCLE_QUERIES_DIR,
+    socleRoot,
+} from './socle-names.mjs';
 
 export { PAGE_COMPOSITION_TOOL } from './external-publication-paths.mjs';
-const GENERATED = 'src/app/generated/';
-const ACTION_MODEL =
-    /^src\/app\/generated\/actions\/([a-z0-9][a-z0-9._-]*)\/execution-model\.json$/;
-const QUERY_MODEL =
-    /^src\/app\/generated\/queries\/([a-z0-9][a-z0-9._-]*)\/execution-model\.json$/;
-// Depuis src/app/generated/pages/<page>/composition/src/ vers src/app/session.
-const COMPOSITION_SESSION_MODULE = '../../../../../session';
-// Depuis la même source vers src/app/generated/actions/<id>/src.
-const actionModule = (actionId) => `../../../../actions/${actionId}/src`;
-const queryModule = (queryId) => `../../../../queries/${queryId}/src`;
+// Lot 2 (V5.1) : le code publié vit sous les sources du socle de l'appli ;
+// la matérialisation de la composition est relative à elles.
+const generatedRoot = (appName) => `${socleRoot(appName)}/src/`;
 
-// X5 C4 : fichiers publiés d'une primitive, comparés à l'octet au rendu.
-async function assertPublished(app, files, prefix, message) {
+// X5 C4 : fichiers publiés d'une primitive (sous `base`, relatif au produit),
+// comparés à l'octet au rendu.
+async function assertPublished(app, files, base, message) {
     for (const [path, content] of Object.entries(files)) {
         let published;
         try {
-            published = (
-                await ownedAppFile(app, `${GENERATED}${prefix}/${path}`)
-            ).toString('utf8');
+            published = (await ownedAppFile(app, `${base}/${path}`)).toString(
+                'utf8'
+            );
         } catch {
             published = undefined;
         }
@@ -81,7 +85,10 @@ async function assertPublished(app, files, prefix, message) {
 // publiée doit être exactement celle que la composition rendrait ; elle est
 // alors consommée telle quelle.
 async function consumedQuery(app, node, modelPath) {
-    const match = QUERY_MODEL.exec(modelPath);
+    const appName = app.manifest.app_name;
+    const match = publishedModelPattern(appName, SOCLE_QUERIES_DIR).exec(
+        modelPath
+    );
     if (!match || publishingTool(app.manifest, modelPath) !== LIST_QUERY_TOOL)
         externalFailure(`page load ${node.id} has no published read`);
     const queryId = match[1];
@@ -106,7 +113,7 @@ async function consumedQuery(app, node, modelPath) {
     await assertPublished(
         app,
         files,
-        `queries/${queryId}`,
+        queryOutputRoot(appName, queryId),
         `page load ${node.id} differs from its published read; republish it with generate:list-query`
     );
     return {
@@ -132,10 +139,10 @@ async function consumedQuery(app, node, modelPath) {
     };
 }
 
-// Références du plan : seulement des fichiers possédés de cette application,
-// jamais un chemin hors du produit, d'une autre application ou non inscrit.
-export function assertPlanReferences(plan, appName, owned) {
-    const prefix = `apps/${appName}/`;
+// Références du plan (lot 2, V5.1 règle 4) : chacune est un chemin de
+// L'INVENTAIRE DE CETTE APPLI, relatif au produit ; jamais un chemin hors du
+// produit, d'une autre application ou non inscrit.
+export function assertPlanReferences(plan, owned) {
     const references = [
         plan.source?.page_contract?.uri,
         ...[...(plan.query_nodes ?? []), ...(plan.command_nodes ?? [])].map(
@@ -145,26 +152,24 @@ export function assertPlanReferences(plan, appName, owned) {
     return references.map((uri) => {
         if (
             typeof uri !== 'string' ||
-            !uri.startsWith(prefix) ||
             posix.normalize(uri) !== uri ||
-            uri.split('/').includes('..')
+            uri.split('/').includes('..') ||
+            !owned.has(uri)
         )
             externalFailure(
                 'page plan references a file outside the application'
             );
-        const path = uri.slice(prefix.length);
-        if (!owned.has(path))
-            externalFailure(
-                'page plan references a file outside the application'
-            );
-        return path;
+        return uri;
     });
 }
 
 // Nœud de commande : la commande publiée doit être exactement celle que la
 // composition rendrait pour ce nœud ; elle est alors consommée telle quelle.
-async function consumedCommand(app, node, modelPath, prefix) {
-    const match = ACTION_MODEL.exec(modelPath);
+async function consumedCommand(app, node, modelPath) {
+    const appName = app.manifest.app_name;
+    const match = publishedModelPattern(appName, SOCLE_ACTIONS_DIR).exec(
+        modelPath
+    );
     if (
         !match ||
         publishingTool(app.manifest, modelPath) !== ACTION_REQUEST_TOOL
@@ -196,14 +201,15 @@ async function consumedCommand(app, node, modelPath, prefix) {
     await assertPublished(
         app,
         files,
-        `actions/${actionId}`,
+        actionOutputRoot(appName, actionId),
         `page command ${node.id} differs from its published command; republish it with generate:action-request`
     );
     return {
         actionId,
         token,
         serviceId,
-        sampleInput: sampleCommandInput(model, prefix),
+        // V5.3 : valeurs d'exemple FIXES et neutres, sans préfixe du produit.
+        sampleInput: sampleCommandInput(model),
         rendered: {
             kind: 'command',
             nodeId: node.id,
@@ -219,9 +225,9 @@ async function consumedCommand(app, node, modelPath, prefix) {
     };
 }
 
-// `internal` (renommage du préfixe seulement, jamais en ligne de commande) :
-// `prefix` rend avec ce préfixe au lieu du préfixe scellé ; `renaming` tolère
-// le journal du renommage en cours.
+// `internal.renaming` (jamais en ligne de commande) : tolère le journal d'un
+// renommage en cours. Lot 2 (V5.3) : la composition ne dépend plus du
+// préfixe ; elle n'est plus re-rendue par le renommage.
 async function renderExternalPageComposition(options, internal = {}) {
     const context = await ownedProductContext(
         {
@@ -235,10 +241,8 @@ async function renderExternalPageComposition(options, internal = {}) {
         options.appName,
         'external page composition'
     );
-    // Préfixe scellé de l'espace : valeurs d'exemple de la spec générée.
-    const prefix =
-        internal.prefix ?? (await sealedProductPrefix(context.productRoot));
-    const planPath = pagePlanPath(options.pageId);
+    const GENERATED = generatedRoot(options.appName);
+    const planPath = pagePlanPath(options.appName, options.pageId);
     const owned = new Set(app.manifest.generated_files.map(({ path }) => path));
     if (
         !owned.has(planPath) ||
@@ -249,11 +253,7 @@ async function renderExternalPageComposition(options, internal = {}) {
         );
     const planDocument = await ownedAppFile(app, planPath);
     const plan = JSON.parse(planDocument.toString('utf8'));
-    const [, ...modelPaths] = assertPlanReferences(
-        plan,
-        options.appName,
-        owned
-    );
+    const [, ...modelPaths] = assertPlanReferences(plan, owned);
     // Références : lectures d'abord, puis commandes (assertPlanReferences).
     const queryPaths = modelPaths.slice(0, plan.query_nodes.length);
     const commandPaths = modelPaths.slice(plan.query_nodes.length);
@@ -289,10 +289,10 @@ async function renderExternalPageComposition(options, internal = {}) {
             token: read.token,
         };
         renderedNodes.push(read.rendered);
-        queries.push(`${GENERATED}queries/${read.queryId}`);
+        queries.push(queryOutputRoot(options.appName, read.queryId));
         externalNodes[node.id] = {
-            root: `queries/${read.queryId}/src`,
-            module: queryModule(read.queryId),
+            root: `${queryOutputRoot(options.appName, read.queryId).slice(GENERATED.length)}/src`,
+            module: compositionQueryModule(read.queryId),
             serviceToken: read.token,
             queryInput: read.hasInput,
             protectedRead: read.protectedRead,
@@ -300,20 +300,15 @@ async function renderExternalPageComposition(options, internal = {}) {
         };
     }
     for (const [index, node] of plan.command_nodes.entries()) {
-        const command = await consumedCommand(
-            app,
-            node,
-            commandPaths[index],
-            prefix
-        );
+        const command = await consumedCommand(app, node, commandPaths[index]);
         services[command.serviceId] = {
             module: SESSION_MODULE,
             token: command.token,
         };
         renderedNodes.push(command.rendered);
         externalNodes[node.id] = {
-            root: `actions/${command.actionId}/src`,
-            module: actionModule(command.actionId),
+            root: `${actionOutputRoot(options.appName, command.actionId).slice(GENERATED.length)}/src`,
+            module: compositionActionModule(command.actionId),
             sampleInput: command.sampleInput,
             serviceToken: command.token,
         };
@@ -338,10 +333,10 @@ async function renderExternalPageComposition(options, internal = {}) {
         },
         { externalNodes }
     );
-    // Matérialisation complète, relative à src/app/generated/ : fichiers de la
+    // Matérialisation complète, relative aux sources du socle : fichiers de la
     // composition et commandes consommées. Seuls les premiers sont publiés ; le
     // manifeste de génération lie les empreintes des secondes.
-    const base = pageCompositionRoot(options.pageId);
+    const base = pageCompositionRoot(options.appName, options.pageId);
     const local = (path) =>
         path.startsWith('src/')
             ? `${base.slice(GENERATED.length)}/${path}`
@@ -378,7 +373,11 @@ async function renderExternalPageComposition(options, internal = {}) {
     return {
         pageId: options.pageId,
         commands: Object.values(externalNodes)
-            .filter(({ root }) => root.startsWith('actions/'))
+            .filter(({ root }) =>
+                `${GENERATED}${root}`.startsWith(
+                    `${socleRoot(options.appName)}/${SOCLE_ACTIONS_DIR}/`
+                )
+            )
             .map(({ root }) => `${GENERATED}${root.replace(/\/src$/, '')}`),
         queries,
         publication: {
@@ -431,14 +430,10 @@ export function publicExternalPageCompositionPlan(plan) {
 }
 
 export async function publishExternalPageComposition(options, dependencies) {
-    if (!/^[a-f0-9]{64}$/.test(options.expectedPlanId ?? ''))
-        externalFailure('publication requires a reviewed plan');
-    const rendered = await renderExternalPageComposition(options);
-    return {
-        ...(await publishApplicationPublication(
-            { ...rendered.publication, expectedPlanId: options.expectedPlanId },
-            dependencies
-        )),
-        page_id: rendered.pageId,
-    };
+    const { rendered, result } = await publishRenderedPublication(
+        options,
+        (reviewed) => renderExternalPageComposition(reviewed),
+        dependencies
+    );
+    return { ...result, page_id: rendered.pageId };
 }

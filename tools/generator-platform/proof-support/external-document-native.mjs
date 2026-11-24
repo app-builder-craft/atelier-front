@@ -117,15 +117,9 @@ export async function provePreparedDocumentCell(root, cell, contextPath) {
         labels.push(label);
     };
     const receipt = await proveNativeDocumentCell(root, cell, { fixture, run });
-    const [kind, profile] = cell.split('/');
-    const app = `ext03a-${kind.toLowerCase()}-${profile}`;
-    assert.deepEqual(labels, [
-        'native-compiler',
-        `${app}:build:production`,
-        `${app}:lint`,
-        `${app}:test`,
-        'workspace-contract',
-    ]);
+    // C-B2 : liste dérivée du plan de création (sans session : test de la
+    // coque, lint des trois projets avant la construction).
+    assert.deepEqual(labels, receipt.native_labels);
     receipt.native = {
         backend: session.backend,
         labels,

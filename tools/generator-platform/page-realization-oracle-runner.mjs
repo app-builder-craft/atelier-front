@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+import {
+    applicationProjectRoots,
+    nativeControls,
+} from './core/application-native-controls.mjs';
 
 function fail(message) {
     throw new Error(`page realization oracle: ${message}`);
@@ -36,7 +42,39 @@ function regularFile(path, label) {
     return path;
 }
 
-export function invocation(oracle, app, profile) {
+// C-B2 : le projet qui porte la cible `test` de l'appli, lu dans la liste
+// unique des contrôles natifs, sur les configurations de ses trois projets
+// sous `root` (le socle d'une appli à session, la coque sinon). Fermé : un
+// seul projet, sinon refus nommé.
+export function testProject(app, root = process.cwd()) {
+    const files = {};
+    for (const projectRoot of applicationProjectRoots(app))
+        for (const name of [
+            'project.json',
+            'eslint.config.mjs',
+            'vite.config.mts',
+        ]) {
+            const path = `${projectRoot}/${name}`;
+            if (existsSync(join(root, path)))
+                files[path] = readFileSync(
+                    regularFile(join(root, path), path),
+                    'utf8'
+                );
+        }
+    for (const projectRoot of applicationProjectRoots(app))
+        if (!Object.hasOwn(files, `${projectRoot}/project.json`))
+            fail(`projet absent : ${projectRoot}`);
+    const tests = nativeControls(app, files).filter(
+        (control) => control.target === 'test'
+    );
+    if (tests.length !== 1)
+        fail(
+            `un seul projet de test attendu : ${tests.map(({ label }) => label).join(', ') || 'aucun'}`
+        );
+    return tests[0].label;
+}
+
+export function invocation(oracle, app, profile, root = process.cwd()) {
     if (!['angular-pwa', 'react-spa'].includes(profile))
         fail("profil d'application invalide");
     if (oracle === 'compile') {
@@ -68,7 +106,7 @@ export function invocation(oracle, app, profile) {
     if (oracle === 'test') {
         return {
             script,
-            argv: ['run', `${app}:test`, '--skipNxCache'],
+            argv: ['run', testProject(app, root), '--skipNxCache'],
         };
     }
     fail(`oracle non autorisé : ${oracle}`);
@@ -80,11 +118,15 @@ export function oracleEnvironment(environment = process.env) {
     return { ...environment, NX_DAEMON: 'false' };
 }
 
-export function main(argv = process.argv.slice(2), spawn = spawnSync) {
+export function main(
+    argv = process.argv.slice(2),
+    spawn = spawnSync,
+    root = process.cwd()
+) {
     const { oracle, app, profile } = parseArgs(argv);
-    const command = invocation(oracle, app, profile);
+    const command = invocation(oracle, app, profile, root);
     const result = spawn(process.execPath, [command.script, ...command.argv], {
-        cwd: process.cwd(),
+        cwd: root,
         env: oracleEnvironment(),
         shell: false,
         encoding: 'utf8',

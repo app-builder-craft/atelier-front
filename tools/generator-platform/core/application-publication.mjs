@@ -1,45 +1,52 @@
 // ADR-0103 : seule voie pour changer l'inventaire d'une application extérieure.
-// Même modèle que create-app : plan relu, verrou, candidat, binaires du
-// produit, échange atomique, contrôles natifs et retour arrière exact.
-import { readdir } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+// Même modèle que create-app : plan relu, verrou, candidats, binaires du
+// produit, échange atomique, contrôles natifs et retour arrière exact. Lot 2
+// (conception v5, V5.2) : une publication écrit le manifeste dans la coque et
+// ses sorties dans le socle ; sa transaction porte sur ces DEUX racines, sur
+// la brique commune, avec un journal à côté du produit.
+import { resolve } from 'node:path';
 
 import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
-import { SIGNATURE_FILES } from './atelier-signature.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import {
-    installedBin,
+    compileLibraryCandidates,
     qualifyProductInstallation,
     readOwnedWorkspace,
     runExternalApplicationCommand,
+    runNativeControls,
+    verifyTransactionTrees,
 } from './application-workspace.mjs';
-import {
-    inputFilePath,
-    ownedProductContext,
-} from './application-workspace-root.mjs';
+import { inputFilePath } from './application-workspace-root.mjs';
 import {
     PUBLICATION_TOOLS,
     publishedManifest,
     verifyApplicationOwnership,
 } from './application-ownership.mjs';
+import {
+    filesUnder,
+    openTransaction,
+    recoverApplicationTransactions,
+    transactionTrees,
+} from './application-transaction.mjs';
+import { escapeRegExp } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import { repositoryRoot } from '../validate-ir.mjs';
 import {
     assertSourceWeight,
+    externalApplicationContext,
     externalFailure,
+    fileArtifacts,
     pathExists,
     readProductFile,
     stageGeneratedTree,
-    treeInventory,
-    verifyGeneratedTree,
 } from './external-application-paths.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import {
-    removeTreeAndSync,
     renameAndSync,
     withProductWriterLocks,
 } from './generation-transaction.mjs';
-
-const APP_MANIFEST = SIGNATURE_FILES.appManifest;
+import { swapTree } from './product-transaction.mjs';
+import { coqueRoot, socleRoot } from './socle-names.mjs';
 
 function appLocation(options) {
     if (!/^[a-z][a-z0-9-]*$/.test(options.appName ?? ''))
@@ -79,21 +86,15 @@ async function verifiedInputs(root, inputs) {
 }
 
 // Un préfixe couvert (X2) est republié en entier : aucun fichier ancien sous
-// ce préfixe ne peut rester sans être expliqué par la nouvelle sortie. X4 : le
-// répertoire d'une page déclarée est aussi un préfixe couvert.
-function assertCoveredPrefix(prefix, files, current) {
+// ce préfixe ne peut rester sans être expliqué par la nouvelle sortie. Lot 2 :
+// un préfixe couvert est un dossier des sources du SOCLE de l'appli.
+function assertCoveredPrefix(prefix, files, current, appName) {
     if (prefix === undefined) return null;
     if (
         typeof prefix !== 'string' ||
-        (!/^src\/app\/generated\/[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*\/$/.test(
-            prefix
-        ) &&
-            !(
-                /^src\/app\/pages\/page_[a-f0-9]{16}\/$/.test(prefix) &&
-                current.has(
-                    `${SIGNATURE_FILES.pages}/${prefix.split('/')[3]}.json`
-                )
-            ))
+        !new RegExp(
+            `^${escapeRegExp(socleRoot(appName))}/src/[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*/$`
+        ).test(prefix)
     )
         externalFailure('publication covered prefix is invalid');
     if (Object.keys(files).some((path) => !path.startsWith(prefix)))
@@ -104,17 +105,23 @@ function assertCoveredPrefix(prefix, files, current) {
     return prefix;
 }
 
+// Application courante : ses fichiers possédés et son manifeste, chemins
+// relatifs au produit (lot 2, V3.1 point 4).
 async function currentApplication(workspace, appName) {
     const root = resolve(workspace.productRoot, 'apps', appName);
     if (!(await pathExists(root))) externalFailure('application is absent');
-    const manifestBytes = await readProductFile(root, APP_MANIFEST);
+    const manifestPath = appManifestPath(appName);
+    const manifestBytes = await readProductFile(
+        workspace.productRoot,
+        manifestPath
+    );
     const manifest = JSON.parse(manifestBytes.toString('utf8'));
-    const files = { [APP_MANIFEST]: manifestBytes.toString('utf8') };
+    const files = { [manifestPath]: manifestBytes.toString('utf8') };
     for (const entry of manifest.generated_files)
-        files[entry.path] = (await readProductFile(root, entry.path)).toString(
-            'utf8'
-        );
-    return { root, manifest, manifestBytes, files };
+        files[entry.path] = (
+            await readProductFile(workspace.productRoot, entry.path)
+        ).toString('utf8');
+    return { root, manifest, manifestBytes, files, manifestPath };
 }
 
 // Liaison d'une publication : tout ce que son `plan_id` engage. Exportée,
@@ -151,8 +158,8 @@ export function publicationPlanId(binding) {
     return sha256(stableStringify(binding));
 }
 
-// `internal.recoveringApp` : seulement depuis la reprise sous verrou, pour
-// tolérer les candidats de cette application (ADR-0103).
+// `internal.transaction` : la publication elle-même, sous verrou, qui relit
+// son plan pendant sa transaction (lot 2, V5.2).
 export async function planApplicationPublication(options, internal = {}) {
     const { output } = appLocation(options);
     if (!PUBLICATION_TOOLS.includes(options.tool))
@@ -173,7 +180,8 @@ export async function planApplicationPublication(options, internal = {}) {
     const coveredPrefix = assertCoveredPrefix(
         options.coveredPrefix,
         options.files,
-        current
+        current,
+        options.appName
     );
     const inputs = await verifiedInputs(
         workspace.productRoot,
@@ -216,20 +224,22 @@ export async function planApplicationPublication(options, internal = {}) {
     const planId = publicationPlanId(binding);
     const record = { plan_id: planId, tool: options.tool, files: changes };
     const next = publishedManifest(app.manifest, record, workspaceId);
-    const manifestPath = `apps/${options.appName}/${APP_MANIFEST}`;
     const manifestText = (
         await canonicalizeGeneratedFiles({
-            [manifestPath]: JSON.stringify(next, null, 2) + '\n',
+            [app.manifestPath]: JSON.stringify(next, null, 2) + '\n',
         })
-    )[manifestPath];
+    )[app.manifestPath];
     const files = { ...app.files, ...options.files };
-    files[APP_MANIFEST] = manifestText;
-    const candidateName = (kind) =>
-        resolve(
-            workspace.productRoot,
-            'apps',
-            `.${options.appName}.${kind}-candidate-${planId}`
-        );
+    files[app.manifestPath] = manifestText;
+    // Deux racines : la coque (manifeste) et le socle (sorties) ; chacune avec
+    // ses listes d'artéfacts d'avant et d'après.
+    const roots = [coqueRoot(options.appName), socleRoot(options.appName)].map(
+        (root) => ({
+            root,
+            files: filesUnder(files, root),
+            before: fileArtifacts(filesUnder(app.files, root)),
+        })
+    );
     return {
         plan_id: planId,
         app_name: options.appName,
@@ -237,14 +247,13 @@ export async function planApplicationPublication(options, internal = {}) {
         tool: options.tool,
         output: `apps/${options.appName}`,
         outputAbsolute: output,
-        candidate: candidateName('publication'),
-        previous: candidateName('previous'),
         root: workspace.productRoot,
         changes,
         inputs,
         manifest_sha256: sha256(manifestText),
         files,
         previousFiles: app.files,
+        roots,
         workspace,
         installation,
     };
@@ -263,164 +272,65 @@ export function publicApplicationPublicationPlan(plan) {
     };
 }
 
-// Premier écart d'un arbre avec son propre manifeste, en chemin relatif à
-// l'application (M-3) : la commande de reprise le nomme sans chemin local.
-async function firstOwnedTreeDrift(root) {
-    let manifest;
-    try {
-        manifest = JSON.parse(
-            (await readProductFile(root, APP_MANIFEST)).toString('utf8')
-        );
-    } catch {
-        return { path: APP_MANIFEST, kind: 'manifest' };
-    }
-    const expected = new Map(
-        (manifest.generated_files ?? []).map((entry) => [entry.path, entry])
-    );
-    let actual;
-    try {
-        actual = await treeInventory(root);
-    } catch {
-        return { path: null, kind: 'entry' };
-    }
-    const present = new Set();
-    for (const entry of actual) {
-        if (entry.path === APP_MANIFEST) continue;
-        const wanted = expected.get(entry.path);
-        if (!wanted) return { path: entry.path, kind: 'unlisted' };
-        present.add(entry.path);
-        if (wanted.sha256 !== entry.sha256 || wanted.bytes !== entry.bytes)
-            return { path: entry.path, kind: 'modified' };
-    }
-    for (const path of expected.keys())
-        if (!present.has(path)) return { path, kind: 'missing' };
-    // Écart que l'inventaire n'explique pas : libellé neutre (M-5).
-    return { path: null, kind: 'tree' };
-}
-
-function ambiguous(drift) {
-    const error = new Error(
-        'external application: ambiguous interrupted publication'
-    );
-    if (drift) error.drift = drift;
-    throw error;
-}
-
-// Arbre complet et exact selon son propre manifeste, sinon rien n'est retiré.
-// `tree` : nom de l'arbre relatif au produit, pour le diagnostic.
-async function assertExactOwnedTree(root, tree) {
-    try {
-        const text = (await readProductFile(root, APP_MANIFEST)).toString(
-            'utf8'
-        );
-        const files = { [APP_MANIFEST]: text };
-        for (const entry of JSON.parse(text).generated_files) {
-            const content = await readProductFile(root, entry.path);
-            if (
-                sha256(content) !== entry.sha256 ||
-                content.length !== entry.bytes
-            )
-                externalFailure('drift');
-            files[entry.path] = content.toString('utf8');
-        }
-        await verifyGeneratedTree(root, files);
-    } catch {
-        ambiguous({ tree, ...(await firstOwnedTreeDrift(root)) });
-    }
-}
-
-// Un candidat est retiré seulement s'il est un état exact : partiel du plan
-// courant, ou complet selon son propre manifeste.
-async function disposeCandidate(options, candidate) {
-    let plan;
-    try {
-        if (options.tool && options.files)
-            plan = await planApplicationPublication(
-                options,
-                recovering(options)
-            );
-    } catch {
-        plan = undefined;
-    }
-    if (plan?.candidate === candidate) {
-        try {
-            await verifyGeneratedTree(candidate, plan.files, { partial: true });
-        } catch {
-            ambiguous({
-                tree: `apps/${basename(candidate)}`,
-                path: null,
-                kind: 'partial',
-            });
-        }
-    } else await assertExactOwnedTree(candidate, `apps/${basename(candidate)}`);
-    await removeTreeAndSync(candidate);
-}
-
-const recovering = (options) => ({ recoveringApp: options.appName });
-
-// Reprise, verrou tenu : une publication interrompue est annulée si son état
-// est exact ; sinon elle est refusée comme ambiguë et tout reste en place. Le
-// nouvel arbre n'est jamais adopté sans avoir fini ses contrôles. Tant qu'elle
-// n'est pas reprise, toute autre commande extérieure est refusée.
-async function recoverUnderLock(options) {
-    const { apps, output } = appLocation(options);
-    const prefix = `.${options.appName}.`;
-    const own = (await readdir(apps)).filter(
-        (name) =>
-            name.startsWith(prefix) &&
-            /^\.[a-z][a-z0-9-]*\.(?:publication|previous)-candidate-[a-f0-9]{64}$/.test(
-                name
-            )
-    );
-    const previous = own.filter((name) => name.includes('.previous-'));
-    const candidates = own.filter((name) => name.includes('.publication-'));
-    if (previous.length > 1 || candidates.length > 1)
-        ambiguous({ tree: 'apps', path: null, kind: 'several' });
-    if (previous.length === 1) {
-        const previousRoot = resolve(apps, previous[0]);
-        await assertExactOwnedTree(previousRoot, `apps/${previous[0]}`);
-        if (await pathExists(output)) {
-            if (candidates.length === 1)
-                ambiguous({ tree: 'apps', path: null, kind: 'several' });
-            // Échange fait, contrôles non confirmés : retour à l'état relu.
-            await assertExactOwnedTree(output, `apps/${options.appName}`);
-            const failed = resolve(
-                apps,
-                previous[0].replace('.previous-', '.publication-')
-            );
-            await renameAndSync(output, failed);
-            await renameAndSync(previousRoot, output);
-            await removeTreeAndSync(failed);
-        } else {
-            await renameAndSync(previousRoot, output);
-            if (candidates.length === 1)
-                await disposeCandidate(options, resolve(apps, candidates[0]));
-        }
-        return { recovered: true };
-    }
-    if (candidates.length === 1) {
-        await disposeCandidate(options, resolve(apps, candidates[0]));
-        return { recovered: true };
-    }
-    return { recovered: false };
-}
-
 // Commande de reprise explicite (recover:application-publication) : racine du
-// produit vérifiée comme pour toute commande extérieure, puis verrou de
-// l'application.
+// produit vérifiée, marqueur présent, puis verrous ; chaque transaction
+// interrompue de l'appli (création ou publication) est finie ou annulée selon
+// son état observé, ou refusée comme ambiguë sans rien déplacer.
 export async function recoverApplicationPublication(options) {
-    const { product, output } = appLocation(options);
-    await ownedProductContext({
+    const { output } = appLocation(options);
+    const context = await externalApplicationContext({
         workspaceRoot: options.workspaceRoot ?? repositoryRoot,
         targetRoot: options.targetRoot,
     });
-    return withProductWriterLocks(product, [output], () =>
-        recoverUnderLock(options)
+    if (
+        !(await pathExists(
+            resolve(context.productRoot, EXTERNAL_WORKSPACE_SIGNATURE.manifest)
+        ))
+    )
+        externalFailure('workspace ownership marker missing');
+    return withProductWriterLocks(context.productRoot, [output], async () => {
+        const transactions = await recoverApplicationTransactions(
+            context.productRoot,
+            options.appName
+        );
+        if (transactions.length)
+            await readOwnedWorkspace({
+                ...options,
+                workspaceRoot: context.toolsRoot,
+                targetRoot: context.productRoot,
+            });
+        return { recovered: transactions.length > 0, transactions };
+    });
+}
+
+// Lot 2 (V5.2) : la commande d'un outil relue reprend D'ABORD la transaction
+// interrompue de son appli (verrous tenus), PUIS lit le produit pour rendre
+// sa publication : sa lecture ne voit jamais un état de transaction, et toute
+// autre commande reste refusée tant que la reprise n'est pas faite.
+export async function publishRenderedPublication(
+    options,
+    render,
+    dependencies
+) {
+    if (!/^[a-f0-9]{64}$/.test(options.expectedPlanId ?? ''))
+        externalFailure('publication requires a reviewed plan');
+    const { recovered } = await recoverApplicationPublication(options);
+    const rendered = await render(options);
+    const result = await publishApplicationPublication(
+        { ...rendered.publication, expectedPlanId: options.expectedPlanId },
+        dependencies
     );
+    return {
+        rendered,
+        result: {
+            ...result,
+            recovered: recovered || result.recovered === true,
+        },
+    };
 }
 
 async function alreadyPublished(options) {
-    const workspace = await readOwnedWorkspace(options, recovering(options));
+    const workspace = await readOwnedWorkspace(options);
     const app = await currentApplication(workspace, options.appName);
     return (
         app.manifest.ownership.publications.at(-1)?.plan_id ===
@@ -436,66 +346,64 @@ export async function publishApplicationPublication(
         externalFailure('publication requires a reviewed plan');
     const run = dependencies.run ?? runExternalApplicationCommand;
     const phase = dependencies.phase ?? (() => undefined);
-    // Injectable pour éprouver un échec entre les deux renommages de l'échange.
+    // Injectable pour éprouver un échec à chaque échange de racine.
     const swap = dependencies.rename ?? renameAndSync;
-    const internal = recovering(options);
     const { product, output } = appLocation(options);
     return withProductWriterLocks(product, [output], async () => {
-        const recovery = await recoverUnderLock(options);
+        // Une transaction interrompue de cette appli est reprise d'abord.
+        const recovered =
+            (await recoverApplicationTransactions(product, options.appName))
+                .length > 0;
         if (await alreadyPublished(options))
             return {
                 plan_id: options.expectedPlanId,
                 replayed: true,
-                recovered: recovery.recovered,
+                recovered,
             };
-        const plan = await planApplicationPublication(options, internal);
+        const plan = await planApplicationPublication(options);
         if (plan.plan_id !== options.expectedPlanId)
             externalFailure('reviewed publication plan is stale');
+        const internal = { transaction: plan.plan_id };
         const recheck = async () => {
             const current = await planApplicationPublication(options, internal);
             if (current.plan_id !== plan.plan_id)
                 externalFailure('publication inputs changed');
         };
-        await stageGeneratedTree(plan.candidate, plan.files);
+        const trees = transactionTrees(
+            plan.root,
+            'publication',
+            plan.plan_id,
+            plan.roots
+        );
+        const transaction = await openTransaction(
+            plan.root,
+            'publication',
+            plan.plan_id,
+            plan.app_name,
+            trees
+        );
         try {
+            for (const tree of trees)
+                await stageGeneratedTree(
+                    resolve(tree.parent, tree.candidate),
+                    tree.content
+                );
             await phase('candidate-staged', plan);
-            await run(
-                process.execPath,
-                [
-                    installedBin(
-                        plan,
-                        plan.profile === 'angular-pwa'
-                            ? '@angular/compiler-cli'
-                            : 'typescript',
-                        plan.profile === 'angular-pwa' ? 'ngc' : 'tsc'
-                    ),
-                    '-p',
-                    resolve(plan.candidate, 'tsconfig.app.json'),
-                    '--noEmit',
-                ],
-                plan.root
-            );
-            await verifyGeneratedTree(plan.candidate, plan.files);
+            await compileLibraryCandidates(plan, trees, run);
+            await verifyTransactionTrees(trees, 'candidate');
             await phase('compiled', plan);
             await recheck();
-            await swap(plan.outputAbsolute, plan.previous);
-            await swap(plan.candidate, plan.outputAbsolute);
-            await phase('published', plan);
-            for (const target of ['build:production', 'lint', 'test']) {
-                await run(
-                    process.execPath,
-                    [
-                        installedBin(plan, 'nx', 'nx'),
-                        'run',
-                        `${plan.app_name}:${target}`,
-                        '--skipNxCache',
-                        '--outputStyle=stream',
-                    ],
-                    plan.root
-                );
-                await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-                await phase(target, plan);
+            await transaction.step('staged');
+            for (const tree of trees) {
+                await swapTree(tree, swap);
+                await phase(`swapped:${tree.root}`, plan);
             }
+            await transaction.step('swapped');
+            await phase('published', plan);
+            await runNativeControls(plan, plan.files, run, async (label) => {
+                await verifyTransactionTrees(trees);
+                await phase(label, plan);
+            });
             await run(
                 process.execPath,
                 [
@@ -507,49 +415,30 @@ export async function publishApplicationPublication(
                 plan.root
             );
             await assertSourceWeight(plan.root);
-            await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+            await verifyTransactionTrees(trees);
             const after = await readOwnedWorkspace(options, internal);
             if (after.plan_id !== plan.workspace.plan_id)
                 externalFailure('workspace changed during publication');
             verifyApplicationOwnership(
-                JSON.parse(plan.files[APP_MANIFEST]),
+                JSON.parse(plan.files[appManifestPath(plan.app_name)]),
                 after.manifest.workspace_id
             );
+            await transaction.step('verified');
             await phase('verified', plan);
-            await removeTreeAndSync(plan.previous);
+            await transaction.complete();
             return {
                 plan_id: plan.plan_id,
                 replayed: false,
-                recovered: recovery.recovered,
+                recovered,
                 plan,
             };
         } catch (error) {
             try {
-                // L'ancien arbre mis de côté revient toujours, même si l'échange
-                // s'est arrêté entre ses deux renommages : l'application n'est
-                // jamais laissée absente. Seul un arbre neuf encore exact est
-                // déplacé ; sinon tout reste en place.
-                if (await pathExists(plan.previous)) {
-                    if (await pathExists(plan.outputAbsolute)) {
-                        await verifyGeneratedTree(
-                            plan.outputAbsolute,
-                            plan.files
-                        );
-                        await renameAndSync(
-                            plan.outputAbsolute,
-                            plan.candidate
-                        );
-                    }
-                    await renameAndSync(plan.previous, plan.outputAbsolute);
-                }
-                if (await pathExists(plan.candidate)) {
-                    await verifyGeneratedTree(plan.candidate, plan.files);
-                    await removeTreeAndSync(plan.candidate);
-                }
+                await transaction.settle();
             } catch (rollbackError) {
                 throw new AggregateError(
                     [error, rollbackError],
-                    'external application: publication rollback refused; inspect the owned tree locally',
+                    'external application: publication rollback refused; run recover:application-publication',
                     { cause: rollbackError }
                 );
             }

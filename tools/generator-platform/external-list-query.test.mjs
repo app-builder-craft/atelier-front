@@ -74,7 +74,7 @@ test('C3a : lecture extérieure publiée sous plan sur deux produits fictifs', a
                 `descriptions/session-${domain}/declared.json`,
             ].sort()
         );
-        const base = queryOutputRoot(plan.query_id);
+        const base = queryOutputRoot(product.shell.appName, plan.query_id);
         assert.ok(
             plan.changes.every(({ path }) => path.startsWith(`${base}/`))
         );
@@ -107,8 +107,9 @@ test('C3a : lecture extérieure publiée sous plan sur deux produits fictifs', a
             native()
         );
         assert.equal(result.plan_id, plan.plan_id);
-        await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-        const manifest = await readManifest(product.app);
+        for (const { root, files } of plan.roots)
+            await verifyGeneratedTree(join(plan.root, root), files);
+        const manifest = await readManifest(product);
         const record = manifest.ownership.publications.at(-1);
         assert.equal(record.tool, 'generate:list-query');
         assert.equal(record.plan_id, plan.plan_id);
@@ -178,11 +179,14 @@ test('C4 (E6) : page à lecture planifiée ; sa lecture republiée la nomme comm
     );
     const pageOptions = { ...product.base, pageId: page.id };
     const planned = await planExternalPagePlan(pageOptions);
-    const plan = JSON.parse(planned.files[pagePlanPath(page.id)]);
+    const plan = JSON.parse(
+        planned.files[pagePlanPath(product.shell.appName, page.id)]
+    );
+    // V5.1 règle 4 : la référence est le chemin d'inventaire, dans le socle.
     assert.deepEqual(
         plan.query_nodes.map((node) => node.primitive_ref.uri),
         [
-            `apps/${product.shell.appName}/${queryOutputRoot(first.query_id)}/execution-model.json`,
+            `${queryOutputRoot(product.shell.appName, first.query_id)}/execution-model.json`,
         ]
     );
     await publishExternalPagePlan(
@@ -265,7 +269,7 @@ test('C4 (limite de E) : la fixture PUBLIÉE couvre tous les champs du contrat, 
         const plan = await planExternalListQuery(product.options);
         const spec =
             plan.files[
-                `${queryOutputRoot(plan.query_id)}/src/${plan.query_id}.contract.spec.ts`
+                `${queryOutputRoot(product.shell.appName, plan.query_id)}/src/${plan.query_id}.contract.spec.ts`
             ];
         const contract = JSON.parse(
             await readFile(
@@ -277,7 +281,9 @@ test('C4 (limite de E) : la fixture PUBLIÉE couvre tous les champs du contrat, 
             )
         );
         const model = JSON.parse(
-            plan.files[`${queryOutputRoot(plan.query_id)}/execution-model.json`]
+            plan.files[
+                `${queryOutputRoot(product.shell.appName, plan.query_id)}/execution-model.json`
+            ]
         );
         const item = contract.models.find(
             (entry) => entry.id === model.queries[0].wire_model.id

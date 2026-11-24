@@ -13,14 +13,15 @@ import { repositoryRoot } from '../validate-ir.mjs';
 import {
     planApplicationPublication,
     publicApplicationPublicationPlan,
-    publishApplicationPublication,
+    publishRenderedPublication,
 } from './application-publication.mjs';
 import {
     inputFilePath,
     ownedProductContext,
     readAppManifest,
 } from './application-workspace-root.mjs';
-import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
+import { pageContractPath } from './application-ownership.mjs';
+import { escapeRegExp } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import {
     externalFailure,
@@ -33,23 +34,18 @@ import {
     actionOutputRoot,
     ownedAppFile,
     pagesConsumingCommand,
+    SESSION_MODULE,
+    sessionEndpointsPath,
+    sessionIndexPath,
 } from './external-publication-paths.mjs';
 import { sha256 } from './generation-manifest.mjs';
-
-// Contrat de page publié sous le dossier de signature.
-const PAGE_CONTRACT = new RegExp(
-    `^${escapeRegExp(SIGNATURE_FILES.pages)}/page_[a-f0-9]{16}\\.json$`
-);
 
 export {
     ACTION_REQUEST_TOOL,
     actionExecutionModelPath,
     actionOutputRoot,
+    SESSION_MODULE,
 } from './external-publication-paths.mjs';
-const SESSION_INDEX = 'src/app/session/index.ts';
-const SESSION_ENDPOINTS = 'src/app/session/service-endpoints.ts';
-// Depuis src/app/generated/actions/<id>/src/ vers src/app/session.
-export const SESSION_MODULE = '../../../../session';
 
 async function digest(root, path) {
     return { path, sha256: sha256(await readProductFile(root, path)) };
@@ -85,15 +81,17 @@ export async function sessionApplication(
     // Angular seulement : React reste explicitement refusé.
     if (manifest.profile !== 'angular-pwa')
         externalFailure(`${label} requires an angular-pwa app`);
+    // Lot 2 : la session vit dans le socle de l'appli ; inventaire relatif au
+    // produit.
     const owned = new Set(manifest.generated_files.map((entry) => entry.path));
-    if (!owned.has(SESSION_INDEX) || !owned.has(SESSION_ENDPOINTS))
+    const endpoints = sessionEndpointsPath(appName);
+    if (!owned.has(sessionIndexPath(appName)) || !owned.has(endpoints))
         externalFailure('application has no session module');
     return {
         appRoot,
+        productRoot: root,
         manifest,
-        endpoints: (await readProductFile(appRoot, SESSION_ENDPOINTS)).toString(
-            'utf8'
-        ),
+        endpoints: (await readProductFile(root, endpoints)).toString('utf8'),
     };
 }
 
@@ -170,8 +168,12 @@ export function assertShellServiceBinding(endpoints, serviceId, contractId) {
 // M-2 : même identifiant de contrat, mêmes octets que ceux que les pages de
 // l'application déclarent ; sinon le plan de page le refuserait plus tard.
 export async function assertDeclaredContract(app, contract) {
+    // Contrats de page de l'appli, sous le dossier de signature de sa coque.
+    const contractPage = new RegExp(
+        `^${escapeRegExp(pageContractPath(app.manifest.app_name, '\0')).replace('\0', 'page_[a-f0-9]{16}')}$`
+    );
     for (const { path } of app.manifest.generated_files) {
-        if (!PAGE_CONTRACT.test(path)) continue;
+        if (!contractPage.test(path)) continue;
         const page = JSON.parse((await ownedAppFile(app, path)).toString());
         for (const reference of page.backend_contracts ?? [])
             if (
@@ -225,7 +227,7 @@ async function renderExternalActionRequest(options) {
         },
     });
     await assertDeclaredContract(app, target.model.backend_contract);
-    const base = actionOutputRoot(target.actionId);
+    const base = actionOutputRoot(options.appName, target.actionId);
     const files = Object.fromEntries(
         Object.entries(target.files).map(([path, content]) => [
             `${base}/${path}`,
@@ -233,7 +235,10 @@ async function renderExternalActionRequest(options) {
         ])
     );
     const manifestPath = `${base}/generation-manifest.json`;
-    const modelPath = actionExecutionModelPath(target.actionId);
+    const modelPath = actionExecutionModelPath(
+        options.appName,
+        target.actionId
+    );
     Object.assign(
         files,
         await canonicalizeGeneratedFiles({
@@ -285,11 +290,9 @@ export function publicExternalActionRequestPlan(plan) {
 }
 
 export async function publishExternalActionRequest(options, dependencies) {
-    if (!/^[a-f0-9]{64}$/.test(options.expectedPlanId ?? ''))
-        externalFailure('publication requires a reviewed plan');
-    const rendered = await renderExternalActionRequest(options);
-    const result = await publishApplicationPublication(
-        { ...rendered.publication, expectedPlanId: options.expectedPlanId },
+    const { rendered, result } = await publishRenderedPublication(
+        options,
+        renderExternalActionRequest,
         dependencies
     );
     return {

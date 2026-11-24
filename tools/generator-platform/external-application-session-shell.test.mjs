@@ -44,6 +44,15 @@ import {
     writeExternalSessionDesign,
 } from './test-support/external-session-fixture.mjs';
 import { SIGNATURE_FILES, INTERNAL } from './core/atelier-signature.mjs';
+import { appManifestPath } from './renderers/external-product-layout.mjs';
+
+// Lot 2 (V5.1) : la session vit dans le socle ; chemins relatifs au produit.
+const coque = (app) => `apps/${app}`;
+const session = (app) => `libs/${app}-socle/src/session`;
+const verifyRoots = async (plan) => {
+    for (const { root, files } of plan.roots)
+        await verifyGeneratedTree(join(plan.root, root), files);
+};
 
 async function sessionProduct(t, domain) {
     const fixture = await prepareFixture(t);
@@ -79,11 +88,14 @@ test('X0 : deux produits fictifs planifient une coque Angular avec session, sans
             );
         const files = Object.keys(plan.files);
         for (const path of [
-            'src/app/session/session.guard.ts',
-            'src/app/session/session.store.ts',
-            'src/app/session/session.interceptor.ts',
+            'session.guard.ts',
+            'session.store.ts',
+            'session.interceptor.ts',
         ])
-            assert.ok(files.includes(path), path);
+            assert.ok(
+                files.includes(`${session(plan.app_name)}/${path}`),
+                path
+            );
         const source = typescript(plan)
             .map(([, content]) => content)
             .join('\n');
@@ -100,7 +112,8 @@ test('X0 : deux produits fictifs planifient une coque Angular avec session, sans
         for (const url of product.input.serviceUrls)
             for (const [path, content] of Object.entries(plan.files))
                 assert.equal(content.includes(url), false, path);
-        const routes = plan.files['src/app/app.routes.ts'];
+        const routes =
+            plan.files[`${coque(plan.app_name)}/src/app/app.routes.ts`];
         for (const page of product.input.design.pages)
             assert.match(
                 routes,
@@ -116,7 +129,7 @@ test('X0 : deux produits fictifs planifient une coque Angular avec session, sans
         );
         const entry = JSON.parse(
             plan.files[
-                `${SIGNATURE_FILES.pages}/${product.input.entryPage.id}.json`
+                `${coque(plan.app_name)}/${SIGNATURE_FILES.pages}/${product.input.entryPage.id}.json`
             ]
         );
         assert.equal(entry.experience.session.storage, 'memory');
@@ -179,9 +192,10 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
         assert.equal(reviewed.plan_id, plan.plan_id);
         assert.equal(reviewed.output, `apps/session-${domain}`);
         assert.deepEqual(reviewed.files, Object.keys(plan.files).sort());
+        assert.deepEqual(reviewed.seeds, Object.keys(plan.seeds).sort());
         // Le dry-run n'écrit rien dans le produit.
         assert.equal(await pathExists(plan.outputAbsolute), false);
-        assert.equal(await pathExists(plan.candidate), false);
+        assert.equal(await pathExists(join(product.root, 'libs')), false);
         const marker = await readFile(
             join(product.root, SIGNATURE_FILES.workspaceManifest)
         );
@@ -207,11 +221,18 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
                   : 'native-compiler';
         });
         const app = `session-${domain}`;
+        // Lot 2 : compilation des deux candidats de bibliothèque, puis la liste
+        // unique des contrôles (C-B2) : lint de chaque projet AVANT la
+        // construction (T-E8 = P1), puis la cible `test` du SOCLE ; la coque à
+        // session n'en a plus.
         assert.deepEqual(labels, [
             'native-compiler',
-            `${app}:build:production`,
+            'native-compiler',
             `${app}:lint`,
-            `${app}:test`,
+            `${app}-socle:lint`,
+            `${app}-interface:lint`,
+            `${app}:build:production`,
+            `${app}-socle:test`,
             'workspace-contract',
         ]);
         assert.ok(
@@ -221,13 +242,12 @@ test('X0 : create-app --target-root --dry-run, puis publication relue avec les s
             calls.at(-1).args[0],
             join(product.root, WORKSPACE.support, 'check-workspace.mjs')
         );
-        await verifyGeneratedTree(plan.outputAbsolute, plan.files);
-        assert.equal(await pathExists(plan.candidate), false);
-        const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
+        await verifyRoots(plan);
+        const manifest = JSON.parse(plan.files[appManifestPath(app)]);
         assert.equal(manifest.design_ref.path, product.input.designPath);
         assert.ok(
             manifest.generated_files.some(
-                (entry) => entry.path === 'src/app/session/session.guard.ts'
+                (entry) => entry.path === `${session(app)}/session.guard.ts`
             )
         );
         assert.deepEqual(
@@ -258,6 +278,7 @@ test('X0 : une entrée de session modifiée après relecture périme le plan, sa
         'descriptions/session-observatory/backend.json'
     );
     await writeFile(contract, (await readFile(contract, 'utf8')) + ' ');
+    const before = await snapshotTree(product.root, []);
     await assert.rejects(
         publishExternalApplicationShell(
             { ...product.shell, expectedPlanId: plan.plan_id },
@@ -265,31 +286,65 @@ test('X0 : une entrée de session modifiée après relecture périme le plan, sa
         ),
         /external application:/
     );
-    assert.equal(await pathExists(plan.outputAbsolute), false);
-    assert.equal(await pathExists(plan.candidate), false);
+    assert.deepEqual(await snapshotTree(product.root, []), before);
 });
 
 test('X0 : un fichier ajouté à la main dans la coque avec session bloque toute commande suivante', async (t) => {
-    const product = await sessionProduct(t, 'equipment-hire');
-    const plan = await planExternalApplicationShell(product.shell);
-    await publishExternalApplicationShell(
-        { ...product.shell, expectedPlanId: plan.plan_id },
-        { run: () => undefined }
-    );
-    const added = join(plan.outputAbsolute, 'src/app/pages/hand-made.ts');
-    await writeFile(added, 'export const handMade = true;\n', { flag: 'wx' });
-    // État d'entrée du lot : aucune adoption, même d'un fichier anodin.
-    await assert.rejects(
-        planExternalApplicationShell(product.shell),
-        /generated inventory drift/
-    );
-    await assert.rejects(
-        planExternalApplicationShell({
-            ...product.shell,
-            appName: 'session-equipment-hire-second',
-        }),
-        /generated inventory drift/
-    );
+    // Lot 2 (v1 commit 1) : fichier ajouté ou modifié dans la coque ou le
+    // socle, ou hors des sources de l'interface : REFUSÉ par l'atelier ;
+    // fichier libre dans les sources de l'interface : ADMIS.
+    const app = 'session-equipment-hire';
+    for (const [path, refusal] of [
+        [`${coque(app)}/src/app/hand-made.ts`, /generated inventory drift/],
+        [`${session(app)}/hand-made.ts`, /generated inventory drift/],
+        [`libs/${app}-interface/hand-made.ts`, /unowned interface file/],
+        [`libs/${app}-interface/src/pages/notes.ts`, null],
+    ]) {
+        await t.test(path, async (child) => {
+            const product = await sessionProduct(child, 'equipment-hire');
+            const plan = await planExternalApplicationShell(product.shell);
+            await publishExternalApplicationShell(
+                { ...product.shell, expectedPlanId: plan.plan_id },
+                { run: () => undefined }
+            );
+            await writeFile(
+                join(product.root, path),
+                'export const handMade = true;\n',
+                { flag: 'wx' }
+            );
+            const second = {
+                ...product.shell,
+                appName: 'session-equipment-hire-second',
+            };
+            if (!refusal) {
+                await planExternalApplicationShell(second);
+                return;
+            }
+            // État d'entrée du lot : aucune adoption, même d'un fichier anodin.
+            await assert.rejects(
+                planExternalApplicationShell(product.shell),
+                refusal
+            );
+            await assert.rejects(planExternalApplicationShell(second), refusal);
+        });
+    }
+    await t.test('fichier possédé du socle modifié', async (child) => {
+        const product = await sessionProduct(child, 'equipment-hire');
+        const plan = await planExternalApplicationShell(product.shell);
+        await publishExternalApplicationShell(
+            { ...product.shell, expectedPlanId: plan.plan_id },
+            { run: () => undefined }
+        );
+        const owned = join(product.root, session(app), 'session.store.ts');
+        await writeFile(owned, (await readFile(owned, 'utf8')) + '\n');
+        await assert.rejects(
+            planExternalApplicationShell({
+                ...product.shell,
+                appName: 'session-equipment-hire-second',
+            }),
+            /workspace ownership drift/
+        );
+    });
 });
 
 // Régression trouvée par la preuve native X0 : sans test, la cible native
@@ -299,46 +354,86 @@ test('X0 : la coque extérieure avec session porte son test de garde ; le mode a
         const data = await createApplicationSessionFixture({ domain });
         t.after(() => rm(data.root, { recursive: true, force: true }));
         const render = async (externalWorkspace) =>
-            (
-                await renderAngularPwaShell({
-                    design: data.design,
-                    experienceId: data.design.experiences[0].id,
-                    appName: 'session-mode',
-                    designPath: `design/${domain}.json`,
-                    designSha256: hash('mode'),
-                    externalWorkspace,
-                    prefix: FIXTURE_PREFIX,
-                })
-            ).files;
-        const atelier = await render(false);
-        const external = await render(true);
-        const spec = 'src/app/session/session.guard.spec.ts';
+            renderAngularPwaShell({
+                design: data.design,
+                experienceId: data.design.experiences[0].id,
+                appName: 'session-mode',
+                designPath: `design/${domain}.json`,
+                designSha256: hash('mode'),
+                externalWorkspace,
+                prefix: FIXTURE_PREFIX,
+            });
+        const atelier = (await render(false)).files;
+        const product = await render(true);
+        const external = product.files;
         const specs = (files) =>
             Object.keys(files).filter((path) => path.endsWith('.spec.ts'));
         assert.deepEqual(specs(atelier), []);
-        // X4-sécurité-3, G1 : connectivité et sa spec, extérieur seulement.
-        const connectivity = 'src/app/session/connectivity.ts';
-        const connectivitySpec = 'src/app/session/connectivity.spec.ts';
-        // P-A4 : navigation de session bornée aux routes déclarées.
-        const navigationSpec = 'src/app/session/session.navigation.spec.ts';
+        // Lot 2 : la garde, la connectivité (X4-sécurité-3, G1) et la
+        // navigation bornée (P-A4) et leurs specs vivent dans le socle.
+        const socle = session('session-mode');
+        const spec = `${socle}/session.guard.spec.ts`;
+        const connectivity = `${socle}/connectivity.ts`;
+        const connectivitySpec = `${socle}/connectivity.spec.ts`;
+        const navigationSpec = `${socle}/session.navigation.spec.ts`;
         assert.deepEqual(specs(external).sort(), [
             connectivitySpec,
             spec,
             navigationSpec,
         ]);
-        assert.deepEqual(
-            Object.keys(external).sort(),
-            [
-                ...Object.keys(atelier),
-                spec,
-                connectivity,
-                connectivitySpec,
-                navigationSpec,
-                EXTERNAL_CSP_HEADER_PATH,
-                ...Object.values(RELAY_FILES),
-                relayEnvshPath(FIXTURE_PREFIX),
-            ].sort()
-        );
+        // Chaque fichier du mode atelier a sa place dans la disposition
+        // extérieure : session au socle, amorces de page à l'interface, le
+        // reste dans la coque.
+        for (const path of Object.keys(atelier)) {
+            const page = /^src\/app\/pages\/(page_[a-f0-9]{16})\/(.+)$/.exec(
+                path
+            );
+            if (path === SIGNATURE_FILES.appManifest) continue;
+            // L-5 : sans spec, la coque perd aussi sa configuration de specs.
+            if (path === 'tsconfig.spec.json') {
+                assert.equal(
+                    Object.hasOwn(
+                        external,
+                        `${coque('session-mode')}/tsconfig.spec.json`
+                    ),
+                    false
+                );
+                continue;
+            }
+            if (path.startsWith('src/app/session/'))
+                assert.ok(
+                    Object.hasOwn(
+                        external,
+                        `${socle}/${path.slice('src/app/session/'.length)}`
+                    ),
+                    path
+                );
+            else if (page)
+                assert.ok(
+                    Object.hasOwn(
+                        product.seeds,
+                        `libs/session-mode-interface/src/pages/${page[1]}/${page[2]}`
+                    ),
+                    path
+                );
+            else
+                assert.ok(
+                    Object.hasOwn(external, `${coque('session-mode')}/${path}`),
+                    path
+                );
+        }
+        for (const path of [
+            EXTERNAL_CSP_HEADER_PATH,
+            ...Object.values(RELAY_FILES).filter(
+                (path) => path !== RELAY_FILES.endpoints
+            ),
+            relayEnvshPath(FIXTURE_PREFIX),
+        ])
+            assert.ok(
+                Object.hasOwn(external, `${coque('session-mode')}/${path}`),
+                path
+            );
+        assert.ok(Object.hasOwn(external, `${socle}/relay-endpoints.ts`));
         assert.match(
             external[connectivity],
             /readonly online: Signal<boolean>/
@@ -347,8 +442,25 @@ test('X0 : la coque extérieure avec session porte son test de garde ; le mode a
         assert.match(external[spec], /toBeInstanceOf\(UrlTree\)/);
         assert.ok(
             JSON.parse(
-                external[SIGNATURE_FILES.appManifest]
+                external[appManifestPath('session-mode')]
             ).generated_files.some((entry) => entry.path === spec)
+        );
+        // L-5 : la coque à session n'a plus de spec, donc pas de cible `test` ;
+        // le socle en porte une, qui vise la construction de la coque (V5.5).
+        const coqueProject = JSON.parse(
+            external[`${coque('session-mode')}/project.json`]
+        );
+        assert.equal(coqueProject.targets.test, undefined);
+        const socleProject = JSON.parse(
+            external['libs/session-mode-socle/project.json']
+        );
+        assert.equal(
+            socleProject.targets.test.executor,
+            '@angular/build:unit-test'
+        );
+        assert.equal(
+            socleProject.targets.test.options.buildTarget,
+            'session-mode:build:development'
         );
     }
 });
@@ -374,7 +486,16 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
             })
         ).files;
     const atelier = await render(false);
-    const external = await render(true);
+    const rendered = await render(true);
+    // Lot 2 : la coque extérieure, relative à elle.
+    const external = Object.fromEntries(
+        Object.entries(rendered)
+            .filter(([path]) => path.startsWith('apps/session-mode/'))
+            .map(([path, content]) => [
+                path.slice('apps/session-mode/'.length),
+                content,
+            ])
+    );
     assert.doesNotMatch(atelier['src/index.html'], /Content-Security-Policy/);
     assert.equal(atelier[EXTERNAL_CSP_HEADER_PATH], undefined);
     const index = external['src/index.html'];
@@ -416,7 +537,9 @@ test('X4-sécurité : politique de sécurité de contenu générée par la coque
     const manifest = JSON.parse(external[SIGNATURE_FILES.appManifest]);
     for (const path of ['src/index.html', EXTERNAL_CSP_HEADER_PATH])
         assert.ok(
-            manifest.generated_files.some((entry) => entry.path === path),
+            manifest.generated_files.some(
+                (entry) => entry.path === `apps/session-mode/${path}`
+            ),
             path
         );
     // Le CSS critique en ligne ajouterait un gestionnaire onload refusé.

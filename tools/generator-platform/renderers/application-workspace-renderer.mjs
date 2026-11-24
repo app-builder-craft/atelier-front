@@ -1,6 +1,16 @@
 import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
+import { stableStringify } from '../core/generation-manifest.mjs';
 import { productForms } from '../core/product-identity.mjs';
+import {
+    ALIAS_SCOPES,
+    APPS_ROOT,
+    INTERFACE_FREE_DIR,
+    interfaceLibraryName,
+    LIBS_ROOT,
+    ROOT_PATH_ALIASES,
+    socleLibraryName,
+} from '../core/socle-names.mjs';
 import {
     EXTERNAL_CSP_HEADER_PATH,
     renderCspHeaderTemplate,
@@ -102,8 +112,66 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const packageName = (name) => name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0];
 const ignored = new Set(['.git', 'node_modules', '.nx', '.angular', 'dist', 'coverage', 'tmp']);
+// Lot 2 : disposition des trois racines d'une appli et alias admis, tirés de
+// la source unique de l'atelier (socle-names.mjs) au rendu.
+const PATHS = ${JSON.stringify(ROOT_PATH_ALIASES)};
+const ALIAS_SCOPES = ${JSON.stringify(ALIAS_SCOPES)};
+const APPS = ${JSON.stringify(APPS_ROOT)};
+const LIBS = ${JSON.stringify(LIBS_ROOT)};
+const SUFFIXES = ${JSON.stringify([socleLibraryName(''), interfaceLibraryName('')])};
+const INTERFACE_FREE = ${JSON.stringify(INTERFACE_FREE_DIR + '/')};
+const APP_MANIFEST = ${JSON.stringify(SIGNATURE_FILES.appManifest)};
+
+// Écart nommé : la sortie le cite (chemin relatif au produit, rien de local).
+class WorkspaceDrift extends Error {}
+const drift = (message) => { throw new WorkspaceDrift(message); };
 
 ${workspacePluginConsumers.toString()}
+
+${stableStringify.toString()}
+
+// Appli d'un chemin relatif au produit : sa coque, ou l'une de ses deux
+// bibliothèques.
+function appOf(path) {
+    const [space, entry] = path.split('/');
+    if (space === APPS) return entry ?? null;
+    if (space === LIBS && entry) for (const suffix of SUFFIXES) if (entry.endsWith(suffix)) return entry.slice(0, -suffix.length);
+    return null;
+}
+
+async function treeFiles(directory, prefix, found) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const path = prefix + entry.name;
+        if (entry.isSymbolicLink()) drift('Lien dans une racine de l’appli : ' + path);
+        if (entry.isDirectory()) await treeFiles(resolve(directory, entry.name), path + '/', found);
+        else if (entry.isFile()) found.push(path);
+        else drift('Entrée spéciale dans une racine de l’appli : ' + path);
+    }
+    return found;
+}
+
+// Lot 2 (v1 §4.2, V3.1 point 4) : coque et socle EXACTS ; interface exacte
+// hors de ses sources, libres. Tout fichier possédé est vérifié par empreinte.
+async function exactApplication(app) {
+    const owned = new Map(app.generated_files.map((file) => [file.path, file]));
+    for (const file of app.generated_files) {
+        let bytes;
+        try { bytes = await readFile(resolve(root, file.path)); }
+        catch { drift('Fichier possédé absent : ' + file.path); }
+        if (hash(bytes) !== file.sha256) drift('Fichier possédé modifié hors du générateur : ' + file.path);
+    }
+    const { seal_sha256: seal, ...ownership } = app.ownership ?? {};
+    if (!seal || hash(stableStringify({ ...app, ownership })) !== seal) drift('Sceau de l’appli invalide : ' + app.app_name);
+    const roots = [APPS + '/' + app.app_name, ...SUFFIXES.map((suffix) => LIBS + '/' + app.app_name + suffix)];
+    for (const [index, prefix] of roots.entries()) {
+        for (const path of await treeFiles(resolve(root, prefix), prefix + '/', [])) {
+            if (owned.has(path) || path === roots[0] + '/' + APP_MANIFEST) continue;
+            if (index === 2 && path.startsWith(prefix + '/' + INTERFACE_FREE)) continue;
+            drift('Fichier ajouté hors du générateur : ' + path);
+        }
+    }
+    return roots;
+}
 
 async function sources(directory, found) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -154,7 +222,7 @@ export async function checkWorkspace() {
     }
     const base = JSON.parse(await readFile(resolve(root, 'tsconfig.base.json'), 'utf8'));
     assert.equal(base.compilerOptions.strict, true);
-    assert.deepEqual(base.compilerOptions.paths ?? {}, {});
+    assert.deepEqual(base.compilerOptions.paths, PATHS, 'Alias du produit');
     assert.equal(base.extends, undefined);
     const found = [];
     await sources(root, found);
@@ -170,14 +238,17 @@ export async function checkWorkspace() {
             if (name) {
                 if (name.startsWith('.')) {
                     assert.ok(resolve(dirname(path), name).startsWith(root + '/'), 'Import relatif hors produit');
+                } else if (ALIAS_SCOPES.some((scope) => name.startsWith(scope))) {
+                    // Alias du socle et de l'interface : résolus par les tsconfig,
+                    // jamais un paquet (garde du catalogue de l'atelier).
                 } else if (!name.startsWith('node:') && !builtinModules.includes(name)) {
                     assert.ok(!name.startsWith('/') && !name.includes(':'), 'Import extérieur');
                     const consumer = packageName(name);
                     assert.ok(Object.hasOwn(declared, consumer), 'Import non déclaré');
                     consumers.add(consumer);
-                    if (path.includes('/src/')) {
-                        const appRoot = path.slice(0, path.indexOf('/src/'));
-                        const app = JSON.parse(ts.sys.readFile(resolve(appRoot, '${SIGNATURE_FILES.appManifest}')) ?? '{}');
+                    const owner = appOf(path.slice(root.length + 1));
+                    if (owner && path.includes('/src/')) {
+                        const app = JSON.parse(ts.sys.readFile(resolve(root, APPS, owner, APP_MANIFEST)) ?? '{}');
                         if (app.profile === 'angular-pwa') assert.ok(!/^react(?:$|-|\\/)/.test(name), 'Import React dans Angular');
                         if (app.profile === 'react-spa') assert.ok(!name.startsWith('@angular/'), 'Import Angular dans React');
                     }
@@ -188,11 +259,13 @@ export async function checkWorkspace() {
         inspect(ast);
     }
     const profiles = new Set();
+    const names = new Set();
     for (const entry of await readdir(resolve(root, 'apps'), { withFileTypes: true })) {
         if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
         const appRoot = resolve(root, 'apps', entry.name);
         const app = JSON.parse(await readFile(resolve(appRoot, '${SIGNATURE_FILES.appManifest}'), 'utf8'));
         profiles.add(app.profile);
+        names.add(entry.name);
         const design = JSON.parse((await verifiedSnapshot(app.design_ref.path, app.design_ref.sha256)).toString('utf8'));
         for (const source of design.sources ?? []) await verifiedSnapshot(source.snapshot_uri, source.sha256);
         for (const reference of design.backend_contracts ?? []) {
@@ -201,14 +274,24 @@ export async function checkWorkspace() {
                 if (source.snapshot_uri) await verifiedSnapshot(source.snapshot_uri, source.sha256);
             }
         }
-        for (const file of app.generated_files) await verifiedSnapshot('apps/' + entry.name + '/' + file.path, file.sha256);
-        const project = JSON.parse(await readFile(resolve(appRoot, 'project.json'), 'utf8'));
-        for (const target of Object.values(project.targets ?? {})) {
-            if (!target.executor) continue;
-            const name = target.executor.split(':')[0];
-            assert.ok(Object.hasOwn(declared, name), 'Executor non déclaré');
-            consumers.add(name);
+        for (const projectRoot of await exactApplication(app)) {
+            const project = JSON.parse(await readFile(resolve(root, projectRoot, 'project.json'), 'utf8'));
+            for (const target of Object.values(project.targets ?? {})) {
+                if (!target.executor) continue;
+                const name = target.executor.split(':')[0];
+                assert.ok(Object.hasOwn(declared, name), 'Executor non déclaré');
+                consumers.add(name);
+            }
         }
+    }
+    try {
+        for (const entry of await readdir(resolve(root, LIBS), { withFileTypes: true })) {
+            if (entry.name.startsWith('.')) continue;
+            const owner = appOf(LIBS + '/' + entry.name);
+            if (!entry.isDirectory() || !owner || !names.has(owner)) drift('Entrée de bibliothèque sans appli : ' + LIBS + '/' + entry.name);
+        }
+    } catch (error) {
+        if (error instanceof WorkspaceDrift || error?.code !== 'ENOENT') throw error;
     }
     const native = new Set(['nx', 'typescript', 'eslint', 'prettier', 'jsdom', 'sass', 'vite', 'tslib', '@types/node', '@types/react', '@types/react-dom', '@nx/react', '@angular/compiler', '@angular/compiler-cli', '@angular/localize', '@angular-devkit/core', '@angular-devkit/architect', 'rxjs']);
     // The prepared workspace may contain the qualified build-tool union
@@ -222,8 +305,8 @@ export async function checkWorkspace() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    checkWorkspace().catch(() => {
-        process.stderr.write('Échec du contrat workspace.\\n');
+    checkWorkspace().catch((error) => {
+        process.stderr.write(error instanceof WorkspaceDrift ? 'Échec du contrat workspace : ' + error.message + '.\\n' : 'Échec du contrat workspace.\\n');
         process.exitCode = 1;
     });
 }
@@ -393,14 +476,16 @@ export async function renderApplicationWorkspace(options) {
                 resolveJsonModule: true,
                 esModuleInterop: true,
                 allowSyntheticDefaultImports: true,
-                paths: {},
+                // Lot 2 (V3.4 point 1) : deux motifs FIXES, sans préfixe ni nom
+                // d'appli ; aucune commande n'a plus à toucher ce fichier.
+                paths: ROOT_PATH_ALIASES,
             },
         }),
         'eslint.config.mjs': `import js from '@eslint/js';
 import ts from 'typescript-eslint';
 
 export default [
-    { ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.nx/**', '.angular/**', 'tmp/**', 'apps/.*-candidate-*/**'] },
+    { ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.nx/**', '.angular/**', 'tmp/**', 'apps/.*-candidate-*/**', 'apps/.*-previous-*/**', 'libs/.*-candidate-*/**', 'libs/.*-previous-*/**'] },
     { ...js.configs.recommended, files: ['**/*.mjs', '**/*.js'], languageOptions: { globals: { process: 'readonly', Buffer: 'readonly', URL: 'readonly', self: 'readonly', caches: 'readonly', fetch: 'readonly' } } },
     ...ts.configs.recommended,
     { files: ['**/*.{js,mjs,ts,tsx,mts}'], rules: { 'no-console': 'error', 'no-debugger': 'error', '@typescript-eslint/no-explicit-any': 'error' } },
@@ -415,7 +500,7 @@ export default [
         '.prettierignore':
             'node_modules/\ndist/\ncoverage/\n.nx/\n.angular/\nbun.lock\ntmp/\n',
         '.gitignore':
-            'node_modules/\ndist/\ncoverage/\n.nx/\n.angular/\ntmp/\n.env\n.env.*\n*.har\napps/.*-candidate-*/\napps/.*.generation-lock*/\n',
+            'node_modules/\ndist/\ncoverage/\n.nx/\n.angular/\ntmp/\n.env\n.env.*\n*.har\napps/.*-candidate-*/\napps/.*-previous-*/\napps/.*.generation-lock*/\nlibs/.*-candidate-*/\nlibs/.*-previous-*/\nlibs/.*.generation-lock*/\n',
         'README.md': `# Workspace applicatif\n\nProfils natifs : ${profiles.join(', ')}.\n\nDépôt : ${githubRepository}. Relecture : @${reviewOwner}.\n\nInstaller les dépendances avec bun install --frozen-lockfile --ignore-scripts depuis cette racine ; le verrou candidat attend sa qualification native.\nLes entrées approuvées vivent ici. Aucun lien vers les outils de création.\nLes contrôles production T19–T28 attendent leur qualification avant publication.\n`,
         'AGENTS.md':
             '# Règles du produit\n\nEntrées et contrats approuvés uniquement. Angular et React restent natifs et séparés.\nAucun secret, HAR, environnement réel, appel serveur implicite ni publication sans accord.\nCompiler, linter sans avertissement et tester chaque cible après modification.\n',

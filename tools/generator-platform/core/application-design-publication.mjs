@@ -97,7 +97,7 @@ export async function planApplicationDesignPublication({
         workspaceRoot,
         targetRoot,
     });
-    assertCompilationPaths(context, sourcePath, outputPath);
+    await assertCompilationPaths(context, sourcePath, outputPath);
     const root =
         context?.productRoot ?? (await realpath(resolve(workspaceRoot)));
     const source = await sourceFile(root, sourcePath);

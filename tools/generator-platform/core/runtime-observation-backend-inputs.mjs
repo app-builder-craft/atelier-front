@@ -397,7 +397,11 @@ export async function loadObservedBackendInputs({
             targetRoot,
             context.toolsRoot
         );
-        const path = io.inputPath(definitionPath, context.marker);
+        const path = await io.inputPath(
+            targetRoot,
+            definitionPath,
+            context.marker
+        );
         const bytes = await io.boundedFile(targetRoot, path, 65536);
         const definition = io.parse(bytes, capsuleLimits);
         const schema = io.parseSchema(
@@ -418,7 +422,8 @@ export async function loadObservedBackendInputs({
                 );
         const paths = Object.values(definition.snapshots);
         unique([definitionPath, ...paths]);
-        for (const snapshot of paths) io.inputPath(snapshot, context.marker);
+        for (const snapshot of paths)
+            await io.inputPath(targetRoot, snapshot, context.marker);
         const profile = definition.openapi.profile;
         if (
             !profile ||

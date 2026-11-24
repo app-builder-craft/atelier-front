@@ -5,30 +5,43 @@ import { lstat, readdir } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 
 import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
-import { verifyApplicationOwnership } from './application-ownership.mjs';
 import {
-    escapeRegExp,
-    SIGNATURE,
-    SIGNATURE_FILES,
-} from './atelier-signature.mjs';
+    applicationRoots,
+    isInterfaceFreePath,
+    verifyApplicationOwnership,
+} from './application-ownership.mjs';
+import {
+    assertNoPendingTransaction,
+    pendingTransactionJournals,
+    WORKING_TREE,
+} from './application-transaction.mjs';
+import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
 import {
     assertNoLocalConfiguration,
     assertPhysicalPath,
+    assertSourcePath,
     externalApplicationContext,
     externalFailure,
+    isReservedProductPath,
     pathExists,
     readProductFile,
+    RUNTIME_ROOTS,
     safeRelativePath,
+    treeInventory,
     verifyGeneratedTree,
 } from './external-application-paths.mjs';
 import { sha256 } from './generation-manifest.mjs';
 import { prefixRefusals } from './product-identity.mjs';
+import {
+    coqueRoot,
+    interfaceLibraryName,
+    interfaceRoot,
+    LIBS_ROOT,
+    socleLibraryName,
+    socleRoot,
+} from './socle-names.mjs';
 
 const MANIFEST = EXTERNAL_WORKSPACE_SIGNATURE.manifest;
-// Espaces de noms réservés à la racine du produit.
-const RESERVED_NAMESPACE = new RegExp(
-    `^(?:apps|node_modules|${escapeRegExp(SIGNATURE.dir)}|\\.git|\\.nx|\\.angular|dist|coverage|tmp)/`
-);
 
 // Renommage du préfixe (lot MARQUE, commit 3) : son journal vit à côté du
 // produit, comme son verrou ; ses arbres de travail dans apps/.
@@ -64,6 +77,9 @@ export async function ownedProductContext(options, internal = {}) {
     if (!(await pathExists(resolve(context.productRoot, MANIFEST))))
         externalFailure('workspace ownership marker missing');
     await assertNoPendingRename(context.productRoot, internal.renaming);
+    // Lot 2 (V5.2) : tout journal de transaction d'appli bloque toute autre
+    // commande ; seule la transaction elle-même le tolère.
+    await assertNoPendingTransaction(context.productRoot, internal.transaction);
     await assertNoLocalConfiguration(context.productRoot);
     return context;
 }
@@ -96,6 +112,27 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
     if (!(await pathExists(resolve(productRoot, MANIFEST))))
         externalFailure('workspace ownership marker missing');
     await assertNoPendingRename(productRoot, plan.renaming);
+    await assertNoPendingTransaction(productRoot, plan.transaction);
+    const journals = new Set(
+        (await pendingTransactionJournals(productRoot)).map(
+            ({ genre, planId }) => `${genre}-${planId}`
+        )
+    );
+    // Arbre de travail d'une transaction d'appli : toléré seulement pour la
+    // transaction en cours, dont le journal existe (V5.2, garde).
+    const transactionTree = (name) => {
+        const match = WORKING_TREE.exec(name);
+        if (!match) return false;
+        if (!journals.has(`${match[2]}-${match[4]}`))
+            externalFailure(
+                `application ${match[2]} working tree without a journal: ${name}; inspect the product`
+            );
+        if (match[4] !== plan.transaction)
+            externalFailure(
+                `interrupted application ${match[2]} pending; recover it first (recover:application-publication)`
+            );
+        return true;
+    };
     if (
         sha256(await readProductFile(productRoot, MANIFEST)) !==
         sha256(plan.files[MANIFEST])
@@ -115,30 +152,24 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
     const expected = new Set(Object.keys(plan.files));
     const inputs = new Set(plan.inputPaths ?? []);
     const ownedRoots = new Set([...expected].map((path) => path.split('/')[0]));
+    const appNames = new Set();
     for (const entry of await readdir(resolve(productRoot, 'apps'), {
         withFileTypes: true,
     })) {
         const working =
-            /^\.([a-z][a-z0-9-]*)\.(?:(external|publication|previous)-candidate-[a-f0-9]{64}|rename-(?:candidate|previous)-([a-f0-9]{64})|generation-lock(?:\..*)?)$/.exec(
+            /^\.([a-z][a-z0-9-]*)\.(?:rename-(?:candidate|previous)-([a-f0-9]{64})|generation-lock(?:\..*)?)$/.exec(
                 entry.name
             );
-        if (working) {
+        if (working || WORKING_TREE.test(entry.name)) {
             if (!entry.isDirectory() || entry.isSymbolicLink())
                 externalFailure('invalid working directory');
             // Arbre d'un renommage du préfixe : seul ce renommage le tolère.
-            if (working[3] !== undefined && working[3] !== plan.renaming)
+            if (working?.[2] !== undefined && working[2] !== plan.renaming)
                 externalFailure(RENAME_PENDING);
-            // ADR-0103 : une publication interrompue bloque toute autre
-            // commande ; seule la reprise de cette application passe.
-            if (
-                ['publication', 'previous'].includes(working[2]) &&
-                working[1] !== plan.recoveringApp
-            )
-                externalFailure(
-                    `interrupted publication pending for app ${working[1]}; recover it first`
-                );
+            if (!working) transactionTree(entry.name);
             continue;
         }
+        if (entry.name.startsWith('.')) externalFailure('unowned app entry');
         if (!entry.isDirectory() || entry.isSymbolicLink())
             externalFailure('unowned app entry');
         const appRoot = resolve(productRoot, 'apps', entry.name);
@@ -147,6 +178,7 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         );
         if (app.app_name !== entry.name || !plan.profiles.includes(app.profile))
             externalFailure('unowned app manifest');
+        appNames.add(entry.name);
         // ADR-0103 : inventaire scellé, expliqué par ses publications.
         verifyApplicationOwnership(app, plan.manifest.workspace_id);
         const designBytes = await readProductFile(
@@ -162,22 +194,35 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
             design
         ))
             inputs.add(input.path);
-        const files = await ownedFiles(appRoot, app.generated_files);
-        files[SIGNATURE_FILES.appManifest] = await readProductFile(
-            appRoot,
-            SIGNATURE_FILES.appManifest
-        );
-        await verifyGeneratedTree(appRoot, files);
+        await verifyApplicationTrees(productRoot, app);
     }
-    const runtimeRoots = new Set([
-        'node_modules',
-        '.git',
-        '.nx',
-        '.angular',
-        'dist',
-        'coverage',
-        'tmp',
-    ]);
+    // Lot 2 (V3.1 point 3) : `libs` est un espace de produit comme `apps`,
+    // pour TOUTES les classes de commande : jamais une source de document ;
+    // chaque entrée est le socle ou l'interface d'une appli présente.
+    const libraries = resolve(productRoot, LIBS_ROOT);
+    if (await pathExists(libraries)) {
+        const allowed = new Set(
+            [...appNames].flatMap((name) => [
+                socleLibraryName(name),
+                interfaceLibraryName(name),
+            ])
+        );
+        for (const entry of await readdir(libraries, { withFileTypes: true })) {
+            if (!entry.isDirectory() || entry.isSymbolicLink())
+                externalFailure('unowned library entry');
+            if (
+                /^\.[a-z][a-z0-9-]*\.generation-lock(?:\..*)?$/.test(entry.name)
+            )
+                continue;
+            if (WORKING_TREE.test(entry.name)) {
+                transactionTree(entry.name);
+                continue;
+            }
+            if (!allowed.has(entry.name))
+                externalFailure('unowned library entry');
+        }
+    }
+    const runtimeRoots = new Set(RUNTIME_ROOTS);
     async function reserved(directory, prefix = '') {
         for (const entry of await readdir(directory, { withFileTypes: true })) {
             const path = prefix + entry.name;
@@ -186,10 +231,14 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
                     externalFailure('symbolic runtime root');
                 continue;
             }
-            if (path === 'descriptions' || path === 'apps') {
+            if (
+                path === 'descriptions' ||
+                path === 'apps' ||
+                path === LIBS_ROOT
+            ) {
                 if (!entry.isDirectory() || entry.isSymbolicLink())
                     externalFailure('invalid product namespace');
-                if (path === 'apps' || !documentSources) continue;
+                if (path !== 'descriptions' || !documentSources) continue;
             }
             if (entry.isSymbolicLink())
                 externalFailure('symbolic workspace entry');
@@ -217,6 +266,53 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         }
     }
     await reserved(productRoot);
+}
+
+// Lot 2 (V3.1 point 4, L-1) : l'inventaire d'une appli, relatif au produit,
+// porte sur ses trois racines. Coque et socle : arbres EXACTS (rien d'ajouté) ;
+// interface : fichiers possédés exacts, fichiers non possédés admis SEULEMENT
+// dans sa zone libre.
+export async function verifyApplicationTrees(productRoot, app) {
+    const roots = applicationRoots(app.app_name);
+    const owned = await ownedFiles(productRoot, app.generated_files);
+    const byRoot = new Map(roots.map((root) => [root, {}]));
+    for (const [path, content] of Object.entries(owned)) {
+        const root = roots.find((candidate) =>
+            path.startsWith(`${candidate}/`)
+        );
+        if (!root) externalFailure('app inventory outside its roots');
+        byRoot.get(root)[path.slice(root.length + 1)] = content;
+    }
+    const coque = coqueRoot(app.app_name);
+    byRoot.get(coque)[SIGNATURE_FILES.appManifest] = await readProductFile(
+        resolve(productRoot, coque),
+        SIGNATURE_FILES.appManifest
+    );
+    await verifyGeneratedTree(resolve(productRoot, coque), byRoot.get(coque));
+    const socle = socleRoot(app.app_name);
+    await verifyGeneratedTree(resolve(productRoot, socle), byRoot.get(socle));
+    const ui = interfaceRoot(app.app_name);
+    const uiOwned = byRoot.get(ui);
+    const uiRoot = resolve(productRoot, ui);
+    for (const entry of await treeInventory(uiRoot)) {
+        if (Object.hasOwn(uiOwned, entry.path)) continue;
+        if (!isInterfaceFreePath(app.app_name, `${ui}/${entry.path}`))
+            externalFailure('unowned interface file');
+    }
+    // Un dossier vide hors de la zone libre n'acquiert pas de propriété.
+    const visit = async (directory, prefix) => {
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const path = `${prefix}${entry.name}/`;
+            if (
+                !isInterfaceFreePath(app.app_name, `${ui}/${path}`) &&
+                !Object.keys(uiOwned).some((owned) => owned.startsWith(path))
+            )
+                externalFailure('unowned interface directory');
+            await visit(resolve(directory, entry.name), path);
+        }
+    };
+    await visit(uiRoot, '');
 }
 
 export async function ownedFiles(root, artifacts) {
@@ -249,7 +345,7 @@ export function inputFilePath(path) {
         'README.md',
         'AGENTS.md',
     ]);
-    if (reserved.has(path) || RESERVED_NAMESPACE.test(path))
+    if (reserved.has(path) || isReservedProductPath(path))
         externalFailure('input collides with reserved workspace namespace');
     return path;
 }
@@ -281,6 +377,9 @@ export async function productInputClosure(root, designPath, design) {
     for (const path of [...paths].sort()) {
         // Inputs stay at their declared relative paths; descriptions/ is a
         // convention, not a fallback or an additional business schema.
+        // Lot 2 (§V4.6 point 1) : tout chemin de fermeture passe le contrôle
+        // unique des sources avant d'être lu.
+        await assertSourcePath(root, path, { label: 'input' });
         const content = await readProductFile(root, path);
         if (
             expectedHashes.has(path) &&

@@ -1,9 +1,10 @@
 // Lot MARQUE, commit 3 : refus nommés de `rename-product-prefix` (§ 6 et
 // § 7.2), tous au `--dry-run` ou au plan revu, sans rien écrire : préfixe
 // invalide ou réservé, sans changement, produit modifié à la main, plan
-// périmé, publication qui dépend du préfixe, coque ou composition non
-// reproductible par le générateur courant. Puis la ligne de commande, et le
-// verrou du produit pris par la compilation d'un document (B).
+// périmé, publication qui porte une forme du préfixe, coque non reproductible
+// par le générateur courant ; la composition (socle) n'est jamais re-rendue
+// (lot 2, V5.3). Puis la ligne de commande, et le verrou du produit pris par
+// la compilation d'un document (B). Chemins relatifs au produit.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { appendFile, readFile, rm, writeFile } from 'node:fs/promises';
@@ -21,6 +22,7 @@ import {
 import { sha256 } from './core/generation-manifest.mjs';
 import { withProductWriterLocks } from './core/generation-transaction.mjs';
 import { prefixContext } from './core/product-prefix.mjs';
+import { socleRoot } from './core/socle-names.mjs';
 import { planProductPrefixRename } from './core/product-prefix-rename.mjs';
 import { publishProductPrefixRename } from './core/product-prefix-rename-transaction.mjs';
 import {
@@ -40,7 +42,7 @@ import {
     snapshot,
 } from './test-support/product-prefix-rename-fixture.mjs';
 
-const NOTICE = 'src/app/generated/x1-proof/notice.ts';
+const NOTICE = `${socleRoot(SESSION_APP)}/src/actions/x1-proof/notice.ts`;
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 // Refus au plan, et rien d'écrit.
@@ -54,14 +56,15 @@ async function refused(product, to, pattern) {
     assert.deepEqual(await snapshot(product), untouched, to);
 }
 
-// Fichier d'appli réécrit et manifeste rescellé de façon COHÉRENTE : un
-// inventaire valide, comme l'aurait laissé une autre version du générateur.
+// Fichier d'appli (chemin relatif au produit) réécrit et manifeste rescellé de
+// façon COHÉRENTE : un inventaire valide, comme l'aurait laissé une autre
+// version du générateur.
 async function forge(product, appName, path, edit, { shell = false } = {}) {
-    const root = join(product.apps, appName);
+    const manifestPath = join(product.apps, appName, APP_MANIFEST);
     const manifest = await readManifest(product, appName);
-    const original = await readFile(join(root, path), 'utf8');
+    const original = await readFile(join(product.root, path), 'utf8');
     const content = edit(original);
-    await writeFile(join(root, path), content);
+    await writeFile(join(product.root, path), content);
     const digest = {
         sha256: sha256(content),
         bytes: Buffer.byteLength(content),
@@ -75,17 +78,17 @@ async function forge(product, appName, path, edit, { shell = false } = {}) {
         for (const file of record.files)
             if (file.path === path) Object.assign(file, digest);
     manifest.ownership.seal_sha256 = computeOwnershipSeal(manifest);
-    await writeFile(join(root, APP_MANIFEST), json(manifest));
+    await writeFile(manifestPath, json(manifest));
     return async () => {
-        await writeFile(join(root, path), original);
-        await writeFile(join(root, APP_MANIFEST), restore);
+        await writeFile(join(product.root, path), original);
+        await writeFile(manifestPath, restore);
     };
 }
 
 // Fichier AJOUTÉ à la dernière publication d'un outil, manifeste rescellé de
 // façon cohérente (inventaire, arbre, sceau).
 async function forgeAdded(product, appName, path, content, tool) {
-    const root = join(product.apps, appName);
+    const manifestPath = join(product.apps, appName, APP_MANIFEST);
     const manifest = await readManifest(product, appName);
     const restore = json(manifest);
     const entry = {
@@ -93,7 +96,7 @@ async function forgeAdded(product, appName, path, content, tool) {
         bytes: Buffer.byteLength(content),
         sha256: sha256(content),
     };
-    await writeFile(join(root, path), content, { flag: 'wx' });
+    await writeFile(join(product.root, path), content, { flag: 'wx' });
     manifest.generated_files = [...manifest.generated_files, entry].sort(
         (left, right) => left.path.localeCompare(right.path)
     );
@@ -105,11 +108,20 @@ async function forgeAdded(product, appName, path, content, tool) {
         (left, right) => (left.path < right.path ? -1 : 1)
     );
     manifest.ownership.seal_sha256 = computeOwnershipSeal(manifest);
-    await writeFile(join(root, APP_MANIFEST), json(manifest));
+    await writeFile(manifestPath, json(manifest));
     return async () => {
-        await rm(join(root, path));
-        await writeFile(join(root, APP_MANIFEST), restore);
+        await rm(join(product.root, path));
+        await writeFile(manifestPath, restore);
     };
+}
+
+// V5.3 : aucun chemin du plan de renommage hors de la coque.
+async function coqueOnlyPlan(product, to) {
+    const plan = await planProductPrefixRename(renameOptions(product, to));
+    for (const app of plan.apps)
+        for (const { path } of app.changes)
+            assert.ok(path.startsWith(`apps/${app.app_name}/`), path);
+    return plan;
 }
 
 function cli(script, args) {
@@ -173,28 +185,25 @@ test('renommage du préfixe : refus nommés, rien écrit', async (t) => {
     );
 
     await t.test(
-        'composition non reproductible par le générateur courant',
+        'V5.3 : la composition (socle) n’est jamais re-rendue ; seule une forme du préfixe la fait refuser',
         async () => {
             const manifest = await readManifest(product, SESSION_APP);
             const spec = manifest.generated_files.find((entry) =>
                 entry.path.endsWith('page-composition.contract.spec.ts')
             ).path;
-            // Spec réécrite et enregistrement de composition rescellé : un état
-            // cohérent, comme l'aurait laissé une autre version du générateur.
-            const restore = await forge(
+            assert.ok(spec.startsWith(`${socleRoot(SESSION_APP)}/`), spec);
+            // Spec réécrite et enregistrement de composition rescellé, comme
+            // l'aurait laissé une autre version du générateur : le renommage
+            // ne la lit pas comme un rendu ; son plan ne touche que la coque.
+            let restore = await forge(
                 product,
                 SESSION_APP,
                 spec,
                 (content) => `${content}// ancienne composition\n`
             );
-            await refused(
-                product,
-                'qz',
-                /PRODUCT_COMPOSITION_NOT_REPRODUCIBLE: app session-observatory composition is not reproducible by the current generator; republish it with generate:page-composition before renaming/
-            );
+            await coqueOnlyPlan(product, 'qz');
             await restore();
-            // Un fichier de plus dans l'enregistrement de composition, absent
-            // du rendu courant : non reproductible lui aussi.
+            // Un fichier de plus dans l'enregistrement de composition : idem.
             const undo = await forgeAdded(
                 product,
                 SESSION_APP,
@@ -202,12 +211,23 @@ test('renommage du préfixe : refus nommés, rien écrit', async (t) => {
                 'export const extra = 1;\n',
                 'generate:page-composition'
             );
+            await coqueOnlyPlan(product, 'qz');
+            await undo();
+            // La même spec portant une forme du préfixe : refus nommé.
+            restore = await forge(
+                product,
+                SESSION_APP,
+                spec,
+                (content) => `${content}// ns-sw\n`
+            );
             await refused(
                 product,
                 'qz',
-                /PRODUCT_COMPOSITION_NOT_REPRODUCIBLE: app session-observatory composition/
+                new RegExp(
+                    `PRODUCT_PREFIX_REMAINS: app session-observatory path ${spec.replaceAll('.', '\\.')} written by generate:page-composition keeps prefix ns`
+                )
             );
-            await undo();
+            await restore();
         }
     );
 
@@ -217,14 +237,14 @@ test('renommage du préfixe : refus nommés, rien écrit', async (t) => {
             const restore = await forge(
                 product,
                 'native-angular',
-                'src/main.ts',
+                'apps/native-angular/src/main.ts',
                 (content) => `${content}// ancien générateur\n`,
                 { shell: true }
             );
             await refused(
                 product,
                 'qz',
-                /PRODUCT_SHELL_NOT_REPRODUCIBLE: app native-angular shell is not reproducible by the current generator \(src\/main\.ts\); regenerate the base before renaming \(lot 2\)/
+                /PRODUCT_SHELL_NOT_REPRODUCIBLE: app native-angular shell is not reproducible by the current generator \(apps\/native-angular\/src\/main\.ts\); regenerate the base before renaming \(lot 2\)/
             );
             await restore();
         }
@@ -362,7 +382,7 @@ test('renommage du préfixe : refus nommés, rien écrit', async (t) => {
     );
 
     await t.test(
-        'publication qui porte une forme de p, ou qui a réécrit un fichier dépendant du préfixe',
+        'publication qui porte une forme de p, dans une commande ou dans une spec réécrite',
         async () => {
             await publish({
                 ...product.app,
@@ -372,7 +392,7 @@ test('renommage du préfixe : refus nommés, rien écrit', async (t) => {
             await refused(
                 product,
                 'qz',
-                /PRODUCT_PREFIX_REMAINS: app session-observatory path src\/app\/generated\/x1-proof\/notice\.ts written by generate:action-request keeps prefix ns \(politique du service worker\)/
+                /PRODUCT_PREFIX_REMAINS: app session-observatory path libs\/session-observatory-socle\/src\/actions\/x1-proof\/notice\.ts written by generate:action-request keeps prefix ns \(politique du service worker\)/
             );
             await publish({
                 ...product.app,
@@ -383,20 +403,26 @@ test('renommage du préfixe : refus nommés, rien écrit', async (t) => {
             const spec = manifest.generated_files.find((entry) =>
                 entry.path.endsWith('page-composition.contract.spec.ts')
             ).path;
-            const content = await readFile(
-                join(product.apps, SESSION_APP, spec),
-                'utf8'
-            );
+            const content = await readFile(join(product.root, spec), 'utf8');
+            // V5.3 : réécrite par une autre publication sans forme du
+            // préfixe, la spec ne change rien au renommage ; avec une forme,
+            // refus nommé qui nomme son dernier écrivain.
             await publish({
                 ...product.app,
                 tool: 'generate:action-request',
                 files: { [spec]: `${content}// réécrit\n` },
             });
+            await coqueOnlyPlan(product, 'qz');
+            await publish({
+                ...product.app,
+                tool: 'generate:action-request',
+                files: { [spec]: `${content}// réécrit ns-sw\n` },
+            });
             await refused(
                 product,
                 'qz',
                 new RegExp(
-                    `PRODUCT_PREFIX_IN_PUBLICATION: app session-observatory path ${spec.replaceAll('.', '\\.')} written by generate:action-request depends on the prefix`
+                    `PRODUCT_PREFIX_REMAINS: app session-observatory path ${spec.replaceAll('.', '\\.')} written by generate:action-request keeps prefix ns`
                 )
             );
         }

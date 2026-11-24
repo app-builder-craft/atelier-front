@@ -26,8 +26,17 @@ test('consommateur de fixture : load avec entrée pour une lecture paginée, san
         ['observatory', 'constructor() { this.page.catalogue.load({}); }'],
         ['equipment-hire', 'constructor() { this.page.catalogue.load(); }'],
     ]) {
-        const source = sessionConsumers(await fixtureOf(t, domain));
+        const source = sessionConsumers(await fixtureOf(t, domain), {
+            routes: '../routes',
+            composition: (id) => `../pages/${id}`,
+        });
         assert.equal(source.split(call).length, 2, `${domain} : ${call}`);
+        // Spécifieurs donnés par l'appelant (disposition du produit).
+        assert.ok(source.includes("import { appRoutes } from '../routes';"));
+        assert.match(
+            source,
+            /from '\.\.\/pages\/page_[a-f0-9]{16}\/page-composition'/
+        );
         assert.equal(source.split('.load(').length, 2, domain);
     }
 });
