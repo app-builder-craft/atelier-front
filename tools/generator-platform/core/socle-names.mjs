@@ -83,6 +83,34 @@ export const socleAlias = (appName) => fillAliasPattern(SOCLE_ALIAS, appName);
 export const interfaceAlias = (appName) =>
     fillAliasPattern(INTERFACE_ALIAS, appName);
 
+// Lot 2, commit 2 (v4 §V4.3, L-3) : tags Nx des trois projets d'une appli et
+// contraintes de COUCHE de `@nx/enforce-module-boundaries`, fixes, posées une
+// fois dans l'ESLint racine du produit et exportées comme DONNÉES (E-2 du lot
+// 5). Chaque projet ajoute la contrainte de SON appli (`app:<a>` ne dépend
+// que de `app:<a>`), sans jamais retoucher la racine.
+export const COQUE_TAG = 'type:app';
+export const SOCLE_TAG = 'layer:socle';
+export const INTERFACE_TAG = 'layer:interface';
+export const appTag = (appName) => `app:${appName}`;
+export const LAYER_CONSTRAINTS = Object.freeze([
+    Object.freeze({
+        sourceTag: COQUE_TAG,
+        onlyDependOnLibsWithTags: Object.freeze([SOCLE_TAG, INTERFACE_TAG]),
+    }),
+    Object.freeze({
+        sourceTag: INTERFACE_TAG,
+        onlyDependOnLibsWithTags: Object.freeze([SOCLE_TAG]),
+    }),
+    Object.freeze({
+        sourceTag: SOCLE_TAG,
+        onlyDependOnLibsWithTags: Object.freeze([SOCLE_TAG]),
+    }),
+]);
+export const appConstraint = (appName) => ({
+    sourceTag: appTag(appName),
+    onlyDependOnLibsWithTags: [appTag(appName)],
+});
+
 // Portées npm masquées par ces alias : la garde du catalogue des
 // bibliothèques refuse tout paquet qui commence par l'une d'elles (V3.4
 // point 8).
@@ -115,4 +143,7 @@ export const FIXED_NAMES = Object.freeze([
     INTERFACE_PAGES_DIR,
     SAMPLE_EMAIL,
     SAMPLE_TEXT,
+    COQUE_TAG,
+    SOCLE_TAG,
+    INTERFACE_TAG,
 ]);

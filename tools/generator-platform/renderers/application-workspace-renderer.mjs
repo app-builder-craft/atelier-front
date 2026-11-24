@@ -8,7 +8,9 @@ import {
     INTERFACE_FREE_DIR,
     interfaceLibraryName,
     LIBS_ROOT,
+    LAYER_CONSTRAINTS,
     ROOT_PATH_ALIASES,
+    socleCoqueAlias,
     socleLibraryName,
 } from '../core/socle-names.mjs';
 import {
@@ -34,6 +36,9 @@ export const SHELL_PACKAGES = Object.freeze({
             '@eslint/js',
             'typescript-eslint',
             '@nx/eslint',
+            // Lot 2, commit 2 : `@nx/enforce-module-boundaries`, importé par
+            // l'ESLint racine du produit (v1 §12.3).
+            '@nx/eslint-plugin',
             '@nx/web',
             'prettier',
             '@playwright/test',
@@ -482,13 +487,21 @@ export async function renderApplicationWorkspace(options) {
             },
         }),
         'eslint.config.mjs': `import js from '@eslint/js';
+import nx from '@nx/eslint-plugin';
 import ts from 'typescript-eslint';
+
+// Frontières natives (lot 2, commit 2) : contraintes de COUCHE, fixes, en
+// DONNÉES ; chaque projet redéclare la règle en entier avec la contrainte de
+// son appli. Entrée \`no-restricted-imports\` de l'interface, en DONNÉES.
+export const LAYER_CONSTRAINTS = ${JSON.stringify(LAYER_CONSTRAINTS)};
+export const SOCLE_COQUE_RESTRICTION = { patterns: [{ group: [${JSON.stringify(socleCoqueAlias('*'))}], message: "L'entrée de la coque n'est pas une API de l'interface." }] };
 
 export default [
     { ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.nx/**', '.angular/**', 'tmp/**', 'apps/.*-candidate-*/**', 'apps/.*-previous-*/**', 'libs/.*-candidate-*/**', 'libs/.*-previous-*/**'] },
     { ...js.configs.recommended, files: ['**/*.mjs', '**/*.js'], languageOptions: { globals: { process: 'readonly', Buffer: 'readonly', URL: 'readonly', self: 'readonly', caches: 'readonly', fetch: 'readonly' } } },
     ...ts.configs.recommended,
     { files: ['**/*.{js,mjs,ts,tsx,mts}'], rules: { 'no-console': 'error', 'no-debugger': 'error', '@typescript-eslint/no-explicit-any': 'error' } },
+    { files: ['**/*.{ts,tsx,mts}'], plugins: { '@nx': nx }, rules: { '@nx/enforce-module-boundaries': ['error', { allow: [], depConstraints: LAYER_CONSTRAINTS }] } },
 ];
 `,
         '.prettierrc.json': json({
@@ -631,27 +644,8 @@ export function adaptExternalShellFiles(files, { profile, appName, prefix }) {
                     '@Component({\n    changeDetection: ChangeDetectionStrategy.OnPush,'
                 );
         }
-        files['eslint.config.mjs'] = `import angular from 'angular-eslint';
-import ts from 'typescript-eslint';
-import base from '../../eslint.config.mjs';
-
-export default ts.config(
-    ...base,
-    {
-        files: ['**/*.ts'],
-        extends: [angular.configs.tsRecommended],
-        processor: angular.processInlineTemplates,
-        rules: {
-            '@angular-eslint/directive-selector': ['error', { type: 'attribute', prefix: 'app', style: 'camelCase' }],
-            '@angular-eslint/component-selector': ['error', { type: 'element', prefix: 'app', style: 'kebab-case' }],
-        },
-    },
-    {
-        files: ['**/*.html'],
-        extends: [angular.configs.templateRecommended, angular.configs.templateAccessibility],
-    }
-);
-`;
+        // L'ESLint de la coque extérieure (pile et frontières) est rendu par la
+        // disposition des trois racines (`projectEslint`, lot 2, commit 2).
         // X4-sécurité : politique de sécurité de contenu générée, scellée.
         files['src/index.html'] = withCspMeta(files['src/index.html'], prefix);
         files[EXTERNAL_CSP_HEADER_PATH] = renderCspHeaderTemplate(prefix);

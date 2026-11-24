@@ -10,99 +10,19 @@
 // - `^typecheck` : la construction de la coque dépend de la vérification de
 //   types de ses bibliothèques (graphe des tâches de Nx), en Angular (cible
 //   déclarée, ngc) comme en React (cible inférée, tsc) ;
-// - `no-restricted-imports` : l'ESLint du produit refuse, dans l'interface,
-//   l'entrée réservée à la coque.
+// (L'entrée réservée à la coque refusée par l'ESLint du produit est éprouvée
+// avec les frontières natives du commit 2, `external-library-frontiers.test.mjs`.)
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
 import ts from 'typescript';
 
-import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
-import { renderApplicationWorkspace } from './renderers/application-workspace-renderer.mjs';
-import { renderReactSpaShell } from './renderers/react-spa-shell-renderer.mjs';
-import { applicationDesign } from './test-support/application-design-fixture.mjs';
-import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
-import { createApplicationSessionFixture } from './test-support/application-session-fixture.mjs';
 import {
-    fixtureParent,
-    TOOLS_ROOT,
-} from './test-support/external-application-fixture.mjs';
-
-const run = promisify(execFile);
-
-// Produit fictif d'un profil : l'espace, l'appli `app` (à session en
-// Angular) et une seconde appli `other` du même profil, sans session.
-async function nativeProduct(t, profile) {
-    const root = join(await fixtureParent(t), profile);
-    await mkdir(root);
-    const source = JSON.parse(await readFile(join(TOOLS_ROOT, 'package.json')));
-    const packages = Object.fromEntries(
-        ['dependencies', 'devDependencies'].flatMap((group) =>
-            Object.entries(source[group] ?? {}).map(([name, version]) => [
-                name,
-                { group, version },
-            ])
-        )
-    );
-    const files = {
-        // Nx lit les dépendances externes dans le verrou du produit (T13).
-        'bun.lock': await readFile(join(TOOLS_ROOT, 'bun.lock')),
-        ...(await renderApplicationWorkspace({
-            profiles: [profile],
-            packages,
-            packageManager: source.packageManager,
-            engines: source.engines,
-            githubRepository: 'fixture-laboratory/native-boundaries',
-            reviewOwner: 'fixture-reviewer',
-        })),
-    };
-    const angular = profile === 'angular-pwa';
-    const shell = applicationDesign('a'.repeat(64), 'b'.repeat(64));
-    const plain = angular
-        ? shell
-        : {
-              ...shell,
-              experiences: shell.experiences.map((experience) => ({
-                  ...experience,
-                  offline_policy: 'none',
-              })),
-          };
-    const session = angular
-        ? await createApplicationSessionFixture({ domain: 'observatory' })
-        : undefined;
-    const render = angular ? renderAngularPwaShell : renderReactSpaShell;
-    for (const [appName, design] of [
-        ['app', session?.design ?? plain],
-        ['other', plain],
-    ]) {
-        const output = await render({
-            design,
-            experienceId: design.experiences[0].id,
-            appName,
-            designPath: `descriptions/${appName}.json`,
-            designSha256: 'c'.repeat(64),
-            externalWorkspace: true,
-            prefix: FIXTURE_PREFIX,
-        });
-        Object.assign(files, output.files, output.seeds);
-    }
-    for (const [path, content] of Object.entries(files)) {
-        await mkdir(dirname(join(root, path)), { recursive: true });
-        await writeFile(join(root, path), content);
-    }
-    await mkdir(join(root, 'node_modules'));
-    for (const entry of await readdir(join(TOOLS_ROOT, 'node_modules')))
-        if (!['.cache', '.vite', '.vite-temp', '.nx'].includes(entry))
-            await symlink(
-                join(TOOLS_ROOT, 'node_modules', entry),
-                join(root, 'node_modules', entry)
-            );
-    return { root, files };
-}
+    nativeEnv,
+    nativeProduct,
+    run,
+} from './test-support/native-product.mjs';
 
 const options = (root, path) =>
     ts.getParsedCommandLineOfConfigFile(
@@ -169,18 +89,6 @@ for (const profile of ['angular-pwa', 'react-spa']) {
     });
 }
 
-const env = (root) => ({
-    PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
-    HOME: root,
-    TMPDIR: root,
-    CI: 'true',
-    NX_DAEMON: 'false',
-    NX_NO_CLOUD: 'true',
-    NX_ISOLATE_PLUGINS: 'false',
-    NX_WORKSPACE_DATA_DIRECTORY: join(root, '.nx/workspace-data'),
-    NX_CACHE_DIRECTORY: join(root, '.nx/cache'),
-});
-
 test(
     '^typecheck : la construction de la coque dépend de la vérification de types de ses bibliothèques (graphe des tâches Nx)',
     { timeout: 240_000 },
@@ -202,7 +110,7 @@ test(
                 ],
                 {
                     cwd: root,
-                    env: env(root),
+                    env: nativeEnv(root),
                     maxBuffer: 64 * 1024 * 1024,
                 }
             );
@@ -222,49 +130,6 @@ test(
                     )
                     .sort(),
                 libraries.map((name) => `${name}:typecheck`),
-                profile
-            );
-        }
-    }
-);
-
-test(
-    'no-restricted-imports : l’ESLint du produit refuse dans l’interface l’entrée réservée à la coque',
-    { timeout: 240_000 },
-    async (t) => {
-        for (const profile of ['angular-pwa', 'react-spa']) {
-            const { root } = await nativeProduct(t, profile);
-            const probe = 'libs/app-interface/src/probe.ts';
-            // ESLint du produit, lancé dans le produit (un processus par
-            // produit : la configuration TypeScript-ESLint est par racine).
-            const rules = async (specifier) => {
-                await writeFile(
-                    join(root, probe),
-                    `export * from '${specifier}';\n`
-                );
-                const output = await run(
-                    process.execPath,
-                    [
-                        join(root, 'node_modules/eslint/bin/eslint.js'),
-                        '--format',
-                        'json',
-                        probe,
-                    ],
-                    { cwd: root, env: env(root), maxBuffer: 16 * 1024 * 1024 }
-                ).catch((error) => error);
-                const [result] = JSON.parse(output.stdout);
-                return result.messages.map(
-                    ({ ruleId, message }) => ruleId ?? message
-                );
-            };
-            assert.ok(
-                (await rules('@socle-coque/app')).includes(
-                    'no-restricted-imports'
-                ),
-                profile
-            );
-            assert.ok(
-                !(await rules('@socle/app')).includes('no-restricted-imports'),
                 profile
             );
         }

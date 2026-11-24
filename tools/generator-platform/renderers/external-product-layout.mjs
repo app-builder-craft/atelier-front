@@ -11,8 +11,12 @@ import { posix } from 'node:path';
 import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
 import {
+    appConstraint,
+    appTag,
+    COQUE_TAG,
     coqueRoot,
     EMPTY_PAGE_MODULE,
+    INTERFACE_TAG,
     INTERFACE_ENTRY,
     INTERFACE_PAGES_DIR,
     interfaceAlias,
@@ -24,6 +28,7 @@ import {
     SOCLE_ENTRY,
     SOCLE_PAGES_DIR,
     SOCLE_SESSION_DIR,
+    SOCLE_TAG,
     socleAlias,
     socleCoqueAlias,
     socleLibraryName,
@@ -60,13 +65,26 @@ export const coqueSpecifiers = (appName) => ({
     pages: interfaceAlias(appName),
 });
 
-// Tags des trois projets (L-3) ; les contraintes viennent au commit 2.
+// Tags des trois projets (L-3), noms fixes de `socle-names.mjs` ; chaque
+// projet correspond à une contrainte de couche et à celle de son appli
+// (commit 2, v4 §V4.3 point 3).
 export const coqueTags = (appName, experienceId) => [
-    'type:app',
+    COQUE_TAG,
     `experience:${experienceId}`,
-    `app:${appName}`,
+    appTag(appName),
 ];
-const LAYER = { socle: 'layer:socle', interface: 'layer:interface' };
+const LAYER = { socle: SOCLE_TAG, interface: INTERFACE_TAG };
+
+// L-1 (v5 V5.6) : la cible `check-socle` du socle lance le vérificateur scellé
+// du produit ; le `lint` de la coque et celui de l'interface en dépendent
+// (v1 § 12.6, v2 R2.4 point 4), en NOMMANT le projet socle de l'appli : la
+// forme `^check-socle` suit les arêtes du graphe, et une appli sans session
+// n'en a aucune vers son socle (v3 M4 ; mesuré au commit 2, ADR 0105).
+const CHECK_SOCLE = 'check-socle';
+export const checkSocleDependency = (appName) => ({
+    target: CHECK_SOCLE,
+    projects: [socleLibraryName(appName)],
+});
 
 // Fichier de configuration du projet d'une bibliothèque. Angular : cible
 // `typecheck` déclarée (ngc, `strictTemplates`, sans émettre), lancée depuis
@@ -77,8 +95,20 @@ function libraryProject({ profile, appName, layer, root, specs }) {
     const angular = profile === 'angular-pwa';
     const up = posix.relative(root, '.');
     const targets = {
-        lint: { options: { config: 'eslint.config.mjs', 'max-warnings': 0 } },
+        lint: {
+            ...(layer === 'interface'
+                ? { dependsOn: [checkSocleDependency(appName)] }
+                : {}),
+            options: { config: 'eslint.config.mjs', 'max-warnings': 0 },
+        },
     };
+    if (layer === 'socle')
+        targets[CHECK_SOCLE] = {
+            executor: 'nx:run-commands',
+            options: {
+                command: `node ${SIGNATURE_FILES.support}/check-workspace.mjs`,
+            },
+        };
     if (angular) {
         targets.typecheck = {
             executor: 'nx:run-commands',
@@ -109,7 +139,7 @@ function libraryProject({ profile, appName, layer, root, specs }) {
         projectType: 'library',
         sourceRoot: `${root}/src`,
         ...(angular ? { prefix: 'app' } : {}),
-        tags: [LAYER[layer], `app:${appName}`],
+        tags: [LAYER[layer], appTag(appName)],
         targets,
     });
 }
@@ -242,34 +272,41 @@ function libraryTsconfigs({ profile, specs, root }) {
     return files;
 }
 
-// ESLint de la bibliothèque : celui de la pile, comme la coque. L'interface
-// refuse en plus tout import de l'entrée réservée à la coque (index 2 de la
-// v4, jambe (ii) : règle native `no-restricted-imports`).
-function libraryEslint({ profile, layer }) {
-    const restricted =
-        layer === 'interface'
-            ? `
+// ESLint d'un projet de l'appli (coque, socle, interface) : celui de la pile,
+// plus les frontières natives (commit 2, v4 §V4.3) : la règle
+// `@nx/enforce-module-boundaries` REDÉCLARÉE en entier (ESLint 10 remplace
+// les options d'une règle redéclarée), contraintes de couche de la racine
+// (données importées) et contrainte de l'appli. L'interface refuse en plus
+// l'entrée réservée à la coque (`no-restricted-imports`, données de la
+// racine ; une seule entrée par règle et par groupe, E-2 du lot 5). Les
+// imports relatifs vers un autre projet sont refusés par la même règle
+// (`noRelativeOrAbsoluteImportsAcrossLibraries`, index 8 de la v4).
+export function projectEslint({ profile, layer, appName, root }) {
+    const base = posix.join(posix.relative(root, '.'), 'eslint.config.mjs');
+    const interfaceLayer = layer === 'interface';
+    const names = [
+        'LAYER_CONSTRAINTS',
+        ...(interfaceLayer ? ['SOCLE_COQUE_RESTRICTION'] : []),
+    ];
+    const rules = [
+        `            '@nx/enforce-module-boundaries': ['error', { allow: [], depConstraints: [...LAYER_CONSTRAINTS, ${JSON.stringify(appConstraint(appName))}] }],`,
+        ...(interfaceLayer
+            ? [
+                  "            'no-restricted-imports': ['error', SOCLE_COQUE_RESTRICTION],",
+              ]
+            : []),
+    ];
+    const frontiers = `
     {
-        files: ['**/*.{ts,tsx}'],
+        files: ['**/*.{ts,tsx,mts}'],
         rules: {
-            'no-restricted-imports': [
-                'error',
-                {
-                    patterns: [
-                        {
-                            group: [${JSON.stringify(`${socleCoqueAlias('*')}`)}],
-                            message: "L'entrée de la coque n'est pas une API de l'interface.",
-                        },
-                    ],
-                },
-            ],
+${rules.join('\n')}
         },
-    },`
-            : '';
+    },`;
     if (profile === 'angular-pwa')
         return `import angular from 'angular-eslint';
 import ts from 'typescript-eslint';
-import base from '../../eslint.config.mjs';
+import base, { ${names.join(', ')} } from '${base}';
 
 export default ts.config(
     ...base,
@@ -285,11 +322,11 @@ export default ts.config(
     {
         files: ['**/*.html'],
         extends: [angular.configs.templateRecommended, angular.configs.templateAccessibility],
-    },${restricted}
+    },${frontiers}
 );
 `;
     return `import reactHooks from 'eslint-plugin-react-hooks';
-import baseConfig from '../../eslint.config.mjs';
+import baseConfig, { ${names.join(', ')} } from '${base}';
 
 export default [
     ...baseConfig,
@@ -297,7 +334,7 @@ export default [
         files: ['**/*.ts', '**/*.tsx'],
         plugins: reactHooks.configs.flat.recommended.plugins,
         rules: reactHooks.configs.flat.recommended.rules,
-    },${restricted}
+    },${frontiers}
 ];
 `;
 }
@@ -402,7 +439,12 @@ export function layoutExternalProduct({
             specs: socleSpecs,
         }),
         ...libraryTsconfigs({ profile, specs: socleSpecs, root: socle }),
-        'eslint.config.mjs': libraryEslint({ profile, layer: 'socle' }),
+        'eslint.config.mjs': projectEslint({
+            profile,
+            layer: 'socle',
+            appName,
+            root: socle,
+        }),
         ...socleSources,
     };
     if (profile === 'react-spa' && socleSpecs)
@@ -422,7 +464,12 @@ export function layoutExternalProduct({
             specs: false,
         }),
         ...libraryTsconfigs({ profile, specs: false, root: ui }),
-        'eslint.config.mjs': libraryEslint({ profile, layer: 'interface' }),
+        'eslint.config.mjs': projectEslint({
+            profile,
+            layer: 'interface',
+            appName,
+            root: ui,
+        }),
         [INTERFACE_ENTRY]: interfaceIndex(profile, pages),
     };
     return {
@@ -468,6 +515,18 @@ export async function externalShellProduct({
     }
     const project = JSON.parse(coque['project.json']);
     project.tags = coqueTags(appName, experience.id);
+    // Commit 2 : ESLint de la coque (frontières) et `check-socle` avant son
+    // `lint` (L-1).
+    coque['eslint.config.mjs'] = projectEslint({
+        profile,
+        layer: 'coque',
+        appName,
+        root: coqueRoot(appName),
+    });
+    project.targets.lint = {
+        ...project.targets.lint,
+        dependsOn: [checkSocleDependency(appName)],
+    };
     project.targets.build.dependsOn = [
         ...new Set([...(project.targets.build.dependsOn ?? []), '^typecheck']),
     ];
