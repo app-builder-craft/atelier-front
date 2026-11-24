@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
+import { nativeRunLabels } from '../core/application-native-controls.mjs';
 import { toolEnv } from '../core/atelier-signature.mjs';
 import { isWithin } from '../core/external-application-paths.mjs';
 import {
@@ -129,6 +130,20 @@ export async function provePreparedDocumentCell(root, cell, contextPath) {
     return receipt;
 }
 
+// C-B2 : les appels du runner d'une cellule sont ceux que la liste unique
+// dérive du plan de la création (`nativeRunLabels`), RECALCULÉ ici par le
+// coordinateur ; jamais un nombre écrit à la main (CI #48, 1b : la création
+// fait 8 appels, le contrôle en attendait 5).
+export function assertNativeCellLabels(receipt, plan) {
+    const expected = nativeRunLabels(plan);
+    assert.deepEqual(receipt.native.labels, expected, 'native cell labels');
+    assert.deepEqual(
+        receipt.native_labels,
+        expected,
+        'native cell plan labels'
+    );
+}
+
 export async function runNativeDocumentCell(session, fixture, profile) {
     const cell = `${fixture.kind}/${profile}`;
     assert.ok(NATIVE_CELLS.includes(cell));
@@ -189,7 +204,8 @@ export async function runNativeDocumentCell(session, fixture, profile) {
     const receipt = JSON.parse(receiptBytes.toString('utf8'));
     assert.equal(receipt.cell, cell);
     assert.equal(receipt.native.backend, session.backend);
-    assert.equal(receipt.native.labels.length, 5);
+    // Les appels du runner sont jugés par `assertNativeCellLabels`, contre le
+    // plan de la création recalculé par le coordinateur.
     session.lines.push(
         ...receipt.native.report,
         `EXT03a/${cell} receipt_sha256=${hash(receiptBytes)} elapsed_ms=${Math.round(performance.now() - start)}`,

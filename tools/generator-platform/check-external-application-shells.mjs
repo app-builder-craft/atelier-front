@@ -37,6 +37,7 @@ import {
 } from './proof-support/external-application-checks.mjs';
 
 import {
+    assertNativeCellLabels,
     nativeDocumentFixture,
     runNativeDocumentCell,
     SHARED_DOCUMENT_SOURCE,
@@ -130,7 +131,11 @@ export async function main(argv = process.argv.slice(2)) {
             const currentPlans = [];
             const shells = [];
             for (const profile of ['angular-pwa', 'react-spa']) {
-                await runNativeDocumentCell(session, fixture, profile);
+                const receipt = await runNativeDocumentCell(
+                    session,
+                    fixture,
+                    profile
+                );
                 const shell = {
                     workspaceRoot: TOOLS_ROOT,
                     targetRoot: root,
@@ -141,6 +146,7 @@ export async function main(argv = process.argv.slice(2)) {
                 };
                 const plan = await planExternalApplicationShell(shell);
                 await verifyPlanTrees(plan);
+                assertNativeCellLabels(receipt, plan);
                 currentPlans.push(plan);
                 allPlans.push(plan);
                 shells.push({ ...shell, expectedPlanId: plan.plan_id });
