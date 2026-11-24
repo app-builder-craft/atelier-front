@@ -1,6 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignore": ["**/*.spec.ts", "!apps/workspace-react-proof/e2e/*.spec.ts"],
+  "ignore": [
+    "**/*.spec.ts",
+    "!apps/workspace-react-proof/e2e/*.spec.ts",
+    "tools/generator-platform/.stack-test-runtime/**"
+  ],
   "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
