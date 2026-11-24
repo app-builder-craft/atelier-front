@@ -7,7 +7,10 @@ import { cp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 
-import { planExternalApplicationShell } from './core/application-workspace.mjs';
+import {
+    planExternalApplicationShell,
+    publishExternalApplicationShell,
+} from './core/application-workspace.mjs';
 import {
     planApplicationPublication,
     publishApplicationPublication,
@@ -22,10 +25,14 @@ import {
 } from './test-support/external-application-fixture.mjs';
 import {
     interruptAfterSwap,
+    interruptAt,
     publication,
     sessionApp,
 } from './test-support/external-publication-fixture.mjs';
-import { transactionJournalRoot } from './core/application-transaction.mjs';
+import {
+    pendingTransactionJournals,
+    transactionJournalRoot,
+} from './core/application-transaction.mjs';
 import { writeExternalActionDefinitions } from './test-support/external-session-fixture.mjs';
 import { describeDrift } from '../recover-application-publication.mjs';
 import {
@@ -434,4 +441,31 @@ test('Reprise : chaque écart reçoit un libellé, neutre quand la liste ne l’
             new RegExp(`\\(${kind}\\)`),
             kind
         );
+});
+
+// Revue Fable du 1b, A-1 : la jambe « détenteur » d'`assertGenerationLockFree`.
+// L'opération qui TIENT le verrou du produit (création de l'appli B) et
+// rencontre le journal INTERROMPU de l'appli A dit « interrupted … recover it
+// first » ; jamais « another generation owns » avec son propre pid.
+test('V5.2 : le détenteur du verrou qui trouve la transaction interrompue d’une autre appli la nomme interrompue', async (t) => {
+    const product = await sessionApp(t, 'observatory');
+    const other = { ...product.shell, appName: 'other' };
+    const reviewed = await planExternalApplicationShell(other);
+    await interruptAt(
+        product,
+        publication(product, { [product.notice]: 'export {};\n' })
+    );
+    assert.equal((await pendingTransactionJournals(product.root)).length, 1);
+    const before = await snapshotTree(product.root, []);
+    await assert.rejects(
+        publishExternalApplicationShell(
+            { ...other, expectedPlanId: reviewed.plan_id },
+            { run: () => assert.fail('aucun contrôle natif') }
+        ),
+        (error) =>
+            /interrupted application publication pending; recover it first/.test(
+                error.message
+            ) && !/another generation owns/.test(error.message)
+    );
+    assert.deepEqual(await snapshotTree(product.root, []), before);
 });
