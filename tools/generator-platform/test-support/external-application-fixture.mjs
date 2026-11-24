@@ -12,6 +12,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 
 import { repositoryRoot } from '../validate-ir.mjs';
@@ -31,6 +32,35 @@ import { writeApplicationDesignFixture } from './application-design-fixture.mjs'
 export const TOOLS_ROOT = repositoryRoot;
 export const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
+// Contrôle en cause d'une assertion : son opérateur et le lieu de l'appel
+// dans l'atelier (chemin RELATIF à l'atelier, ligne, colonne), lus dans la
+// pile. Ce sont des faits du code, jamais des valeurs : le message d'une
+// assertion, généré ou non, peut porter des sorties d'enfant ou des valeurs
+// comparées et reste écarté (EXT01 v7). Forme FERMÉE, sinon rien : aucun
+// chemin hors de l'atelier, aucune dépendance installée, aucun `..`.
+const ASSERT_OPERATOR = /^[a-z][A-Za-z]{1,30}$/;
+const ATELIER_LOCATION =
+    /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+\.m?js:\d{1,6}:\d{1,6}$/;
+function assertionControl(error) {
+    const operator = ASSERT_OPERATOR.test(error.operator ?? '')
+        ? error.operator
+        : '';
+    const root = `${pathToFileURL(TOOLS_ROOT).href}/`;
+    let location = '';
+    for (const frame of String(error.stack ?? '').split('\n')) {
+        const url = /(file:\/\/[^\s()]+)/.exec(frame)?.[1];
+        if (!url?.startsWith(root)) continue;
+        const candidate = url.slice(root.length);
+        if (
+            ATELIER_LOCATION.test(candidate) &&
+            !candidate.split('/').includes('node_modules')
+        )
+            location = candidate;
+        break;
+    }
+    return [operator && `[${operator}]`, location].filter(Boolean).join(' ');
+}
+
 export function formatProofStop(error) {
     const assertion = error?.code === 'ERR_ASSERTION';
     const name =
@@ -43,9 +73,11 @@ export function formatProofStop(error) {
         typeof error.message === 'string'
             ? error.message.split(/[\r\n\u0085\u2028\u2029]/u, 1)[0]
             : '';
+    const control =
+        assertion && error instanceof Error ? assertionControl(error) : '';
     const suffix = '; aucun succès global revendiqué.';
     const detail = stripVTControlCharacters(
-        `STOP ${name}${message ? ': ' + message : ''}`
+        `STOP ${name}${control ? ' ' + control : ''}${message ? ': ' + message : ''}`
     )
         .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
         .replace(/\s+/gu, ' ')
