@@ -19,6 +19,7 @@ import { sha256 } from '../core/generation-manifest.mjs';
 import { serializeCanonicalBackendContract } from '../core/structured-backend-adapter.mjs';
 import { writeApplicationDesignFixture } from './application-design-fixture.mjs';
 import {
+    externalDesign,
     prepareFixture,
     schemas,
     TOOLS_ROOT,
@@ -206,10 +207,6 @@ export async function writeDocumentInputs(root, kind, { shell = false } = {}) {
         ]) {
             reference.snapshot_uri =
                 prefix + reference.snapshot_uri.slice(original.length);
-            const request = backendRequests.find(
-                (item) => item.outputPath === reference.snapshot_uri
-            );
-            if (request) reference.sha256 = request.expectedSha256;
         }
     } else {
         const fixture = await writeApplicationDesignFixture(
@@ -238,6 +235,9 @@ export async function writeDocumentInputs(root, kind, { shell = false } = {}) {
         original_design_sha256: originalDesignSha256,
         changes: [],
     };
+    // Lot 2, commit 3 (V3.3) : forme EXTÉRIEURE de la conception (1.3.0,
+    // aucune empreinte de contrat) ; ce n'est pas une variante de fixture.
+    externalDesign(design);
     if (shell) {
         // Explicit technical fixture variant for the common four-cell shell
         // proof. Original document compilation retains shell-only. React's

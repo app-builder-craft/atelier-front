@@ -296,6 +296,8 @@ export async function renderReactSpaShell({
     appName,
     designPath,
     designSha256,
+    // Lot 2, commit 3 : liaison des sources de l'appli, rendue au manifeste.
+    sources = [],
     externalWorkspace = false,
     prefix,
 }) {
@@ -557,6 +559,7 @@ body {
             experience,
             designPath,
             designSha256,
+            sources,
         });
     }
     const canonicalFiles = await canonicalizeGeneratedFiles(
@@ -583,6 +586,7 @@ body {
         app_name: appName,
         profile: 'react-spa',
         design_ref: { path: designPath, sha256: designSha256 },
+        sources,
         experience_id: experience.id,
         generated_files: artifacts,
         tree_sha256: sha256(

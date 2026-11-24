@@ -12,6 +12,11 @@ import {
     publishCompilationWithContext,
 } from './compilation-context.mjs';
 import { assertNoProductDesignPrefix } from './product-prefix.mjs';
+import { resolveDesignDigests } from './application-sources.mjs';
+import {
+    assertSourcePath,
+    readProductFile,
+} from './external-application-paths.mjs';
 import { parseStructuredSource } from './source-document.mjs';
 
 function fail(message) {
@@ -102,19 +107,30 @@ export async function planApplicationDesignPublication({
         context?.productRoot ?? (await realpath(resolve(workspaceRoot)));
     const source = await sourceFile(root, sourcePath);
     const output = await outputFile(root, outputPath);
+    // Lot 2, commit 3 (V3.3) : empreintes de contrat résolues UNE fois, à
+    // l'entrée ; interne : déclarées ; extérieur : lues dans les octets (la
+    // conception compilée est la PROCHAINE valeur d'une source, liée ensuite
+    // par la mise à jour).
+    const { design: resolved } = await resolveDesignDigests(source.design, {
+        mode: context ? 'external' : 'internal',
+        read: async (path) => {
+            await assertSourcePath(root, path, { label: 'document' });
+            return readProductFile(root, path);
+        },
+    });
     const compilationContext = await bindCompilationContext(context, {
         kind: 'design',
         sourcePath,
         sourceContent: source.content,
         outputPath,
-        document: source.design,
+        document: resolved,
         schemas: {
             'application-design': applicationDesignSchema,
             'backend-contract': backendContractSchema,
         },
     });
     const errors = await validateApplicationDesignWithDependencies({
-        design: source.design,
+        design: resolved,
         applicationDesignSchema,
         backendContractSchema,
         workspaceRoot: root,

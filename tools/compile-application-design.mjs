@@ -6,6 +6,7 @@ import {
     publicApplicationDesignPlan,
     publishApplicationDesign,
 } from './generator-platform/core/application-design-publication.mjs';
+import { reportSourcesToBind } from './generator-platform/core/compilation-context.mjs';
 import { loadJson, repositoryRoot } from './generator-platform/validate-ir.mjs';
 
 function fail(message) {
@@ -85,6 +86,7 @@ export async function main(argv = process.argv.slice(2)) {
                 2
             )
         );
+        await reportSourcesToBind({ ...common, kind: 'design' });
         return;
     }
     const result = await publishApplicationDesign({
@@ -95,6 +97,7 @@ export async function main(argv = process.argv.slice(2)) {
         `${result.already_published ? 'Déjà publiée' : 'Publiée'} : ${result.plan.output} ` +
             `(sha256 ${result.plan.output_sha256})`
     );
+    await reportSourcesToBind({ ...common, kind: 'design' });
 }
 
 if (

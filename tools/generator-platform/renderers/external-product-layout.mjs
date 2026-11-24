@@ -106,7 +106,8 @@ function libraryProject({ profile, appName, layer, root, specs }) {
         targets[CHECK_SOCLE] = {
             executor: 'nx:run-commands',
             options: {
-                command: `node ${SIGNATURE_FILES.support}/check-workspace.mjs`,
+                // Commit 3 (v2 R2.4 point 4) : le script PAR APPLI.
+                command: `node ${SIGNATURE_FILES.support}/check-socle.mjs --app ${appName}`,
             },
         };
     if (angular) {
@@ -502,6 +503,7 @@ export async function externalShellProduct({
     experience,
     designPath,
     designSha256,
+    sources,
 }) {
     const coque = {};
     const session = {};
@@ -580,6 +582,7 @@ export async function externalShellProduct({
         app_name: appName,
         profile,
         design_ref: { path: designPath, sha256: designSha256 },
+        sources,
         experience_id: experience.id,
         generated_files: artifacts,
         tree_sha256: sha256(

@@ -1,7 +1,11 @@
 import { lstat } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
-import { planCompilationWorkspace } from './application-workspace.mjs';
+import {
+    planCompilationWorkspace,
+    readOwnedWorkspace,
+} from './application-workspace.mjs';
+import { sourcesToBindLines } from './application-sources.mjs';
 import {
     assertPhysicalPath,
     assertSourcePath,
@@ -54,6 +58,29 @@ async function identityChain(path) {
         if (current === sep) break;
     }
     return identities.reverse();
+}
+
+// Lot 2, commit 3 (V3.2) : la commande AUTRICE de chaque genre compilé ;
+// sa classe est lue dans la table des classes (`application-sources.mjs`).
+const AUTHOR_COMMANDS = Object.freeze({
+    design: 'compile:application-design',
+    backend: 'compile:backend-contract',
+});
+
+// V3.6 point 1 : un auteur qui laisse le produit périmé imprime une ligne
+// `SOURCES_A_LIER` par source à lier, sur la sortie d'erreur (la sortie
+// standard du plan reste du JSON), lue dans l'état du produit à la fin de la
+// commande.
+export async function reportSourcesToBind({ workspaceRoot, targetRoot, kind }) {
+    if (targetRoot === undefined) return [];
+    const workspace = await readOwnedWorkspace({
+        workspaceRoot,
+        targetRoot,
+        command: AUTHOR_COMMANDS[kind],
+    });
+    const lines = sourcesToBindLines(workspace.stale_sources);
+    for (const line of lines) process.stderr.write(`${line}\n`);
+    return lines;
 }
 
 // Without targetRoot the existing library protocol, hashes and paths are used.
@@ -199,6 +226,7 @@ export async function bindCompilationContext(
         githubRepository: context.marker.github_repository,
         reviewOwner: context.marker.review_owner,
         inputPaths: [...inputs.map((input) => input.path), outputPath],
+        command: AUTHOR_COMMANDS[kind],
     });
     if (sha256(workspace.files[MARKER]) !== context.markerSha256)
         fail('workspace marker changed during planning');

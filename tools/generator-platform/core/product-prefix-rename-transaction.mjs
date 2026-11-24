@@ -505,8 +505,9 @@ async function recoverUnderLocks(productRoot, options) {
     if (forward) await completeRename(productRoot, journal);
     else await revertRename(productRoot, journal);
     await removeStaging(productRoot);
-    // L'état retrouvé doit être un produit possédé, cohérent.
-    await readOwnedWorkspace(options);
+    // L'état retrouvé doit être un produit possédé, cohérent ; reprise
+    // (V3.2) : la fraîcheur est rapportée, l'intégrité exigée.
+    await readOwnedWorkspace({ ...options, command: 'recover:product-prefix' });
     return {
         recovered: true,
         plan_id: planId,

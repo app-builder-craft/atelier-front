@@ -18,6 +18,7 @@ import {
 } from './product-prefix.mjs';
 import {
     assertPhysicalPath,
+    assertSourcePath,
     assertSourceWeight,
     externalApplicationContext,
     externalFailure,
@@ -43,6 +44,7 @@ import {
 import { swapTree } from './product-transaction.mjs';
 import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import { LIBS_ROOT } from './socle-names.mjs';
+import { resolveDesignDigests, sourcePaths } from './application-sources.mjs';
 import {
     inputFilePath,
     ownedFiles,
@@ -168,6 +170,7 @@ export async function planApplicationWorkspace(options, internal = {}) {
 }
 
 // Compilation only: neighbours may be sources without becoming dependencies.
+// `options.command` : la commande AUTRICE (lot 2, commit 3, V3.2).
 export async function planCompilationWorkspace(options) {
     return planWorkspace(options, true);
 }
@@ -261,9 +264,19 @@ async function planWorkspace(options, documentSources, internal = {}) {
         // Réservé au renommage du préfixe et à sa reprise (plan_id du
         // renommage) : ses arbres de travail et son journal sont tolérés.
         renaming: internal.renaming,
+        // Lot 2, commit 3 (V3.5 b) : liaison courante de toutes les applis,
+        // liée par chaque consommateur à son `plan_id`.
+        sources_binding: [],
+        stale_sources: [],
     };
-    if (await pathExists(context.productRoot))
-        await verifyWorkspaceRoot(plan, documentSources);
+    if (await pathExists(context.productRoot)) {
+        const { sourcesBinding, stale } = await verifyWorkspaceRoot(plan, {
+            documentSources,
+            command: options.command,
+        });
+        plan.sources_binding = sourcesBinding;
+        plan.stale_sources = stale;
+    }
     return plan;
 }
 
@@ -345,18 +358,22 @@ export async function readOwnedWorkspace(options, internal = {}) {
     let inputPaths = [];
     if (options.designPath) {
         inputFilePath(options.designPath);
-        const design = JSON.parse(
-            (
-                await readProductFile(context.productRoot, options.designPath)
-            ).toString('utf8')
+        const read = async (path) => {
+            inputFilePath(path);
+            await assertSourcePath(context.productRoot, path, {
+                label: 'input',
+            });
+            return readProductFile(context.productRoot, path);
+        };
+        // V3.3 : une conception extérieure qui déclare l'empreinte d'un
+        // contrat est refusée nommément ; puis les seuls CHEMINS de sa
+        // fermeture (ses empreintes sont lues au rendu, après la garde : une
+        // source liée retouchée y est d'abord une dérive de fraîcheur).
+        const { design } = await resolveDesignDigests(
+            JSON.parse((await read(options.designPath)).toString('utf8')),
+            { mode: 'external', read }
         );
-        inputPaths = (
-            await productInputClosure(
-                context.productRoot,
-                options.designPath,
-                design
-            )
-        ).map((entry) => entry.path);
+        inputPaths = await sourcePaths(design, options.designPath, read);
     }
     return planApplicationWorkspace(
         {
@@ -367,6 +384,7 @@ export async function readOwnedWorkspace(options, internal = {}) {
             reviewOwner: manifest.review_owner,
             prefix: manifest.identity.prefix,
             inputPaths,
+            command: options.command,
         },
         internal
     );
@@ -387,7 +405,20 @@ async function renderProductShell(options) {
         externalFailure('unsupported shell profile');
     inputFilePath(designPath);
     const designBytes = await readProductFile(productRoot, designPath);
-    const design = JSON.parse(designBytes.toString('utf8'));
+    // V3.3 : empreintes de contrat résolues UNE fois, à l'entrée (extérieur :
+    // aucune dans la conception ; liaison de l'appli existante, sinon octets).
+    const { design } = await resolveDesignDigests(
+        JSON.parse(designBytes.toString('utf8')),
+        {
+            mode: 'external',
+            binding: options.binding ?? [],
+            read: async (path) => {
+                inputFilePath(path);
+                await assertSourcePath(productRoot, path, { label: 'input' });
+                return readProductFile(productRoot, path);
+            },
+        }
+    );
     const loadSchema = async (name) =>
         JSON.parse(
             (
@@ -420,6 +451,7 @@ async function renderProductShell(options) {
         appName,
         designPath,
         designSha256: sha256(designBytes),
+        sources: inputs,
         externalWorkspace: true,
         prefix,
     });
@@ -438,6 +470,7 @@ export async function renderExternalShellFiles(workspace, manifest, prefix) {
             designPath: manifest.design_ref?.path,
             experienceId: manifest.experience_id,
             profile: manifest.profile,
+            binding: manifest.sources,
             prefix,
         })
     ).files;
@@ -497,6 +530,11 @@ export async function planExternalApplicationShell(options, internal = {}) {
         lock_sha256: installation.lock_sha256,
         installed: installation.metadata,
         inputs: rendered.inputs,
+        // Liaison des AUTRES applis : celle de l'appli créée est `inputs`, et
+        // elle apparaît dans l'espace dès l'échange de ses racines.
+        sources_binding: workspace.sources_binding.filter(
+            (entry) => entry.app !== options.appName
+        ),
         tree_sha256: treeSha,
         app_name: options.appName,
         experience_id: options.experienceId,

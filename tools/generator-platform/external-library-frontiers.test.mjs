@@ -254,12 +254,13 @@ test(
                     `${profile} ${app}-socle`
                 );
             }
-            // La cible lance le vérificateur scellé du produit.
+            // La cible lance le vérificateur scellé du produit, PAR APPLI
+            // (commit 3, v2 R2.4 point 4).
             const socle = JSON.parse(files['libs/app-socle/project.json']);
             assert.deepEqual(socle.targets['check-socle'], {
                 executor: 'nx:run-commands',
                 options: {
-                    command: 'node .atelier/support/check-workspace.mjs',
+                    command: 'node .atelier/support/check-socle.mjs --app app',
                 },
             });
         }

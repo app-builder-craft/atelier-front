@@ -20,6 +20,11 @@ import { retiredAppTombstone } from './atelier-signature.mjs';
 import { repositoryRoot } from '../validate-ir.mjs';
 import { assertDesignPrefix } from './product-prefix.mjs';
 import {
+    applicationSources,
+    resolveDesignDigests,
+} from './application-sources.mjs';
+import { readProductFile } from './external-application-paths.mjs';
+import {
     planExternalApplicationShell,
     publishExternalApplicationShell,
 } from './application-workspace.mjs';
@@ -305,6 +310,8 @@ export async function planApplicationShell({
             `retired app tombstone forbids implicit recreation: ${relative(root, tombstone)}`
         );
     const source = await readDesign(root, designPath);
+    // Lot 2, commit 3 (V3.3) : banc interne, empreintes de contrat déclarées.
+    await resolveDesignDigests(source.design, { mode: 'internal' });
     const errors = await validateApplicationDesignWithDependencies({
         design: source.design,
         applicationDesignSchema,
@@ -320,12 +327,20 @@ export async function planApplicationShell({
         fail,
     });
     const designSha256 = sha256(source.content);
+    // Lot 2, commit 3 (V3.5 f) : liaison des sources, rendue dans les deux
+    // modes par le même code.
+    const sources = await applicationSources(
+        source.design,
+        source.relative,
+        (path) => readProductFile(root, path)
+    );
     const rendered = await profileConfig.render({
         design: source.design,
         experienceId,
         appName,
         designPath: source.relative,
         designSha256,
+        sources,
         prefix,
     });
     const treeSha256 = shellTreeSha256(rendered.files);

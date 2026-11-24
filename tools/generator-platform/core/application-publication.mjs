@@ -147,6 +147,8 @@ export function publicationBinding({
         installed: installation.metadata,
         app_name: appName,
         app_manifest_sha256: sha256(appManifestBytes),
+        // Lot 2, commit 3 (V3.5 b) : liaison courante de toutes les applis.
+        sources_binding: workspace.sources_binding,
         tool,
         inputs,
         covered_prefix: coveredPrefix,
@@ -293,11 +295,13 @@ export async function recoverApplicationPublication(options) {
             context.productRoot,
             options.appName
         );
+        // Reprise (V3.2) : la fraîcheur est rapportée, l'intégrité exigée.
         if (transactions.length)
             await readOwnedWorkspace({
                 ...options,
                 workspaceRoot: context.toolsRoot,
                 targetRoot: context.productRoot,
+                command: 'recover:application-publication',
             });
         return { recovered: transactions.length > 0, transactions };
     });

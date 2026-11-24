@@ -18,6 +18,7 @@ import {
     renderCspHeaderTemplate,
     withCspMeta,
 } from './external-content-security-policy.mjs';
+import { socleCheck } from './product-socle-check.mjs';
 
 // Disposition unique du produit extérieur, consommée aussi par ses preuves et gardes.
 export const EXTERNAL_WORKSPACE_SIGNATURE = Object.freeze({
@@ -128,7 +129,7 @@ const INTERFACE_FREE = ${JSON.stringify(INTERFACE_FREE_DIR + '/')};
 const APP_MANIFEST = ${JSON.stringify(SIGNATURE_FILES.appManifest)};
 
 // Écart nommé : la sortie le cite (chemin relatif au produit, rien de local).
-class WorkspaceDrift extends Error {}
+export class WorkspaceDrift extends Error {}
 const drift = (message) => { throw new WorkspaceDrift(message); };
 
 ${workspacePluginConsumers.toString()}
@@ -191,21 +192,6 @@ async function sources(directory, found) {
             found.push([path, content]);
         }
     }
-}
-
-async function verifiedSnapshot(path, expectedHash) {
-    assert.match(path, /^[a-zA-Z0-9._/-]+$/);
-    assert.ok(!path.startsWith('/') && !path.split('/').some((part) => !part || part === '.' || part === '..'));
-    let current = root;
-    for (const part of path.split('/')) {
-        current = resolve(current, part);
-        assert.equal((await lstat(current)).isSymbolicLink(), false, 'Lien dans une entrée');
-    }
-    assert.equal(await realpath(current), current, 'Entrée hors produit');
-    assert.ok((await lstat(current)).isFile());
-    const bytes = await readFile(current);
-    assert.equal(hash(bytes), expectedHash, 'Empreinte d’entrée');
-    return bytes;
 }
 
 export async function checkWorkspace() {
@@ -271,14 +257,8 @@ export async function checkWorkspace() {
         const app = JSON.parse(await readFile(resolve(appRoot, '${SIGNATURE_FILES.appManifest}'), 'utf8'));
         profiles.add(app.profile);
         names.add(entry.name);
-        const design = JSON.parse((await verifiedSnapshot(app.design_ref.path, app.design_ref.sha256)).toString('utf8'));
-        for (const source of design.sources ?? []) await verifiedSnapshot(source.snapshot_uri, source.sha256);
-        for (const reference of design.backend_contracts ?? []) {
-            const contract = JSON.parse((await verifiedSnapshot(reference.snapshot_uri, reference.sha256)).toString('utf8'));
-            for (const source of contract.sources ?? []) {
-                if (source.snapshot_uri) await verifiedSnapshot(source.snapshot_uri, source.sha256);
-            }
-        }
+        // Lot 2, commit 3 : la fraîcheur des sources liées est vérifiée par
+        // appli, dans \`check-socle.mjs\` (\`staleSources\`, liaison \`sources\`).
         for (const projectRoot of await exactApplication(app)) {
             const project = JSON.parse(await readFile(resolve(root, projectRoot, 'project.json'), 'utf8'));
             for (const target of Object.values(project.targets ?? {})) {
@@ -519,6 +499,8 @@ export default [
             '# Règles du produit\n\nEntrées et contrats approuvés uniquement. Angular et React restent natifs et séparés.\nAucun secret, HAR, environnement réel, appel serveur implicite ni publication sans accord.\nCompiler, linter sans avertissement et tester chaque cible après modification.\n',
         [`${EXTERNAL_WORKSPACE_SIGNATURE.support}/check-workspace.mjs`]:
             productCheck(),
+        [`${EXTERNAL_WORKSPACE_SIGNATURE.support}/check-socle.mjs`]:
+            socleCheck(),
         [`${EXTERNAL_WORKSPACE_SIGNATURE.support}/browser-smoke.mjs`]:
             browserSmoke(),
     };

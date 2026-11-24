@@ -71,3 +71,25 @@ export async function nx24ShellDelta(profile, original) {
     }
     return files;
 }
+
+// Lot 2, commit 3 (v3 V3.5 f) : le manifeste d'appli porte `sources` dans
+// les deux modes, juste après `design_ref` ; un rendu sans liaison fournie
+// (cette référence historique) le rend vide. Oracle de test, comme ci-dessus.
+export async function lot2SourcesDelta(original) {
+    const files = { ...original };
+    const manifestPath = SIGNATURE_FILES.appManifest;
+    const manifest = JSON.parse(files[manifestPath]);
+    assert.equal(Object.hasOwn(manifest, 'sources'), false);
+    const next = {};
+    for (const [key, value] of Object.entries(manifest)) {
+        next[key] = value;
+        if (key === 'design_ref') next.sources = [];
+    }
+    assert.deepEqual(next.sources, []);
+    return {
+        ...files,
+        ...(await canonicalizeGeneratedFiles({
+            [manifestPath]: JSON.stringify(next, null, 2),
+        })),
+    };
+}

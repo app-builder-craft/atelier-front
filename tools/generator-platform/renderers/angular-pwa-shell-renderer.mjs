@@ -309,6 +309,8 @@ export async function renderAngularPwaShell({
     appName,
     designPath,
     designSha256,
+    // Lot 2, commit 3 : liaison des sources de l'appli, rendue au manifeste.
+    sources = [],
     externalWorkspace = false,
     prefix,
 }) {
@@ -693,6 +695,7 @@ self.addEventListener('fetch', (event) => {
             experience,
             designPath,
             designSha256,
+            sources,
         });
     const canonicalFiles = await canonicalizeGeneratedFiles(
         Object.fromEntries(
@@ -718,6 +721,7 @@ self.addEventListener('fetch', (event) => {
         app_name: appName,
         profile: 'angular-pwa',
         design_ref: { path: designPath, sha256: designSha256 },
+        sources,
         experience_id: experience.id,
         generated_files: artifacts,
         tree_sha256: sha256(

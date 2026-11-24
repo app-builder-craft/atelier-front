@@ -157,10 +157,14 @@ migration.
 
 ### 6. Cible `check-socle`
 
-- Le socle de chaque appli porte la cible `check-socle` (`nx:run-commands`), qui
-  lance le vérificateur scellé du produit ; le `lint` de la coque et celui de
-  l'interface en dépendent. Le script par appli, avec la fraîcheur des sources,
-  la remplace au commit suivant du lot 2.
+- Le socle de chaque appli porte la cible `check-socle` (`nx:run-commands`) ; le
+  `lint` de la coque et celui de l'interface en dépendent. Au commit 2, elle
+  lance le vérificateur scellé de l'espace ; depuis le commit 3, le script PAR
+  APPLI `<sig>/support/check-socle.mjs --app <app>` : contrôles d'espace, puis
+  sources liées de CETTE appli (`SOURCES_STALE <genre> <chemin>`) et dossiers de
+  page de l'interface absents de sa conception (`INTERFACE_PAGE_ORPHAN`), tous
+  les écarts d'un coup, sans chemin local. Le `lint` d'une appli à jour reste
+  vert si une autre est périmée.
 - La dépendance NOMME le projet socle de l'appli
   (`{ target: 'check-socle', projects: ['<app>-socle'] }`) au lieu de la forme
   `^check-socle` de la conception : `^` suit les arêtes du graphe, et une appli

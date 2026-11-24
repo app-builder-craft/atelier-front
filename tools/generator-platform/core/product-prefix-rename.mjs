@@ -61,6 +61,8 @@ export function renameBinding({
         lock_sha256: installation.lock_sha256,
         installed: installation.metadata,
         workspace_manifest_sha256: sha256(workspace.files[WORKSPACE_MANIFEST]),
+        // Lot 2, commit 3 (V3.5 b) : liaison courante de toutes les applis.
+        sources_binding: workspace.sources_binding,
         prefix_before: workspace.manifest.identity.prefix,
         prefix_after: prefixAfter,
         workspace_id_before: workspace.manifest.workspace_id,

@@ -150,7 +150,7 @@ function menuBinding(graph, rootId, session) {
 
 // Versions de conception qui portent une session : 1.1.0, et 1.2.0 qui ne
 // fait qu'y ajouter l'identité du produit (`design.identity.prefix`).
-const SESSION_DESIGN_VERSIONS = new Set(['1.1.0', '1.2.0']);
+const SESSION_DESIGN_VERSIONS = new Set(['1.1.0', '1.2.0', '1.3.0']);
 
 export function resolveApplicationSession(design, experience, contracts) {
     const session = experience.session;

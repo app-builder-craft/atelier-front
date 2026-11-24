@@ -29,7 +29,7 @@ import {
     shellFixture,
 } from './external-application-fixture.mjs';
 import { FIXTURE_PREFIX } from './application-design-fixture.mjs';
-import { nx24ShellDelta } from './nx24-shell-delta.mjs';
+import { lot2SourcesDelta, nx24ShellDelta } from './nx24-shell-delta.mjs';
 import { SIGNATURE } from '../core/atelier-signature.mjs';
 
 // Le renderer historique range ses métadonnées sous SA signature, lue dans sa
@@ -219,7 +219,10 @@ test('T16 : référence historique exhaustive et seul delta Nx24 qualifié', asy
         assert.throws(() => assert.deepEqual(actual, historical), {
             code: 'ERR_ASSERTION',
         });
-        const expected = await nx24ShellDelta(profile, historical);
+        // Deltas qualifiés : Nx24, puis le champ `sources` du lot 2.
+        const expected = await lot2SourcesDelta(
+            await nx24ShellDelta(profile, historical)
+        );
         assert.deepEqual(actual, expected);
         assert.deepEqual(
             (await render({ ...options, externalWorkspace: false })).files,

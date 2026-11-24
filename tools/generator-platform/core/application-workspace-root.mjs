@@ -30,6 +30,13 @@ import {
     treeInventory,
     verifyGeneratedTree,
 } from './external-application-paths.mjs';
+import {
+    applicationSources,
+    assertApplicationSources,
+    commandClass,
+    staleMessage,
+    staleSources,
+} from './application-sources.mjs';
 import { sha256 } from './generation-manifest.mjs';
 import { prefixRefusals } from './product-identity.mjs';
 import {
@@ -107,7 +114,30 @@ export async function sealedProductPrefix(productRoot) {
     return prefix;
 }
 
-export async function verifyWorkspaceRoot(plan, documentSources = false) {
+// Empreinte d'une source liée, lue par le contrôle de chemin unique ;
+// absente : null (la fraîcheur la rapporte `missing`).
+async function sourceDigest(productRoot, path) {
+    await assertSourcePath(productRoot, path, {
+        missing: true,
+        label: 'source',
+    });
+    if (!(await pathExists(resolve(productRoot, path)))) return null;
+    const content = await readProductFile(productRoot, path);
+    return { sha256: sha256(content), bytes: content.length };
+}
+
+// Lot 2, commit 3 (v2 R2.2, v3 V3.2 et V3.5 b) : deux contrôles distincts.
+// INTÉGRITÉ, toujours et d'abord : sceau, inventaire, arbres, fichiers
+// d'espace et non possédés, interruptions. FRAÎCHEUR : la liaison `sources`
+// de chaque appli comparée aux fichiers présents ; son effet dépend de la
+// classe de la commande (`command`, défaut fermé : consommateur). Une
+// transaction relue par elle-même (`plan.transaction`, `plan.renaming`) ne
+// refuse pas : ses empreintes courantes entrent dans `sources_binding`, et
+// son `plan_id` change (« … inputs changed »). Rend la liaison courante.
+export async function verifyWorkspaceRoot(
+    plan,
+    { documentSources = false, command } = {}
+) {
     const { productRoot } = plan;
     if (!(await pathExists(resolve(productRoot, MANIFEST))))
         externalFailure('workspace ownership marker missing');
@@ -153,6 +183,7 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
     const inputs = new Set(plan.inputPaths ?? []);
     const ownedRoots = new Set([...expected].map((path) => path.split('/')[0]));
     const appNames = new Set();
+    const apps = [];
     for (const entry of await readdir(resolve(productRoot, 'apps'), {
         withFileTypes: true,
     })) {
@@ -181,20 +212,10 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         appNames.add(entry.name);
         // ADR-0103 : inventaire scellé, expliqué par ses publications.
         verifyApplicationOwnership(app, plan.manifest.workspace_id);
-        const designBytes = await readProductFile(
-            productRoot,
-            app.design_ref.path
-        );
-        if (sha256(designBytes) !== app.design_ref.sha256)
-            externalFailure('workspace app input drift');
-        const design = JSON.parse(designBytes.toString('utf8'));
-        for (const input of await productInputClosure(
-            productRoot,
-            app.design_ref.path,
-            design
-        ))
-            inputs.add(input.path);
+        for (const source of assertApplicationSources(app))
+            inputs.add(source.path);
         await verifyApplicationTrees(productRoot, app);
+        apps.push(app);
     }
     // Lot 2 (V3.1 point 3) : `libs` est un espace de produit comme `apps`,
     // pour TOUTES les classes de commande : jamais une source de document ;
@@ -222,6 +243,35 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
                 externalFailure('unowned library entry');
         }
     }
+    // Fraîcheur, après l'intégrité de toutes les applis (N3).
+    const binding = [];
+    const stale = [];
+    for (const app of apps) {
+        const read = (path) => sourceDigest(productRoot, path);
+        for (const source of app.sources) {
+            const found = await read(source.path);
+            binding.push({
+                app: app.app_name,
+                genre: source.genre,
+                path: source.path,
+                sha256: found?.sha256 ?? null,
+                bytes: found?.bytes ?? null,
+            });
+        }
+        for (const drift of await staleSources(app.sources, read))
+            stale.push({ app: app.app_name, ...drift });
+    }
+    const order = (left, right) =>
+        left.app < right.app ||
+        (left.app === right.app && left.path < right.path)
+            ? -1
+            : 1;
+    binding.sort(order);
+    stale.sort(order);
+    const ownTransaction =
+        plan.transaction !== undefined || plan.renaming !== undefined;
+    if (stale.length && commandClass(command) === 'consumer' && !ownTransaction)
+        externalFailure(stale.map(staleMessage).join('\n'));
     const runtimeRoots = new Set(RUNTIME_ROOTS);
     async function reserved(directory, prefix = '') {
         for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -266,6 +316,7 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         }
     }
     await reserved(productRoot);
+    return { sourcesBinding: binding, stale };
 }
 
 // Lot 2 (V3.1 point 4, L-1) : l'inventaire d'une appli, relatif au produit,
@@ -350,49 +401,39 @@ export function inputFilePath(path) {
     return path;
 }
 
+// Fermeture des entrées d'une conception (lot 2, commit 3 : par GENRE, table
+// de `application-sources.mjs`, v4 V4.5). Chaque chemin passe le contrôle
+// unique des sources ; une empreinte DÉCLARÉE (preuves de la conception,
+// contrat résolu, sources relues dans le contrat) doit égaler les octets.
+// Rend [{genre, path, sha256, bytes}], trié par chemin.
 export async function productInputClosure(root, designPath, design) {
-    const paths = new Set([inputFilePath(designPath)]);
-    const expectedHashes = new Map();
+    inputFilePath(designPath);
+    const declared = new Map();
+    const declare = (source) => {
+        if (source?.snapshot_uri && source.sha256 !== undefined)
+            declared.set(source.snapshot_uri, source.sha256);
+    };
     for (const source of [
         ...(design.sources ?? []),
         ...(design.backend_contracts ?? []),
-    ]) {
-        paths.add(inputFilePath(source.snapshot_uri));
-        expectedHashes.set(source.snapshot_uri, source.sha256);
-    }
-    for (const reference of design.backend_contracts ?? []) {
-        const contract = JSON.parse(
-            (await readProductFile(root, reference.snapshot_uri)).toString(
-                'utf8'
-            )
-        );
-        for (const source of contract.sources ?? []) {
-            if (source.snapshot_uri) {
-                paths.add(inputFilePath(source.snapshot_uri));
-                expectedHashes.set(source.snapshot_uri, source.sha256);
-            }
-        }
-    }
-    const artifacts = [];
-    for (const path of [...paths].sort()) {
-        // Inputs stay at their declared relative paths; descriptions/ is a
-        // convention, not a fallback or an additional business schema.
-        // Lot 2 (§V4.6 point 1) : tout chemin de fermeture passe le contrôle
-        // unique des sources avant d'être lu.
+    ])
+        declare(source);
+    // Inputs stay at their declared relative paths; descriptions/ is a
+    // convention, not a fallback or an additional business schema.
+    const read = async (path) => {
+        inputFilePath(path);
         await assertSourcePath(root, path, { label: 'input' });
         const content = await readProductFile(root, path);
-        if (
-            expectedHashes.has(path) &&
-            sha256(content) !== expectedHashes.get(path)
-        )
+        if (declared.has(path) && sha256(content) !== declared.get(path))
             externalFailure(
                 'product application-design rejected: workspace app input drift'
             );
-        artifacts.push({
-            path,
-            sha256: sha256(content),
-            bytes: content.length,
-        });
-    }
-    return artifacts;
+        return content;
+    };
+    for (const reference of design.backend_contracts ?? [])
+        for (const source of JSON.parse(
+            (await read(reference.snapshot_uri)).toString('utf8')
+        ).sources ?? [])
+            declare(source);
+    return applicationSources(design, designPath, read);
 }

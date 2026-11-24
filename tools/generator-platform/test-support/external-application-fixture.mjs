@@ -183,6 +183,15 @@ export async function prepareFixture(t, profiles) {
     return { parent, root: options.targetRoot, options, plan };
 }
 
+// Lot 2, commit 3 (V3.3) : forme EXTÉRIEURE d'une conception : version
+// 1.3.0, aucune empreinte de contrat (elle vit dans la liaison de l'appli).
+export function externalDesign(design) {
+    design.schema_version = '1.3.0';
+    for (const reference of design.backend_contracts ?? [])
+        delete reference.sha256;
+    return design;
+}
+
 export async function writeExternalDesign(root, sharedSource) {
     const loaded = await schemas();
     const fixture = await writeApplicationDesignFixture(
@@ -190,7 +199,7 @@ export async function writeExternalDesign(root, sharedSource) {
         loaded.backendContractSchema,
         'descriptions'
     );
-    const design = fixture.design;
+    const design = externalDesign(fixture.design);
     design.design.title = 'Laboratoire des shells natifs';
     design.experiences[0].offline_policy = 'none';
     design.pages[0].title = 'Accueil fictif';
