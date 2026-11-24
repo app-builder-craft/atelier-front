@@ -18,6 +18,7 @@ import { sessionRenderConfiguration } from './core/application-design-session.mj
 import { escapeRegExp, signatureName } from './core/atelier-signature.mjs';
 import { relayEnvshPath } from './core/external-application-paths.mjs';
 import { prefixInitials, productForms } from './core/product-identity.mjs';
+import { coqueRoot } from './core/socle-names.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import {
     externalCspHeader,
@@ -108,13 +109,25 @@ export async function relayFixture({ prefix = HARNESS_PREFIX } = {}) {
             sessionRenderConfiguration(data.design, experience),
             prefix
         );
+        // Lot 2 (V5.1) : le rendu est relatif au produit ; les fichiers du
+        // relais vivent dans la coque. Un fichier absent du rendu est un refus
+        // nommé, jamais un `undefined` écrit plus loin.
+        const owned = (path) => {
+            const content = shell.files[`${coqueRoot(APP)}/${path}`];
+            assert.equal(
+                typeof content,
+                'string',
+                `relay file missing from the rendered shell: ${path}`
+            );
+            return content;
+        };
         return {
             table,
             prefix,
             files: {
-                template: shell.files[RELAY_FILES.template],
-                headers: shell.files[RELAY_FILES.headers],
-                envsh: shell.files[relayEnvshPath(prefix)],
+                template: owned(RELAY_FILES.template),
+                headers: owned(RELAY_FILES.headers),
+                envsh: owned(relayEnvshPath(prefix)),
                 csp: renderCspHeaderTemplate(prefix),
             },
         };

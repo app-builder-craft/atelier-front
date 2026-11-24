@@ -563,3 +563,30 @@ test('X4-config : le harnais compare le chemin relayé sans expression réguliè
     assert.equal(echoes('path=/a.cs|', '/a.css?'), false);
     assert.equal(echoes(undefined, '/'), false);
 });
+
+// Revue Fable du 1b, B-1 (CI #48 rouge à « Relais nginx de même origine ») : le
+// harnais lit le rendu extérieur aux chemins du PRODUIT (coque) ; chaque
+// fichier du relais est une chaîne, et la mise en place du harnais (sans
+// Docker) les écrit à l'octet.
+test('X4-config : le harnais du relais lit ses fichiers dans la coque rendue et les met en place', async (t) => {
+    const { HOST_CONF, relayFixture, stage } =
+        await import('./check-nginx-relay.mjs');
+    const { files, table } = await relayFixture();
+    for (const name of ['template', 'headers', 'envsh', 'csp'])
+        assert.equal(typeof files[name], 'string', name);
+    assert.ok(table.length > 0);
+    assert.ok(files.template.includes('location ^~ /api/ {'));
+    const root = await scratch(t, signatureName('relay-stage-'));
+    await stage(root, files);
+    assert.equal(
+        await readFile(
+            join(root, 'templates', 'default.conf.template'),
+            'utf8'
+        ),
+        files.template
+    );
+    assert.equal(
+        await readFile(join(root, HOST_CONF, 'security-headers.conf'), 'utf8'),
+        files.headers
+    );
+});
