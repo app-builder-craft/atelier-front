@@ -20,6 +20,24 @@ import {
 } from './external-content-security-policy.mjs';
 import { socleCheck } from './product-socle-check.mjs';
 
+// Lot 2, correction de l'étape A (revue Fable, B-3) : sélecteurs de
+// \`no-restricted-syntax\` de l'interface (formes de Vite hors de la règle de
+// frontières de Nx), en données exportées par l'ESLint racine du produit.
+export const INTERFACE_RESTRICTED_SYNTAX = Object.freeze([
+    Object.freeze({
+        selector:
+            "MemberExpression[object.type='MetaProperty'][property.name=/^glob/]",
+        message:
+            "`import.meta.glob` n'est pas une API de l'interface : importer l'API publique du socle.",
+    }),
+    Object.freeze({
+        selector:
+            'NewExpression[callee.name=/^(?:Shared)?Worker$/] > NewExpression[callee.name="URL"]',
+        message:
+            "Un worker construit sur un chemin n'est pas une API de l'interface : importer l'API publique du socle.",
+    }),
+]);
+
 // Disposition unique du produit extérieur, consommée aussi par ses preuves et gardes.
 export const EXTERNAL_WORKSPACE_SIGNATURE = Object.freeze({
     manifest: SIGNATURE_FILES.workspaceManifest,
@@ -475,6 +493,11 @@ import ts from 'typescript-eslint';
 // son appli. Entrée \`no-restricted-imports\` de l'interface, en DONNÉES.
 export const LAYER_CONSTRAINTS = ${JSON.stringify(LAYER_CONSTRAINTS)};
 export const SOCLE_COQUE_RESTRICTION = { patterns: [{ group: [${JSON.stringify(socleCoqueAlias('*'))}], message: "L'entrée de la coque n'est pas une API de l'interface." }] };
+// Revue Fable de l'étape A, B-3 : des formes de Vite que la règle de Nx ne
+// voit pas (chemin passé à \`import.meta.glob\`, \`new Worker(new URL(…))\`,
+// types de Vite tirés par une directive) atteindraient le socle depuis
+// l'interface ; deux règles STANDARD les ferment, en DONNÉES.
+export const INTERFACE_RESTRICTED_SYNTAX = ${JSON.stringify(INTERFACE_RESTRICTED_SYNTAX)};
 
 export default [
     { ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.nx/**', '.angular/**', 'tmp/**', 'apps/.*-candidate-*/**', 'apps/.*-previous-*/**', 'libs/.*-candidate-*/**', 'libs/.*-previous-*/**'] },

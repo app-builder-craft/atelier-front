@@ -287,13 +287,19 @@ export function projectEslint({ profile, layer, appName, root }) {
     const interfaceLayer = layer === 'interface';
     const names = [
         'LAYER_CONSTRAINTS',
-        ...(interfaceLayer ? ['SOCLE_COQUE_RESTRICTION'] : []),
+        ...(interfaceLayer
+            ? ['INTERFACE_RESTRICTED_SYNTAX', 'SOCLE_COQUE_RESTRICTION']
+            : []),
     ];
     const rules = [
         `            '@nx/enforce-module-boundaries': ['error', { allow: [], depConstraints: [...LAYER_CONSTRAINTS, ${JSON.stringify(appConstraint(appName))}] }],`,
         ...(interfaceLayer
             ? [
                   "            'no-restricted-imports': ['error', SOCLE_COQUE_RESTRICTION],",
+                  // Revue de l'étape A, B-3 : formes de Vite hors de la règle
+                  // de Nx, fermées par deux règles standard.
+                  "            'no-restricted-syntax': ['error', ...INTERFACE_RESTRICTED_SYNTAX],",
+                  "            '@typescript-eslint/triple-slash-reference': ['error', { lib: 'never', path: 'never', types: 'never' }],",
               ]
             : []),
     ];

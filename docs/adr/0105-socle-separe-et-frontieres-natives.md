@@ -96,7 +96,14 @@ Ligne « lot 2 » du tableau des lots qui changent l'espace :
   même nom pendant les contrôles natifs — les dossiers de travail des
   transactions ajoutés aux ignorés de `.gitignore` et de l'ESLint racine ;
 - commit 2 : l'ESLint racine (contraintes de couche) et le paquet
-  `@nx/eslint-plugin` (`package.json`, `bun.lock` du produit).
+  `@nx/eslint-plugin` (`package.json`, `bun.lock` du produit) ;
+- commit 3 : `<sig>/support/check-socle.mjs` ajouté (vérificateur par appli) et
+  `<sig>/support/check-workspace.mjs` modifié : la chaîne d'empreintes
+  conception → contrat le quitte (remplacée par `staleSources` de la liaison,
+  dans `check-socle.mjs`) et `WorkspaceDrift` y est exporté, pour que
+  `check-socle.mjs` nomme son échec ;
+- correction de l'étape A (revue, B-3) : l'ESLint racine exporte en plus
+  `INTERFACE_RESTRICTED_SYNTAX`.
 
 Aucun produit extérieur n'existait avant ces changements ; il n'y a pas de
 migration.
@@ -126,7 +133,10 @@ migration.
     | interface → fichier interne du socle, par un chemin relatif                   | idem                                                                                                                  |
     | interface → fichier de la coque, par un chemin relatif                        | idem                                                                                                                  |
     | interface → `@socle/<autre>`                                                  | `onlyTagsConstraintViolation` : « A project tagged with "app:<app>" can only depend on libs tagged with "app:<app>" » |
-    | interface → `@socle-coque/<app>`                                              | `no-restricted-imports` (et TS2307 au `typecheck` de l'interface)                                                     |
+    | interface → `@socle-coque/<app>`                                              | `no-restricted-imports` (et, au `typecheck` de l'interface, TS2307 ; TS2882 pour un import d'effet)                   |
+    | interface → `import.meta.glob('<relatif>')` (globbing de Vite)                | `no-restricted-syntax` (`import.meta.glob…`, données `INTERFACE_RESTRICTED_SYNTAX`)                                   |
+    | interface → `/// <reference types="vite/client" />`                           | `@typescript-eslint/triple-slash-reference` (`lib`, `path`, `types` : `never`)                                        |
+    | interface → `new Worker(new URL('<relatif>', import.meta.url))`               | `no-restricted-syntax` (worker construit sur une URL)                                                                 |
     | socle → `@interface/<app>`                                                    | `onlyTagsConstraintViolation` (`layer:socle`)                                                                         |
     | socle ou coque → `@socle/<autre>`                                             | `onlyTagsConstraintViolation` (`app:<app>`)                                                                           |
     | coque → socle par un chemin relatif                                           | `noRelativeOrAbsoluteImportsAcrossLibraries`                                                                          |
@@ -135,25 +145,39 @@ migration.
     Les quatre premières formes étaient OUVERTES au commit 1b (revue du 1b, A-2)
     : TypeScript compile un import relatif hors de `include` sans erreur, parce
     que le `rootDir` des projets est la racine du produit ; seule la règle de
-    frontières les ferme, au `lint`.
+    frontières les ferme, au `lint`. Les trois formes de Vite ne passent pas par
+    la résolution de modules que lit la règle de Nx : sans les deux règles
+    standard de l'interface, une page React qui les écrit passe le `lint`, la
+    vérification de types (avec la directive de types de Vite) et la
+    construction (mesuré par la revue de l'étape A, B-3) ; avec elles, le `lint`
+    les refuse (cas du test, sortie citée).
 
 - **Garantie « l'interface n'importe pas l'entrée de la coque »**, trois jambes
   natives, chacune accrochée au portail et mutée : (i) le `typecheck` de
   l'interface, avec son propre tsconfig (TS2307), dont dépend la construction de
   la coque (`^typecheck`) ; (ii) `no-restricted-imports` sur `@socle-coque/*` ;
   (iii) `noRelativeOrAbsoluteImportsAcrossLibraries` pour les chemins relatifs
-  et absolus.
+  et absolus ; (iv) `no-restricted-syntax` et
+  `@typescript-eslint/triple-slash-reference` pour les formes de Vite.
 - **Issue de R-S (b), mesurée** : sous Vite 8.3.5, le build React de la coque,
-  qui paquette les pages de l'interface, NE résout PAS `@socle-coque/<app>`
-  écrit dans une page de l'interface (« Rolldown failed to resolve import ») ;
-  la garantie tient donc aussi sous Vite, en plus des trois jambes. En Angular,
-  le build de la coque compile les pages de l'interface dans son propre
-  programme TypeScript, avec les `paths` de la coque, où l'alias se résout
-  (conception du lot 2, v4 § V4.4) : la garantie y repose sur les trois jambes.
+  qui paquette les pages de l'interface, NE résout PAS l'ALIAS
+  `@socle-coque/<app>` écrit dans une page de l'interface (« Rolldown failed to
+  resolve import »). Cela ne vaut que pour l'alias : un chemin RELATIF vers le
+  socle passe la construction React et `tsc`, et les formes de Vite ci-dessus
+  aussi (revue de l'étape A). La garantie contre les relatifs et les formes de
+  Vite est donc celle du `lint` par Nx, qui passe AVANT la construction dans les
+  contrôles natifs d'une création ou d'une publication (liste unique C-B2) ; une
+  construction lancée seule, sans `lint`, ne la donne pas. En Angular, le build
+  de la coque compile les pages de l'interface dans son propre programme
+  TypeScript, avec les `paths` de la coque, où l'alias se résout (conception du
+  lot 2, v4 § V4.4) : la garantie y repose sur les jambes du `lint` et du
+  `typecheck` ; `import.meta.glob` n'existe pas dans la construction Angular
+  (non mesuré).
 - **Limite native connue** : la règle lit le graphe du produit en cache. La
   cible `lint` (`nx run <projet>:lint`) le calcule avant ESLint ; un appel
   direct d'ESLint sans graphe en cache saute la règle avec un avertissement
-  (`@nx/eslint-plugin` 24.0.3). Le produit ne se lint que par ses cibles Nx.
+  (`@nx/eslint-plugin` 24.0.3), que `--max-warnings=0` ne voit pas (mesuré par
+  la revue). Le produit ne se lint que par ses cibles Nx.
 
 ### 6. Cible `check-socle`
 
@@ -170,8 +194,16 @@ migration.
   `^check-socle` de la conception : `^` suit les arêtes du graphe, et une appli
   sans session n'en a aucune vers son socle (la coque ni l'interface n'importent
   le socle) ; mesuré sur un produit React, la forme `^check-socle` ne déclenche
-  rien. Le `lint` du socle n'en dépend pas : la commande qui régénère une appli
-  lance `check-socle` explicitement.
+  rien (mesure confirmée par la revue ; forme retenue par le pilote, lecture L-1
+  bis). Le `lint` du socle n'en dépend pas.
+- Les contrôles natifs d'une création ou d'une publication lancent `check-socle`
+  comme dépendance de tâche du `lint` de la coque et de l'interface
+  (`runNativeControls` ne le nomme pas) ; la mise à jour d'appli du lot 2 le
+  lancera aussi explicitement. Cette dépendance est prouvée par le graphe des
+  tâches de Nx (`--graph=stdout`) : les preuves légères lancent les cibles sans
+  leurs dépendances (dépendances liées depuis l'atelier, que le vérificateur
+  d'espace refuse) ; l'exécution réelle de `check-socle` sur un produit installé
+  est celle de la preuve native de la CI.
 
 ## Conséquences
 
@@ -181,4 +213,14 @@ migration.
 - Le contrôle avant échange compile les candidats de bibliothèque seuls (`ngc`
   ou `tsc`, `--noEmit`) ; la coque se compile après l'échange, avant `verified`.
 - Une forme de frontière nouvelle s'ajoute comme contrainte de couche dans
-  `socle-names.mjs`, jamais dans un fichier d'appli.
+  `socle-names.mjs`, ou comme sélecteur de `INTERFACE_RESTRICTED_SYNTAX`, jamais
+  dans un fichier d'appli.
+- La directive `/// <reference …>` est refusée dans TOUT fichier de
+  l'interface, configuration comprise : le `vite.config.mts` que le lot 7
+  rendra pour l'interface (première spec) s'écrit sans elle (sa configuration
+  importe `vitest/config`, qui porte déjà les types de la section `test`).
+- Limite décidée par le pilote : un auteur de source ne remplace pas encore une
+  sortie présente (la publication de documents la refuse) ; le remplacement sous
+  plan (empreinte « avant » liée au plan, renommage atomique, sortie étrangère
+  toujours refusée) vient au commit 6, avec l'opération `files` ; jusque-là, la
+  preuve « seconde compilation d'un contrat » est partielle.

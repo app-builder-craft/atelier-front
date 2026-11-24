@@ -154,6 +154,26 @@ for (const profile of ['angular-pwa', 'react-spa']) {
                             ],
                         ],
                     },
+                    // Revue de l'étape A, B-3 : formes de Vite hors de la
+                    // règle de Nx (un chemin passé au globbing ou à un worker,
+                    // types de Vite tirés par une directive) ; refusées par
+                    // deux règles standard de l'ESLint de l'interface.
+                    [`${ui}/probe-vite-glob.ts`]: {
+                        source: `/// <reference types="vite/client" />\nexport const coque = import.meta.glob('${fromUi('libs/app-socle/src/coque.ts')}', { eager: true });\n`,
+                        refusals: [
+                            [
+                                '@typescript-eslint/triple-slash-reference',
+                                'tripleSlashReference',
+                            ],
+                            ['no-restricted-syntax', 'restrictedSyntax'],
+                        ],
+                    },
+                    [`${ui}/probe-worker-url.ts`]: {
+                        source: `export const worker = new Worker(new URL('${fromUi('libs/app-socle/src/coque.ts')}', import.meta.url), { type: 'module' });\n`,
+                        refusals: [
+                            ['no-restricted-syntax', 'restrictedSyntax'],
+                        ],
+                    },
                     // Admis : l'API publique du socle de l'appli.
                     [`${ui}/probe-admis.ts`]: {
                         source: "export * from '@socle/app';\n",
@@ -172,6 +192,19 @@ for (const profile of ['angular-pwa', 'react-spa']) {
             assert.match(
                 cited[`${ui}/probe-autre-socle.ts`][0][2],
                 /^A project tagged with "app:app" can only depend on libs tagged with "app:app"$/
+            );
+            // B-3 : textes natifs de la directive et du sélecteur.
+            assert.match(
+                cited[`${ui}/probe-vite-glob.ts`][0][2],
+                /^Do not use a triple slash reference for vite\/client, use `import` style instead\.$/
+            );
+            assert.match(
+                cited[`${ui}/probe-vite-glob.ts`][1][2],
+                /^`import\.meta\.glob` n'est pas une API de l'interface/
+            );
+            assert.match(
+                cited[`${ui}/probe-worker-url.ts`][0][2],
+                /^Un worker construit sur un chemin n'est pas une API de l'interface/
             );
             // Le socle ne dépend ni de l'interface, ni d'un autre socle.
             const socleCited = await refused(
@@ -296,74 +329,80 @@ test(
     }
 );
 
-test('`create-app` d’une troisième appli : ESLint racine identique à l’octet ; chaque appli a sa contrainte dans ses trois projets', async (t) => {
-    const fixture = await shellFixture(t, 'angular-pwa');
-    const rootEslint = () =>
-        readFile(join(fixture.root, 'eslint.config.mjs'), 'utf8');
-    const before = await rootEslint();
-    // Oracle écrit ici (v4 § V4.3 point 1) : les seules contraintes de
-    // COUCHE, en données exportées, et la règle déclarée avec elles.
-    assert.ok(
-        normalized(before).includes(
-            normalized(
-                'export const LAYER_CONSTRAINTS = [' +
-                    '{"sourceTag":"type:app","onlyDependOnLibsWithTags":["layer:socle","layer:interface"]},' +
-                    '{"sourceTag":"layer:interface","onlyDependOnLibsWithTags":["layer:socle"]},' +
-                    '{"sourceTag":"layer:socle","onlyDependOnLibsWithTags":["layer:socle"]}];'
-            )
-        ),
-        before
-    );
-    assert.doesNotMatch(before, /app:/);
-    // Chaque paquet importé par un ESLint du produit est DÉCLARÉ par le
-    // produit, sur l'espace réellement planifié par l'atelier (paquets choisis
-    // par ses tables) : son vérificateur l'exige (« Import non déclaré »).
-    const product = JSON.parse(
-        await readFile(join(fixture.root, 'package.json'), 'utf8')
-    );
-    const declared = { ...product.dependencies, ...product.devDependencies };
-    const imported = new Set();
-    const assertDeclared = (path, text) => {
-        for (const [, name] of text.matchAll(
-            /from '((?:@[^/']+\/)?[^/'.][^/']*)/g
-        )) {
-            imported.add(name);
-            assert.ok(Object.hasOwn(declared, name), `${path} : ${name}`);
-        }
-    };
-    assertDeclared('eslint.config.mjs', before);
-    assert.ok(imported.has('@nx/eslint-plugin'), [...imported].join());
-    for (const appName of ['alpha', 'beta', 'gamma']) {
-        const options = { ...fixture.shell, appName };
-        const plan = await planExternalApplicationShell(options);
-        // Le plan n'écrit que les trois racines de l'appli.
-        assert.deepEqual(plan.roots.map(({ root }) => root).sort(), [
-            `apps/${appName}`,
-            `libs/${appName}-interface`,
-            `libs/${appName}-socle`,
-        ]);
-        await publishExternalApplicationShell(
-            { ...options, expectedPlanId: plan.plan_id },
-            { run: () => undefined }
+for (const profile of ['angular-pwa', 'react-spa'])
+    test(`${profile} : \`create-app\` d’une troisième appli : ESLint racine identique à l’octet ; chaque appli a sa contrainte dans ses trois projets`, async (t) => {
+        // Revue de l'étape A, A-6 : les deux piles (React importe aussi
+        // `eslint-plugin-react-hooks`).
+        const fixture = await shellFixture(t, profile);
+        const rootEslint = () =>
+            readFile(join(fixture.root, 'eslint.config.mjs'), 'utf8');
+        const before = await rootEslint();
+        // Oracle écrit ici (v4 § V4.3 point 1) : les seules contraintes de
+        // COUCHE, en données exportées, et la règle déclarée avec elles.
+        assert.ok(
+            normalized(before).includes(
+                normalized(
+                    'export const LAYER_CONSTRAINTS = [' +
+                        '{"sourceTag":"type:app","onlyDependOnLibsWithTags":["layer:socle","layer:interface"]},' +
+                        '{"sourceTag":"layer:interface","onlyDependOnLibsWithTags":["layer:socle"]},' +
+                        '{"sourceTag":"layer:socle","onlyDependOnLibsWithTags":["layer:socle"]}];'
+                )
+            ),
+            before
         );
-        assert.equal(await rootEslint(), before, appName);
-        for (const projectRoot of applicationProjectRoots(appName)) {
-            const text = await readFile(
-                join(fixture.root, projectRoot, 'eslint.config.mjs'),
-                'utf8'
+        assert.doesNotMatch(before, /app:/);
+        // Chaque paquet importé par un ESLint du produit est DÉCLARÉ par le
+        // produit, sur l'espace réellement planifié par l'atelier (paquets choisis
+        // par ses tables) : son vérificateur l'exige (« Import non déclaré »).
+        const product = JSON.parse(
+            await readFile(join(fixture.root, 'package.json'), 'utf8')
+        );
+        const declared = {
+            ...product.dependencies,
+            ...product.devDependencies,
+        };
+        const imported = new Set();
+        const assertDeclared = (path, text) => {
+            for (const [, name] of text.matchAll(
+                /from '((?:@[^/']+\/)?[^/'.][^/']*)/g
+            )) {
+                imported.add(name);
+                assert.ok(Object.hasOwn(declared, name), `${path} : ${name}`);
+            }
+        };
+        assertDeclared('eslint.config.mjs', before);
+        assert.ok(imported.has('@nx/eslint-plugin'), [...imported].join());
+        for (const appName of ['alpha', 'beta', 'gamma']) {
+            const options = { ...fixture.shell, appName };
+            const plan = await planExternalApplicationShell(options);
+            // Le plan n'écrit que les trois racines de l'appli.
+            assert.deepEqual(plan.roots.map(({ root }) => root).sort(), [
+                `apps/${appName}`,
+                `libs/${appName}-interface`,
+                `libs/${appName}-socle`,
+            ]);
+            await publishExternalApplicationShell(
+                { ...options, expectedPlanId: plan.plan_id },
+                { run: () => undefined }
             );
-            assert.ok(
-                normalized(text).includes(
-                    normalized(
-                        `depConstraints: [...LAYER_CONSTRAINTS, { sourceTag: 'app:${appName}', onlyDependOnLibsWithTags: ['app:${appName}'] }]`
-                    )
-                ),
-                `${projectRoot} : contrainte de l'appli\n${text}`
-            );
-            assertDeclared(`${projectRoot}/eslint.config.mjs`, text);
+            assert.equal(await rootEslint(), before, appName);
+            for (const projectRoot of applicationProjectRoots(appName)) {
+                const text = await readFile(
+                    join(fixture.root, projectRoot, 'eslint.config.mjs'),
+                    'utf8'
+                );
+                assert.ok(
+                    normalized(text).includes(
+                        normalized(
+                            `depConstraints: [...LAYER_CONSTRAINTS, { sourceTag: 'app:${appName}', onlyDependOnLibsWithTags: ['app:${appName}'] }]`
+                        )
+                    ),
+                    `${projectRoot} : contrainte de l'appli\n${text}`
+                );
+                assertDeclared(`${projectRoot}/eslint.config.mjs`, text);
+            }
         }
-    }
-});
+    });
 
 // Texte sans blancs, guillemets ni virgules finales, pour retrouver une
 // donnée rendue par Prettier (clés sans guillemets, chaînes entre
