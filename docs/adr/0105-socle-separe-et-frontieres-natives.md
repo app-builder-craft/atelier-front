@@ -215,10 +215,10 @@ migration.
 - Une forme de frontière nouvelle s'ajoute comme contrainte de couche dans
   `socle-names.mjs`, ou comme sélecteur de `INTERFACE_RESTRICTED_SYNTAX`, jamais
   dans un fichier d'appli.
-- La directive `/// <reference …>` est refusée dans TOUT fichier de
-  l'interface, configuration comprise : le `vite.config.mts` que le lot 7
-  rendra pour l'interface (première spec) s'écrit sans elle (sa configuration
-  importe `vitest/config`, qui porte déjà les types de la section `test`).
+- La directive `/// <reference …>` est refusée dans TOUT fichier de l'interface,
+  configuration comprise : le `vite.config.mts` que le lot 7 rendra pour
+  l'interface (première spec) s'écrit sans elle (sa configuration importe
+  `vitest/config`, qui porte déjà les types de la section `test`).
 - Limite décidée par le pilote : un auteur de source ne remplace pas encore une
   sortie présente (la publication de documents la refuse) ; le remplacement sous
   plan (empreinte « avant » liée au plan, renommage atomique, sortie étrangère

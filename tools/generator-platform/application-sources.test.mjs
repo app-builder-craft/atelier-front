@@ -54,6 +54,45 @@ test('staleSources : genre inventé contrôlé sans code ; écarts complets, mod
     );
 });
 
+// Un script `package.json` lance l'outil : jeton `node` suivi du chemin
+// EXACT de l'outil, comparés comme chaînes (aucune expression construite, donc
+// aucun échappement à faire ; CI #48, CodeQL `js/incomplete-sanitization`).
+const scriptRunsTool = (script, tool) => {
+    const words = script.split(/\s+/);
+    return words.some(
+        (word, index) => word === 'node' && words[index + 1] === tool
+    );
+};
+
+test('scriptRunsTool : chemin exact, jamais un motif (point, barre oblique inverse)', () => {
+    assert.equal(
+        scriptRunsTool('node tools/create-app.mjs', 'tools/create-app.mjs'),
+        true
+    );
+    assert.equal(
+        scriptRunsTool(
+            'bun x && node tools/create-app.mjs --x',
+            'tools/create-app.mjs'
+        ),
+        true
+    );
+    // Formes fautives : un point lu comme « n'importe quel caractère », une
+    // barre oblique inverse, un préfixe ou un suffixe du chemin.
+    for (const script of [
+        'node tools/create-appXmjs',
+        'node tools\\create-app.mjs',
+        'node tools/create-app.mjs.bak',
+        'node xtools/create-app.mjs',
+        'nodetools/create-app.mjs',
+    ])
+        assert.equal(
+            scriptRunsTool(script, 'tools/create-app.mjs'),
+            false,
+            script
+        );
+    assert.equal(scriptRunsTool('node a\\b.mjs', 'a\\b.mjs'), true);
+});
+
 // Source DÉRIVÉE de la table (V3.2) : outils `tools/**/*.mjs` suivis, hors
 // tests et supports, qui portent la garde d'exécution et le littéral
 // `'--target-root'`.
@@ -97,13 +136,7 @@ test('V3.2 : table des classes exhaustive dans les deux sens ; défaut fermé co
     ).scripts;
     for (const [name, row] of rows.filter(([, row]) => !row.pending))
         if (Object.hasOwn(scripts, name))
-            assert.match(
-                scripts[name],
-                new RegExp(
-                    `(?:^|\\s)node ${row.tool.replace(/[.]/g, '\\.')}(?:\\s|$)`
-                ),
-                name
-            );
+            assert.ok(scriptRunsTool(scripts[name], row.tool), name);
     assert.equal(commandClass(undefined), 'consumer');
     assert.equal(commandClass('commande-inconnue'), 'consumer');
     assert.equal(commandClass('update-app'), 'consumer'); // pending : pas encore outillée

@@ -254,11 +254,14 @@ test('M3/T5 : la reprise sur snapshot conserve la protection des entrées des au
             const altered = await snapshotTree(fixture.root, []);
             // Lot 2, commit 3 : une source liée retouchée est une dérive de
             // FRAÎCHEUR, nommée (genre `design` : la conception et ses preuves).
+            // Message comparé comme chaîne (aucun motif construit : CI #48,
+            // CodeQL `js/incomplete-sanitization`).
             await assert.rejects(
                 planApplicationWorkspace(fixture.options),
-                new RegExp(
-                    `APP_SOURCES_STALE native-angular design ${path.replace(/[.]/g, '\\.')} ; lancer update-app`
-                )
+                (error) =>
+                    error.message.includes(
+                        `APP_SOURCES_STALE native-angular design ${path} ; lancer update-app`
+                    )
             );
             assert.deepEqual(await snapshotTree(fixture.root, []), altered);
         });
