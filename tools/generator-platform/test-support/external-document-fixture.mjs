@@ -393,6 +393,8 @@ export async function proveNativeDocumentCell(root, cell, prepared = {}) {
         backendContractSchema: fixture.backendContractSchema,
     };
     const plan = await planExternalApplicationShell(options);
+    // CI #48 : la cellule nomme son appel natif en échec dans la liste du plan.
+    prepared.onPlan?.(plan);
     const args = [
         '--target-root',
         root,

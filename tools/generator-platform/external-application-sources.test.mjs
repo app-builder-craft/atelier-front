@@ -15,6 +15,7 @@
 //   contrat ; la conception extérieure n'en porte aucune ;
 // - le manifeste porte `sources` de même forme dans les deux modes.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import test from 'node:test';
@@ -391,4 +392,41 @@ test('reprise du renommage PERMISE sur un produit périmé (V3.2)', async (t) =>
         planApplicationWorkspace(product.options),
         STALE('contract', `${BASE}/backend.json`)
     );
+});
+
+// Revue de l'étape A, A-3 : le script par appli, exécuté comme sa cible
+// (`node <sig>/support/check-socle.mjs --app <app>`), sur un produit dont les
+// dépendances ne sont que des métadonnées (TypeScript absent) : usage refusé
+// (64), écarts NOMMÉS sans pile ni chemin local, appli inconnue nommée.
+test('check-socle.mjs exécuté : usage, espace invérifiable et appli inconnue nommés, sans pile ni chemin local', async (t) => {
+    const product = await sessionApp(t, 'observatory');
+    const script = join(
+        product.root,
+        SIGNATURE_FILES.support,
+        'check-socle.mjs'
+    );
+    const run = (...args) =>
+        spawnSync(process.execPath, [script, ...args], {
+            cwd: product.root,
+            encoding: 'utf8',
+            env: { PATH: '/usr/bin:/bin' },
+            timeout: 60_000,
+        });
+    const usage = run();
+    assert.equal(usage.status, 64);
+    assert.equal(
+        usage.stderr,
+        `Usage : node ${SIGNATURE_FILES.support}/check-socle.mjs --app <app>\n`
+    );
+    const own = run('--app', APP);
+    assert.equal(own.status, 1);
+    assert.equal(own.stderr, 'Échec du contrat workspace.\n');
+    const unknown = run('--app', 'inconnue');
+    assert.equal(unknown.status, 1);
+    assert.equal(
+        unknown.stderr,
+        'Échec du contrat workspace.\nÉchec du socle inconnue : lecture impossible.\n'
+    );
+    for (const result of [usage, own, unknown])
+        assert.ok(!`${result.stdout}${result.stderr}`.includes(product.root));
 });

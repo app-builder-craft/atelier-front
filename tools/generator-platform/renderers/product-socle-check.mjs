@@ -77,11 +77,14 @@ async function main(argv) {
         return;
     }
     const lines = [];
-    const workspace = await import('./check-workspace.mjs');
+    // Revue de l'étape A, A-3 : le vérificateur d'espace (et TypeScript, qu'il
+    // importe) peut manquer ; son échec est nommé, jamais une pile.
+    let workspace;
     try {
+        workspace = await import('./check-workspace.mjs');
         await workspace.checkWorkspace();
     } catch (error) {
-        lines.push(error instanceof workspace.WorkspaceDrift ? 'Échec du contrat workspace : ' + error.message + '.' : 'Échec du contrat workspace.');
+        lines.push(workspace && error instanceof workspace.WorkspaceDrift ? 'Échec du contrat workspace : ' + error.message + '.' : 'Échec du contrat workspace.');
     }
     try {
         lines.push(...(await socleDrifts(app)));

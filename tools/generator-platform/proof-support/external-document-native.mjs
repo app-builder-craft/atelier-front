@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
@@ -8,7 +8,13 @@ import { nativeRunLabels } from '../core/application-native-controls.mjs';
 import { toolEnv } from '../core/atelier-signature.mjs';
 import { isWithin } from '../core/external-application-paths.mjs';
 import {
+    interfaceLibraryName,
+    socleLibraryName,
+} from '../core/socle-names.mjs';
+import {
+    assertionControl,
     hash,
+    isProofControl,
     TOOLS_ROOT,
 } from '../test-support/external-application-fixture.mjs';
 import {
@@ -90,6 +96,81 @@ export function nativeCellContext(context, root, cell, contextPath) {
     };
 }
 
+// CI #48 (`be7bf4e9`) : la ligne FAIL d'une cellule native nomme, sous forme
+// FERMÉE, l'appel natif en échec : son label, pris dans `nativeRunLabels(plan)`
+// par la cellule, et son code de sortie ; hors appel natif, le contrôle en
+// cause (opérateur et lieu dans l'atelier, comme le STOP d'`e023a1ed`). Jamais
+// une sortie ni un message. La cellule écrit la note ; le coordinateur la
+// revérifie (clés exactes, label dans la liste fermée de SON appli) avant de
+// l'écrire au rapport.
+const NOTE_KEYS = ['call', 'control', 'exit'];
+const CELL_TARGETS = ['lint', 'build:production', 'test'];
+const cellApp = (cell) => `ext03a-${cell.replace('/', '-').toLowerCase()}`;
+const cellLabels = (cell) => {
+    const app = cellApp(cell);
+    return new Set([
+        'native-compiler',
+        'workspace-contract',
+        ...[app, socleLibraryName(app), interfaceLibraryName(app)].flatMap(
+            (project) => CELL_TARGETS.map((target) => `${project}:${target}`)
+        ),
+    ]);
+};
+const isExit = (value) =>
+    value === 'interrupted' ||
+    (Number.isInteger(value) && value >= 0 && value <= 255);
+
+export function cellFailureNote({ error, failed, expected }) {
+    const call =
+        failed && expected.includes(failed.label) && isExit(failed.exit)
+            ? failed.label
+            : null;
+    return {
+        call,
+        control: call || !error ? '' : assertionControl(error),
+        exit: call ? failed.exit : null,
+    };
+}
+
+export function cellFailureDetail(note, cell) {
+    if (
+        note === null ||
+        typeof note !== 'object' ||
+        Object.keys(note).sort().join() !== NOTE_KEYS.join()
+    )
+        return 'call=illisible';
+    if (note.call !== null) {
+        if (!cellLabels(cell).has(note.call) || !isExit(note.exit))
+            return 'call=illisible';
+        return `call=${note.call} call_exit=${note.exit}`;
+    }
+    if (note.exit !== null || typeof note.control !== 'string')
+        return 'call=illisible';
+    if (!note.control) return 'call=aucun';
+    return isProofControl(note.control)
+        ? `call=aucun at=${note.control}`
+        : 'call=illisible';
+}
+
+// Note d'échec écrite par la cellule ; absente ou spéciale : `call=absent`.
+async function readCellFailure(contextPath, cell) {
+    const path = `${contextPath}.failure.json`;
+    try {
+        const metadata = await lstat(path);
+        if (!metadata.isFile() || metadata.size > 4096) return 'call=illisible';
+    } catch {
+        return 'call=absent';
+    }
+    try {
+        return cellFailureDetail(
+            JSON.parse(await readFile(path, 'utf8')),
+            cell
+        );
+    } catch {
+        return 'call=illisible';
+    }
+}
+
 // The test runner stays in the trusted workshop; every compiler/Nx child is
 // executed by the existing native sandbox with no workshop mount and no network.
 export async function provePreparedDocumentCell(root, cell, contextPath) {
@@ -101,6 +182,8 @@ export async function provePreparedDocumentCell(root, cell, contextPath) {
         contextPath
     );
     const labels = [];
+    let expected = [];
+    let failed = null;
     const run = (command, args, cwd) => {
         assert.equal(command, process.execPath);
         assert.equal(cwd, root);
@@ -110,14 +193,29 @@ export async function provePreparedDocumentCell(root, cell, contextPath) {
                 : args[0].endsWith('check-workspace.mjs')
                   ? 'workspace-contract'
                   : 'native-compiler';
-        record(
-            session,
-            `EXT03a/${cell}/${label}`,
-            confinedNode(session, root, args)
-        );
+        const result = confinedNode(session, root, args);
+        if (result.status !== 0 || result.signal)
+            failed = { label, exit: result.status ?? 'interrupted' };
+        record(session, `EXT03a/${cell}/${label}`, result);
         labels.push(label);
     };
-    const receipt = await proveNativeDocumentCell(root, cell, { fixture, run });
+    let receipt;
+    try {
+        receipt = await proveNativeDocumentCell(root, cell, {
+            fixture,
+            run,
+            onPlan: (plan) => {
+                expected = nativeRunLabels(plan);
+            },
+        });
+    } catch (error) {
+        await writeFile(
+            `${contextPath}.failure.json`,
+            json(cellFailureNote({ error, failed, expected })),
+            { flag: 'wx', mode: 0o600 }
+        );
+        throw error;
+    }
     // C-B2 : liste dérivée du plan de création (sans session : test de la
     // coque, lint des trois projets avant la construction).
     assert.deepEqual(labels, receipt.native_labels);
@@ -199,7 +297,12 @@ export async function runNativeDocumentCell(session, fixture, profile) {
             { flag: 'wx', mode: 0o600 }
         );
     }
-    record(session, `EXT03a/${cell}/native-cell`, child);
+    record(session, `EXT03a/${cell}/native-cell`, child, {
+        detail:
+            child.status !== 0 || child.signal
+                ? await readCellFailure(contextPath, cell)
+                : '',
+    });
     const receiptBytes = await readFile(`${contextPath}.receipt.json`);
     const receipt = JSON.parse(receiptBytes.toString('utf8'));
     assert.equal(receipt.cell, cell);

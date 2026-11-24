@@ -41,7 +41,7 @@ export const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const ASSERT_OPERATOR = /^[a-z][A-Za-z]{1,30}$/;
 const CODE_LOCATION =
     /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+\.m?js:\d{1,6}:\d{1,6}$/;
-function assertionControl(error) {
+export function assertionControl(error) {
     const operator = ASSERT_OPERATOR.test(error.operator ?? '')
         ? error.operator
         : '';
@@ -59,6 +59,24 @@ function assertionControl(error) {
         break;
     }
     return [operator && `[${operator}]`, location].filter(Boolean).join(' ');
+}
+
+// Forme FERMÉE d'un contrôle en cause (`assertionControl`), revérifiée par un
+// lecteur qui la reçoit d'un autre processus : `[opérateur]`, lieu, ou les deux.
+export function isProofControl(text) {
+    if (typeof text !== 'string' || text.length > 200) return false;
+    const parts = text.split(' ');
+    if (parts.length > 2 || parts.some((part) => !part)) return false;
+    const [first, second] = parts;
+    const operator = /^\[([a-z][A-Za-z]{1,30})\]$/.exec(first)?.[1];
+    const location = operator ? second : first;
+    if (operator && !ASSERT_OPERATOR.test(operator)) return false;
+    if (!operator && second !== undefined) return false;
+    return (
+        location === undefined ||
+        (CODE_LOCATION.test(location) &&
+            !location.split('/').includes('node_modules'))
+    );
 }
 
 export function formatProofStop(error) {

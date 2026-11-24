@@ -157,11 +157,13 @@ export function diagnosticLines(output) {
     return lines;
 }
 
+// `detail` : complément de la ligne, en forme FERMÉE construite et vérifiée
+// par l'appelant (CI #48 : l'appel natif en échec d'une cellule).
 export function record(
     session,
     label,
     result,
-    { negative = false, diagnostic } = {}
+    { negative = false, diagnostic, detail = '' } = {}
 ) {
     const output = stripVTControlCharacters(result.stdout + result.stderr);
     const expected = negative
@@ -171,10 +173,9 @@ export function record(
         : result.status === 0 && !result.signal;
     const status =
         result.status === null ? 'interrupted' : String(result.status);
-    session.lines.push(`${expected ? 'PASS' : 'FAIL'} ${label} exit=${status}`);
-    process.stdout.write(
-        `${expected ? 'PASS' : 'FAIL'} ${label} exit=${status}\n`
-    );
+    const line = `${expected ? 'PASS' : 'FAIL'} ${label} exit=${status}${detail ? ` ${detail}` : ''}`;
+    session.lines.push(line);
+    process.stdout.write(`${line}\n`);
     if (!expected) {
         // Inputs are fictitious and the child has a clean environment, but
         // retain only diagnostic hashes in the durable report, never env/JSON.

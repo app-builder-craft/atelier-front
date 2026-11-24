@@ -129,10 +129,14 @@ test('EXT03a/CI failed child keeps a private diagnostic and stops', async (t) =>
     const text = await readFile(diagnostic, 'utf8');
     assert.match(text, /backendRequests/);
     assert.equal((await stat(diagnostic)).mode & 0o777, 0o600);
-    assert.deepEqual(session.lines, [
-        'FAIL EXT03a/A/angular-pwa/native-cell exit=1',
-        `diagnostic_sha256=${hash(text)}`,
-    ]);
+    // CI #48 : la ligne FAIL nomme le contrôle en cause, en forme fermée
+    // (ici, hors appel natif : le lieu dans l'atelier), jamais la sortie.
+    assert.equal(session.lines.length, 2);
+    assert.match(
+        session.lines[0],
+        /^FAIL EXT03a\/A\/angular-pwa\/native-cell exit=1 call=aucun at=tools\/generator-platform\/test-support\/external-document-fixture\.mjs:\d+:\d+$/
+    );
+    assert.equal(session.lines[1], `diagnostic_sha256=${hash(text)}`);
     await assert.rejects(
         readFile(join(root, 'cell-A-angular-pwa.json.receipt.json')),
         { code: 'ENOENT' }
