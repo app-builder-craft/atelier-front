@@ -9,7 +9,8 @@
 // - N9 : `UPDATE_REQUIRES_WORKSPACE_CHANGE <fichier>` ;
 // - P6 : montée du générateur simulée, sources inchangées → `generator` ;
 // - N8 : `UPDATE_PATH_OWNED_BY_PUBLICATION <app> <chemin> <outil>` ;
-// - N13 : `UPDATE_APP_REJECTED`, toutes les applis en cause, triées ;
+// - N13 : `UPDATE_APP_REJECTED`, toutes les applis en cause, triées ; N13
+//   bis (deux conceptions) : A valide, B refusée, rien n'est écrit pour A ;
 // - `UPDATE_SEED_PATH_TAKEN <chemin>` ; rien n'est écrit par un plan.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -39,6 +40,7 @@ import {
 import {
     addPage,
     APP,
+    compileDesign,
     createApp,
     NEW_PAGE,
     quietRun,
@@ -295,6 +297,74 @@ test('N13 : une conception refusée arrête tout le plan ; toutes les applis en 
     // Issue : la conception corrigée, la mise à jour passe pour les deux,
     // avec le même plan.
     await writeFile(design, valid.replace(/\n$/, '\n\n'));
+    const plan = await planApplicationUpdate(updateOptions(fixture));
+    assert.deepEqual(
+        plan.apps.map((app) => [app.app_name, app.status]),
+        [
+            [APP, 'updated'],
+            ['doc-two', 'updated'],
+        ]
+    );
+    await publishApplicationUpdate(
+        updateOptions(fixture, { expectedPlanId: plan.plan_id }),
+        { run: quietRun }
+    );
+    for (const app of [APP, 'doc-two']) {
+        const manifest = JSON.parse(
+            await readFile(join(fixture.root, appManifestPath(app)), 'utf8')
+        );
+        assert.equal(
+            manifest.ownership.publications.at(-1).plan_id,
+            plan.plan_id
+        );
+    }
+});
+
+test('N13 bis : A valide, B refusée sur sa propre conception : rien n’est écrit pour A, même en suivant le plan à vide', async (t) => {
+    // V3.5 g : deux conceptions, chacune compilée par son auteur (la CLI
+    // réelle), une appli sur chacune ; le contrat recompilé rend A à mettre à
+    // jour, et la conception de B devient invalide.
+    const { fixture, request } = await updateProduct(t);
+    const second = fixture.designPath.replace(/\.json$/, '-two.json');
+    compileDesign(fixture, second);
+    await createApp(fixture, 'doc-two', second);
+    await recompileContract(fixture, request);
+    const path = join(fixture.root, second);
+    const valid = await readFile(path, 'utf8');
+    const broken = JSON.parse(valid);
+    broken.pages[0].actions[0].destination_page_id = 'page_ffffffffffffffff';
+    await writeFile(path, `${JSON.stringify(broken, null, 2)}\n`);
+    const before = await snapshotTree(fixture.root);
+    // L'auteur suit le plan à vide, s'il en rend un : appliqué, il écrirait A
+    // seule. Rien ne doit être écrit, ni pour A, ni pour B.
+    const dry = await planApplicationUpdate(updateOptions(fixture)).catch(
+        (caught) => caught
+    );
+    if (!(dry instanceof Error))
+        await publishApplicationUpdate(
+            updateOptions(fixture, { expectedPlanId: dry.plan_id }),
+            { run: quietRun }
+        ).catch(() => undefined);
+    assert.deepEqual(
+        await snapshotTree(fixture.root),
+        before,
+        'N13 : rien n’est écrit pour A'
+    );
+    // Le refus nomme B seul, avec la raison de la validation.
+    assert.ok(dry instanceof Error, 'N13 : le plan à vide est refusé');
+    const lines = dry.message
+        .replace(/^external application: /, '')
+        .split('\n');
+    assert.deepEqual(
+        lines.map((line) => line.split(' : ')[0]),
+        [`UPDATE_APP_REJECTED doc-two design ${second}`]
+    );
+    assert.ok(lines[0].split(' : ')[1].length > 0);
+    // Issue : l'auteur recompile B (remplacement de sa sortie présente, sous
+    // plan), puis UN plan pour les deux, un enregistrement par appli, même
+    // `plan_id`.
+    compileDesign(fixture, second);
+    assert.equal(await readFile(path, 'utf8'), valid);
     const plan = await planApplicationUpdate(updateOptions(fixture));
     assert.deepEqual(
         plan.apps.map((app) => [app.app_name, app.status]),

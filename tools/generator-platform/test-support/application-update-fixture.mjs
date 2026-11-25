@@ -20,6 +20,7 @@ import {
 import {
     backendArgs,
     compileDocumentFixture,
+    designArgs,
     documentFixture,
     runDocumentCli,
 } from './external-document-fixture.mjs';
@@ -35,15 +36,20 @@ export const updateOptions = (fixture, extra = {}) => ({
     ...extra,
 });
 
-// Appli `appName` créée sur la conception compilée du produit.
-export async function createApp(fixture, appName = APP) {
+// Appli `appName` créée sur une conception compilée du produit (par défaut,
+// celle de la fixture).
+export async function createApp(
+    fixture,
+    appName = APP,
+    designPath = fixture.designPath
+) {
     const design = JSON.parse(
-        await readFile(join(fixture.root, fixture.designPath), 'utf8')
+        await readFile(join(fixture.root, designPath), 'utf8')
     );
     const shell = {
         workspaceRoot: TOOLS_ROOT,
         targetRoot: fixture.root,
-        designPath: fixture.designPath,
+        designPath,
         experienceId: design.experiences[0].id,
         appName,
         profile: 'angular-pwa',
@@ -81,6 +87,24 @@ export async function recompileContract(fixture, request, n = 1) {
     assert.equal(plan.status, 0, plan.stderr);
     const apply = runDocumentCli('compile-backend-contract', [
         ...backendArgs(fixture, request),
+        '--apply',
+        JSON.parse(plan.stdout).plan_id,
+    ]);
+    assert.equal(apply.status, 0, apply.stderr);
+}
+
+// L'auteur compile la conception de la fixture à la sortie `out` : plan relu
+// puis appliqué par la CLI réelle (une seconde conception du produit, ou la
+// même recompilée, remplacement d'une sortie présente sous plan compris).
+export function compileDesign(fixture, out = fixture.designPath) {
+    const args = designArgs({ ...fixture, designPath: out });
+    const plan = runDocumentCli('compile-application-design', [
+        ...args,
+        '--dry-run',
+    ]);
+    assert.equal(plan.status, 0, plan.stderr);
+    const apply = runDocumentCli('compile-application-design', [
+        ...args,
         '--apply',
         JSON.parse(plan.stdout).plan_id,
     ]);
