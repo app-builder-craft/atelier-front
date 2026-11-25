@@ -97,6 +97,11 @@ contrôle maison qu'un développeur ne verrait pas.
   arrière ; à `verified`, chaque fichier doit être à son après. Aucun fichier
   non listé n'est lu, déplacé ni copié. Preuve : arrêt brutal réel (SIGKILL)
   après chaque bascule et entre chaque temporaire et son renommage.
+  Durcissements (relecture de l'étape B) : un fichier absent au plan (avant nul)
+  qui est apparu avant sa bascule n'est jamais écrasé (refus
+  `files operation target appeared: <chemin>` juste avant le renommage ; la
+  reprise le voit ambigu tant qu'il est là) ; le journal relu exige les dossiers
+  créés dans l'ordre de la préparation, sans doublon.
 
 ### 4. Fichiers d'espace changés par le lot 2
 

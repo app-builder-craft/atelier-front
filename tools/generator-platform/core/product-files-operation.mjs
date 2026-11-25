@@ -149,7 +149,9 @@ export async function prepareFilesOperation(
 
 // Bascule, fichier par fichier, dans l'ordre fixé ; `phase` est appelée après
 // l'écriture de chaque temporaire et après chaque renommage (points d'arrêt
-// éprouvés).
+// éprouvés). Un fichier ABSENT au plan (avant nul : amorce, fichier ajouté)
+// qui est apparu depuis n'est jamais écrasé : refus nommé juste avant son
+// renommage, le fichier reste tel quel et la reprise le voit ambigu.
 export async function swapFiles(
     productRoot,
     operation,
@@ -166,6 +168,10 @@ export async function swapFiles(
         const temporary = filesTemporary(absolute, planId);
         await writeDocument(temporary, Buffer.from(files[file.path]));
         await phase(`file-written:${operation.root}/${file.path}`);
+        if (file.before === null && (await observe(absolute)) !== null)
+            externalFailure(
+                `files operation target appeared: ${operation.root}/${file.path}`
+            );
         await renameAndSync(temporary, absolute);
         await phase(`file-swapped:${operation.root}/${file.path}`);
     }
@@ -305,7 +311,9 @@ function safePath(path) {
 }
 
 // Opération inscrite au journal, contrôlée à la relecture ; `validRoot` : la
-// règle des racines de l'appelant. Un journal refusé est un état ambigu.
+// règle des racines de l'appelant. Les dossiers créés sont dans l'ordre de la
+// préparation (le plus profond d'abord, sans doublon) : le retour les retire
+// dans cet ordre. Un journal refusé est un état ambigu.
 export const validFilesOperation = (operation, validRoot) =>
     exactKeys(operation, ['root', 'files', 'created_directories']) &&
     validRoot(operation.root) &&
@@ -320,8 +328,10 @@ export const validFilesOperation = (operation, validRoot) =>
     ) &&
     Array.isArray(operation.created_directories) &&
     operation.created_directories.every(
-        (path) =>
+        (path, index) =>
             typeof path === 'string' &&
             path.startsWith(`${operation.root}/`) &&
-            safePath(path)
+            safePath(path) &&
+            (index === 0 ||
+                deeperFirst(operation.created_directories[index - 1], path) < 0)
     );

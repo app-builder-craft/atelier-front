@@ -151,12 +151,21 @@ function forge(manifest, entry, next = fields(1), version) {
         tree_sha256: inventoryTreeSha(generated),
         ownership: {
             ...manifest.ownership,
+            // Liaison de création, posée comme l'écrivain la pose.
+            shell_sources: manifest.ownership.shell_sources ?? manifest.sources,
             schema_version: version ?? OWNERSHIP_UPDATED_SCHEMA_VERSION,
             publications: [...manifest.ownership.publications, entry],
         },
     };
     forged.ownership.seal_sha256 = computeOwnershipSeal(forged);
     return forged;
+}
+// Sceau retouché puis rescellé.
+function resealed(manifest, edit) {
+    const next = structuredClone(manifest);
+    edit(next.ownership);
+    next.ownership.seal_sha256 = computeOwnershipSeal(next);
+    return next;
 }
 
 test('update-app : enregistrement admis, version 1.2.0, derniers écrivains, chaîne de deux mises à jour', () => {
@@ -168,6 +177,9 @@ test('update-app : enregistrement admis, version 1.2.0, derniers écrivains, cha
         OWNERSHIP_UPDATED_SCHEMA_VERSION
     );
     assert.deepEqual(first.sources, sources(1));
+    // La première mise à jour pose la liaison de création.
+    assert.deepEqual(first.ownership.shell_sources, sources(0));
+    assert.equal(Object.hasOwn(before.ownership, 'shell_sources'), false);
     const writers = lastWriters(first, ID.p);
     assert.equal(writers.get(MAIN), UPDATE_TOOL);
     assert.equal(writers.get(SOCLE_NEW), UPDATE_TOOL);
@@ -184,6 +196,8 @@ test('update-app : enregistrement admis, version 1.2.0, derniers écrivains, cha
     );
     verifyApplicationOwnership(second, ID.p);
     assert.equal(second.ownership.publications.length, 3);
+    // La liaison de création n'est jamais réécrite.
+    assert.deepEqual(second.ownership.shell_sources, sources(0));
 });
 
 test('update-app : zone par dernier écrivain ; publication, zone libre et hors racines refusées', () => {
@@ -252,6 +266,26 @@ test('N7 : enregistrements forgés puis rescellés, chacun refusé', () => {
                 ])
             ),
             /update record outside its zone/,
+        ],
+        [
+            // Relecture de l'étape B : la première est comparée elle aussi.
+            'chaîne : la première ne part pas de la liaison de création',
+            forge(before, record('1', 2, 1, FIRST.files)),
+            /update record breaks the sources chain/,
+        ],
+        [
+            'liaison de création absente après une mise à jour',
+            resealed(first, (ownership) => {
+                delete ownership.shell_sources;
+            }),
+            /app ownership seal is invalid/,
+        ],
+        [
+            'liaison de création sans mise à jour',
+            resealed(before, (ownership) => {
+                ownership.shell_sources = sources(0);
+            }),
+            /app ownership seal is invalid/,
         ],
         [
             'chaîne : la seconde ne part pas de l’arrivée de la première',

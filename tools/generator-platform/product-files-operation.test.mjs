@@ -256,6 +256,42 @@ test('C-B1 : à verified, un fichier qui n’est pas à son après est refusé ;
     assert.deepEqual(await state(fixture), after);
 });
 
+test('C-B1 : un fichier absent au plan et apparu avant sa bascule n’est jamais écrasé ; refus nommé, reprise ambiguë puis exacte', async (t) => {
+    // Relecture de l'étape B : la fenêtre entre la dernière relecture et la
+    // bascule. Le DERNIER fichier de l'ordre est ajouté (avant nul) ; l'IA y
+    // pose le sien après l'écriture du temporaire, avant son renommage.
+    const path = 'tsconfig.lib.json';
+    assert.equal(LISTED.at(-1), path);
+    assert.equal(Object.hasOwn(BEFORE, path), false);
+    const fixture = await product(t);
+    const before = await state(fixture);
+    const absolute = join(fixture.root, FILES_ROOT, path);
+    const appeared = '// posé par l’IA juste avant la bascule\n';
+    await assert.rejects(
+        runFilesTransaction(fixture.root, AFTER, PLAN, async (name) => {
+            if (name === `file-written:${FILES_ROOT}/${path}`)
+                await writeFile(absolute, appeared);
+        }),
+        new RegExp(
+            `^Error: external application: files operation target appeared: ${escape(`${FILES_ROOT}/${path}`)}$`
+        )
+    );
+    assert.equal(await readFile(absolute, 'utf8'), appeared);
+    // Tant que le fichier apparu est là, la reprise est ambiguë et ne déplace
+    // rien ; retiré par son auteur, elle rend l'état d'avant à l'octet.
+    const seen = await state(fixture);
+    await assert.rejects(
+        recover(fixture),
+        new RegExp(
+            `^Error: ambiguous interrupted transaction: ${escape(FILES_ROOT)} ${escape(path)}$`
+        )
+    );
+    assert.deepEqual(await state(fixture), seen);
+    await rm(absolute);
+    assert.equal(await recover(fixture), 'back');
+    assert.deepEqual(await state(fixture), before);
+});
+
 test('C-B1 : un fichier libre écrit dans un dossier créé reste ; le dossier créé vide est retiré', async (t) => {
     const fixture = await product(t);
     killedAt(
@@ -298,6 +334,24 @@ test('C-B1 : un journal falsifié est refusé, rien n’est déplacé', async (t
             'dossier créé hors de la racine',
             (operation) => {
                 operation.created_directories[0] = 'libs/autre/dossier';
+            },
+        ],
+        [
+            // Relecture de l'étape B : le moins profond d'abord, le retour ne
+            // retirerait pas le dossier parent (encore plein).
+            'dossiers créés hors de l’ordre de la préparation',
+            (operation) => {
+                operation.created_directories.reverse();
+            },
+        ],
+        [
+            'dossier créé en double',
+            (operation) => {
+                operation.created_directories.splice(
+                    1,
+                    0,
+                    operation.created_directories[0]
+                );
             },
         ],
         [

@@ -75,12 +75,16 @@ est refusée du même code.
 L'enregistrement `update-app` porte `sources_before`, `sources_after` (listes
 complètes) et ses fichiers (`added`, `replaced` et `removed`, avec `before`),
 triés ; il peut n'avoir aucun fichier si seule la liaison change. Le niveau haut
-du manifeste porte la liaison courante. La vérification rejoue l'historique :
-chaque mise à jour part de la liaison d'arrivée de la précédente, la dernière
-arrive à celle du manifeste (`update record breaks the sources chain`). La
-version du sceau est dérivée de l'historique : 1.0.0, 1.1.0 avec un renommage,
-1.2.0 dès qu'une mise à jour est présente. Tous les écrivains du manifeste
-l'emploient (publication, renommage, mise à jour).
+du manifeste porte la liaison courante. La première mise à jour pose dans le
+sceau la liaison de CRÉATION (`ownership.shell_sources`, la liaison scellée du
+manifeste qu'elle prolonge) ; la clé est exigée dès qu'une mise à jour est
+présente, absente sinon, et jamais réécrite. La vérification rejoue l'historique
+: la première mise à jour part de la liaison de création, chaque suivante de la
+liaison d'arrivée de la précédente, la dernière arrive à celle du manifeste
+(`update record breaks the sources chain`). La version du sceau est dérivée de
+l'historique : 1.0.0, 1.1.0 avec un renommage, 1.2.0 dès qu'une mise à jour est
+présente. Tous les écrivains du manifeste l'emploient (publication, renommage,
+mise à jour).
 
 ### 5. La transaction
 

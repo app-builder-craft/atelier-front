@@ -531,6 +531,12 @@ function publishedPaths(publications) {
 export function verifyApplicationOwnership(manifest, workspaceId) {
     const ownership = manifest?.ownership;
     if (ownership === undefined) externalFailure('app ownership seal missing');
+    // Dès qu'une mise à jour est présente, le sceau garde la liaison de
+    // CRÉATION (`shell_sources`, posée par la première) : la chaîne des
+    // sources part d'elle (relecture de l'étape B).
+    const updated =
+        Array.isArray(ownership?.publications) &&
+        ownership.publications.some((record) => record?.tool === UPDATE_TOOL);
     if (
         !exactKeys(ownership, [
             'schema_version',
@@ -538,6 +544,7 @@ export function verifyApplicationOwnership(manifest, workspaceId) {
             'shell_tree_sha256',
             'publications',
             'seal_sha256',
+            ...(updated ? ['shell_sources'] : []),
         ]) ||
         !HEX.test(ownership.shell_tree_sha256) ||
         !HEX.test(ownership.seal_sha256) ||
@@ -590,12 +597,15 @@ export function verifyApplicationOwnership(manifest, workspaceId) {
     // Rejeu dans l'ordre : chaque enregistrement respecte ses zones ; le
     // dernier écrivain de chaque chemin en découle. Les renommages forment une
     // chaîne : chacun part du préfixe auquel le précédent est arrivé.
-    // Les mises à jour forment la chaîne des sources (v2 R2.1.4) : chacune part
+    // Les mises à jour forment la chaîne des sources (v2 R2.1.4) : la première
+    // part de la liaison de création (`shell_sources`), chacune des suivantes
     // de la liaison à laquelle la précédente est arrivée, et la dernière
     // arrive à la liaison du manifeste.
     let state = { inventory: shell, published: new Set(), writers: new Map() };
     let prefix;
-    let sources;
+    let sources = updated
+        ? stableStringify(ownership.shell_sources)
+        : undefined;
     for (const record of ownership.publications) {
         if (record.tool === RENAME_TOOL) {
             if (prefix !== undefined && record.prefix_before !== prefix)
@@ -603,10 +613,7 @@ export function verifyApplicationOwnership(manifest, workspaceId) {
             prefix = record.prefix_after;
         }
         if (record.tool === UPDATE_TOOL) {
-            if (
-                sources !== undefined &&
-                stableStringify(record.sources_before) !== sources
-            )
+            if (stableStringify(record.sources_before) !== sources)
                 externalFailure('update record breaks the sources chain');
             sources = stableStringify(record.sources_after);
         }
@@ -681,7 +688,9 @@ export function publishedManifest(manifest, record, workspaceId) {
 // Manifeste après une mise à jour relue (lot 2, commit 6c) : l'enregistrement
 // est ajouté à l'historique ; les champs de la coque (`fields` : conception,
 // liaison `sources`, expérience…, hors inventaire et sceau) sont ceux du
-// rendu ; l'inventaire suit l'enregistrement ; la version est dérivée.
+// rendu ; l'inventaire suit l'enregistrement ; la version est dérivée. La
+// première mise à jour pose la liaison de création (`shell_sources` : la
+// liaison scellée du manifeste qu'elle prolonge, jamais réécrite ensuite).
 export function updatedManifest(manifest, record, workspaceId, fields) {
     if (record?.tool !== UPDATE_TOOL)
         externalFailure('update record is invalid');
@@ -703,6 +712,7 @@ export function updatedManifest(manifest, record, workspaceId, fields) {
         tree_sha256: inventoryTreeSha(generated),
         ownership: {
             ...manifest.ownership,
+            shell_sources: manifest.ownership.shell_sources ?? manifest.sources,
             schema_version: ownershipSchemaVersion([
                 ...manifest.ownership.publications,
                 record,
