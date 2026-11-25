@@ -2,8 +2,8 @@
 
 - Statut : acceptée (2026-11-24).
 - Portée : atelier 2, disposition des produits extérieurs (lot 2, commits 1a,
-  1b, 2 et 3, corrections de l'étape A, correction de tête de l'étape B et
-  commit 6a) et outils de l'atelier qui les écrivent.
+  1b, 2 et 3, corrections de l'étape A, correction de tête de l'étape B, commits
+  6a et 6b) et outils de l'atelier qui les écrivent.
 - Décisions appliquées : point 1 des décisions de l'atelier 2 (trois couches,
   option A) ; lecture A du pilote (tout le code généré est au socle) ;
   frontières par projet (conception du lot 2, v4 § V4.3) ; noms fixes sans
@@ -83,10 +83,20 @@ contrôle maison qu'un développeur ne verrait pas.
   retour arrière ; à `verified`, nettoyage en avant ; état ambigu : rien n'est
   déplacé, refus nommé. Tout journal présent bloque toute autre commande, sauf
   la reprise de cette transaction.
-- L'opération `files` (bascule fichier par fichier d'une racine partiellement
-  possédée), prévue pour la grammaire, n'est pas construite : la grammaire est
-  retirée (ADR 0104) et aucune publication n'écrit l'interface après sa
-  création.
+- Opération `files` (commit 6b) sur une racine EXISTANTE et partiellement
+  possédée (`core/product-files-operation.mjs`) : `update-app` l'emploie pour la
+  configuration et les amorces de l'interface ; aucune publication n'écrit
+  l'interface après sa création. Le journal porte, pour chaque fichier listé
+  (ordre des chemins, fixé), son avant (ou `null` s'il est absent), son après,
+  la copie du contenu d'avant (`before/<opération>/<index>`), et les dossiers
+  créés, du plus profond au moins profond. La bascule écrit un temporaire
+  `.<nom>.<plan>.tmp` dans le dossier du fichier, le synchronise, puis le
+  renomme. La reprise décide fichier par fichier, par l'état observé (`avant`,
+  `après`, sinon ambigu), après l'examen de TOUS les fichiers : un fichier
+  ambigu ou une copie abîmée, et rien n'est déplacé ; un état mixte revient en
+  arrière ; à `verified`, chaque fichier doit être à son après. Aucun fichier
+  non listé n'est lu, déplacé ni copié. Preuve : arrêt brutal réel (SIGKILL)
+  après chaque bascule et entre chaque temporaire et son renommage.
 
 ### 4. Fichiers d'espace changés par le lot 2
 

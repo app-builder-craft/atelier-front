@@ -8,7 +8,8 @@
 // phase seule ; retour arrière et fin décidés par cet état, tout étant
 // contrôlé AVANT le premier déplacement ; nettoyage des dossiers de
 // préparation. Les messages d'état ambigu passent par la fonction
-// `ambiguous` de l'appelant.
+// `ambiguous` de l'appelant. L'opération `files` (racine partiellement
+// possédée, commit 6b) vit dans `product-files-operation.mjs`.
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
