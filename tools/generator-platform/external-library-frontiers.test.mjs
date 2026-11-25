@@ -174,6 +174,21 @@ for (const profile of ['angular-pwa', 'react-spa']) {
                             ['no-restricted-syntax', 'restrictedSyntax'],
                         ],
                     },
+                    // Réserve R3 de la validation de l'étape A : réécritures
+                    // que Vite SUIT jusqu'au fichier visé (mesuré par une
+                    // construction), refusées par le même sélecteur.
+                    [`${ui}/probe-worker-url-href.ts`]: {
+                        source: `export const worker = new Worker(new URL('${fromUi('libs/app-socle/src/coque.ts')}', import.meta.url).href, { type: 'module' });\n`,
+                        refusals: [
+                            ['no-restricted-syntax', 'restrictedSyntax'],
+                        ],
+                    },
+                    [`${ui}/probe-worker-url-chaine.ts`]: {
+                        source: `export const worker = new Worker(new URL('${fromUi('libs/app-socle/src/coque.ts')}', import.meta.url).toString(), { type: 'module' });\n`,
+                        refusals: [
+                            ['no-restricted-syntax', 'restrictedSyntax'],
+                        ],
+                    },
                     // Admis : l'API publique du socle de l'appli.
                     [`${ui}/probe-admis.ts`]: {
                         source: "export * from '@socle/app';\n",

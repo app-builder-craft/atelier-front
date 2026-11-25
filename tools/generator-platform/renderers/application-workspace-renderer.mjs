@@ -30,9 +30,12 @@ export const INTERFACE_RESTRICTED_SYNTAX = Object.freeze([
         message:
             "`import.meta.glob` n'est pas une API de l'interface : importer l'API publique du socle.",
     }),
+    // Tout `import.meta` DANS l'appel d'un worker (réserve R3 de la
+    // validation de l'étape A, mesurée : Vite empaquette aussi le fichier visé
+    // par `new URL(…, import.meta.url).href` et `.toString()`).
     Object.freeze({
         selector:
-            'NewExpression[callee.name=/^(?:Shared)?Worker$/] > NewExpression[callee.name="URL"]',
+            'NewExpression[callee.name=/^(?:Shared)?Worker$/] MetaProperty',
         message:
             "Un worker construit sur un chemin n'est pas une API de l'interface : importer l'API publique du socle.",
     }),

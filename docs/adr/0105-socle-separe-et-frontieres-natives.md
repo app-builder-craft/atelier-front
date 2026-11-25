@@ -1,8 +1,9 @@
 # ADR 0105 — Socle séparé et frontières natives
 
 - Statut : acceptée (2026-11-24).
-- Portée : atelier 2, disposition des produits extérieurs (lot 2, commits 1a, 1b
-  et 2) et outils de l'atelier qui les écrivent.
+- Portée : atelier 2, disposition des produits extérieurs (lot 2, commits 1a,
+  1b, 2 et 3, corrections de l'étape A et correction de tête de l'étape B) et
+  outils de l'atelier qui les écrivent.
 - Décisions appliquées : point 1 des décisions de l'atelier 2 (trois couches,
   option A) ; lecture A du pilote (tout le code généré est au socle) ;
   frontières par projet (conception du lot 2, v4 § V4.3) ; noms fixes sans
@@ -103,7 +104,10 @@ Ligne « lot 2 » du tableau des lots qui changent l'espace :
   dans `check-socle.mjs`) et `WorkspaceDrift` y est exporté, pour que
   `check-socle.mjs` nomme son échec ;
 - correction de l'étape A (revue, B-3) : l'ESLint racine exporte en plus
-  `INTERFACE_RESTRICTED_SYNTAX`.
+  `INTERFACE_RESTRICTED_SYNTAX` ;
+- correction de tête de l'étape B (validation de l'étape A, réserve R3) : le
+  sélecteur du worker de `INTERFACE_RESTRICTED_SYNTAX` est élargi (ESLint
+  racine).
 
 Aucun produit extérieur n'existait avant ces changements ; il n'y a pas de
 migration.
@@ -127,20 +131,20 @@ migration.
   (`external-library-frontiers.test.mjs`, sortie JSON d'ESLint citée au journal
   du test) :
 
-    | Import écrit                                                                  | Refus natif                                                                                                           |
-    | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-    | interface → `../../<app>-socle/src/coque` (relatif vers l'entrée de la coque) | `noRelativeOrAbsoluteImportsAcrossLibraries` : « Projects cannot be imported by a relative or absolute path… »        |
-    | interface → fichier interne du socle, par un chemin relatif                   | idem                                                                                                                  |
-    | interface → fichier de la coque, par un chemin relatif                        | idem                                                                                                                  |
-    | interface → `@socle/<autre>`                                                  | `onlyTagsConstraintViolation` : « A project tagged with "app:<app>" can only depend on libs tagged with "app:<app>" » |
-    | interface → `@socle-coque/<app>`                                              | `no-restricted-imports` (et, au `typecheck` de l'interface, TS2307 ; TS2882 pour un import d'effet)                   |
-    | interface → `import.meta.glob('<relatif>')` (globbing de Vite)                | `no-restricted-syntax` (`import.meta.glob…`, données `INTERFACE_RESTRICTED_SYNTAX`)                                   |
-    | interface → `/// <reference types="vite/client" />`                           | `@typescript-eslint/triple-slash-reference` (`lib`, `path`, `types` : `never`)                                        |
-    | interface → `new Worker(new URL('<relatif>', import.meta.url))`               | `no-restricted-syntax` (worker construit sur une URL)                                                                 |
-    | socle → `@interface/<app>`                                                    | `onlyTagsConstraintViolation` (`layer:socle`)                                                                         |
-    | socle ou coque → `@socle/<autre>`                                             | `onlyTagsConstraintViolation` (`app:<app>`)                                                                           |
-    | coque → socle par un chemin relatif                                           | `noRelativeOrAbsoluteImportsAcrossLibraries`                                                                          |
-    | interface → `@socle/<app>` (API publique)                                     | admis                                                                                                                 |
+    | Import écrit                                                                                                                      | Refus natif                                                                                                           |
+    | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+    | interface → `../../<app>-socle/src/coque` (relatif vers l'entrée de la coque)                                                     | `noRelativeOrAbsoluteImportsAcrossLibraries` : « Projects cannot be imported by a relative or absolute path… »        |
+    | interface → fichier interne du socle, par un chemin relatif                                                                       | idem                                                                                                                  |
+    | interface → fichier de la coque, par un chemin relatif                                                                            | idem                                                                                                                  |
+    | interface → `@socle/<autre>`                                                                                                      | `onlyTagsConstraintViolation` : « A project tagged with "app:<app>" can only depend on libs tagged with "app:<app>" » |
+    | interface → `@socle-coque/<app>`                                                                                                  | `no-restricted-imports` (et, au `typecheck` de l'interface, TS2307 ; TS2882 pour un import d'effet)                   |
+    | interface → `import.meta.glob('<relatif>')` (globbing de Vite)                                                                    | `no-restricted-syntax` (`import.meta.glob…`, données `INTERFACE_RESTRICTED_SYNTAX`)                                   |
+    | interface → `/// <reference types="vite/client" />`                                                                               | `@typescript-eslint/triple-slash-reference` (`lib`, `path`, `types` : `never`)                                        |
+    | interface → `new Worker(…)` dont l'appel contient `import.meta` (`new URL('<relatif>', import.meta.url)`, `.href`, `.toString()`) | `no-restricted-syntax` (worker construit sur un chemin)                                                               |
+    | socle → `@interface/<app>`                                                                                                        | `onlyTagsConstraintViolation` (`layer:socle`)                                                                         |
+    | socle ou coque → `@socle/<autre>`                                                                                                 | `onlyTagsConstraintViolation` (`app:<app>`)                                                                           |
+    | coque → socle par un chemin relatif                                                                                               | `noRelativeOrAbsoluteImportsAcrossLibraries`                                                                          |
+    | interface → `@socle/<app>` (API publique)                                                                                         | admis                                                                                                                 |
 
     Les quatre premières formes étaient OUVERTES au commit 1b (revue du 1b, A-2)
     : TypeScript compile un import relatif hors de `include` sans erreur, parce
@@ -152,7 +156,28 @@ migration.
     construction (mesuré par la revue de l'étape A, B-3) ; avec elles, le `lint`
     les refuse (cas du test, sortie citée).
 
-- **Garantie « l'interface n'importe pas l'entrée de la coque »**, trois jambes
+- **Réécritures des formes de Vite, mesurées** (validation de l'étape A, réserve
+  R3 : construction Vite 8.3.5 d'un produit fictif React, marqueur à effet de
+  bord dans un fichier du socle, sortie cherchée dans `dist/`) :
+  `new Worker(new URL('<relatif>', import.meta.url).href)` et `.toString()` sont
+  SUIVIES par Vite (le fichier du socle est empaqueté en worker), alors que le
+  `lint` et la vérification de types passaient : le sélecteur refuse désormais
+  tout `import.meta` dans l'appel d'un worker. Trois réécritures ne sont PAS
+  suivies par la construction et ne sont pas refusées par le `lint` : l'accès
+  calculé `import.meta['glob'](…)` (pas une forme de Vite ; `undefined` à
+  l'exécution), un `URL` renommé (`const U = URL; new Worker(new U(…))`) et une
+  URL construite hors de l'appel du worker
+  (`const u = new URL(…); new Worker(u)`) : rien du socle n'est émis, et
+  l'adresse vise un chemin que le produit ne sert pas. C'est la limite exacte :
+  ces formes n'atteignent pas le code du socle dans la construction mesurée ; le
+  serveur de développement de Vite n'a pas été mesuré.
+- **Portée des règles de l'interface, par construction** :
+  `no-restricted-syntax` et `@typescript-eslint/triple-slash-reference` ne sont
+  posées que sur l'interface. Ce n'est pas une limite : le socle et la coque
+  sont des fichiers POSSÉDÉS et scellés, écrits par le générateur seul et
+  refusés à toute dérive par l'intégrité (§ 1) ; l'IA n'y écrit pas.
+
+- **Garantie « l'interface n'importe pas l'entrée de la coque »**, quatre jambes
   natives, chacune accrochée au portail et mutée : (i) le `typecheck` de
   l'interface, avec son propre tsconfig (TS2307), dont dépend la construction de
   la coque (`^typecheck`) ; (ii) `no-restricted-imports` sur `@socle-coque/*` ;
