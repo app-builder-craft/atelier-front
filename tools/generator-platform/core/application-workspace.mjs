@@ -390,7 +390,9 @@ export async function readOwnedWorkspace(options, internal = {}) {
     );
 }
 
-async function renderProductShell(options) {
+// Exporté pour la mise à jour (lot 2, commit 6c), qui rend une appli existante
+// par les mêmes renderers.
+export async function renderProductShell(options) {
     const {
         productRoot,
         toolsRoot,
@@ -438,7 +440,15 @@ async function renderProductShell(options) {
             options.backendContractSchema ??
             (await loadSchema('backend-contract')),
     });
-    if (errors.length) externalFailure('product application-design rejected');
+    // Lot 2, commit 6c : les erreurs de validation accompagnent le refus (même
+    // message), pour qu'`update-app` nomme l'appli en cause (v3 V3.5 g).
+    if (errors.length)
+        throw Object.assign(
+            new Error(
+                'external application: product application-design rejected'
+            ),
+            { validation: errors }
+        );
     // Le préfixe scellé de l'espace vaut ; une conception qui en déclare un
     // est refusée (une seule source).
     const prefix = assertSealedPrefix(design, options.prefix);

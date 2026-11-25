@@ -283,13 +283,10 @@ export const EXTERNAL_COMMAND_CLASSES = Object.freeze({
         'tools/recover-product-prefix.mjs',
         'recovery'
     ),
-    'update-app': row('tools/update-app.mjs', 'update', {
-        pending: 'lot 2, commit 6',
-    }),
+    'update-app': row('tools/update-app.mjs', 'update'),
     'recover:application-update': row(
         'tools/recover-application-update.mjs',
-        'recovery',
-        { pending: 'lot 2, commit 6' }
+        'recovery'
     ),
     'extract:messages': row('tools/extract-messages.mjs', 'author', {
         genre: 'texts',

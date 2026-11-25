@@ -7,7 +7,7 @@ import {
     externalFailure,
     readProductFile,
 } from './external-application-paths.mjs';
-import { RENAME_TOOL } from './application-ownership.mjs';
+import { DERIVED_WRITERS } from './application-ownership.mjs';
 import { escapeRegExp } from './atelier-signature.mjs';
 import { sha256 } from './generation-manifest.mjs';
 import {
@@ -105,12 +105,13 @@ export async function ownedAppFile(app, path) {
 // Dernier outil qui a publié ce fichier ; `null` pour un fichier de la coque.
 // Un renommage du préfixe n'en est pas un : il réécrit en `q` la sortie de la
 // coque ou de la composition, prouvée égale à leur rendu (phase `derived`),
-// et l'auteur reste le leur.
+// et l'auteur reste le leur. Une mise à jour (`update-app`) non plus : elle
+// ne réécrit que des fichiers dérivés (lot 2, commit 6c).
 export function publishingTool(manifest, path) {
     return (
         manifest.ownership.publications.findLast(
             (record) =>
-                record.tool !== RENAME_TOOL &&
+                !DERIVED_WRITERS.has(record.tool) &&
                 record.files.some((file) => file.path === path)
         )?.tool ?? null
     );

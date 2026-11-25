@@ -7,10 +7,10 @@
 // MARQUE ne s'étend pas à `libs/` et ne re-rend plus les compositions, qui y
 // vivent. Ce module ne fait que planifier ; la transaction est dans
 // `product-prefix-rename-transaction.mjs`.
-import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+    DERIVED_WRITERS,
     lastWriters,
     RENAME_TOOL,
     renamedManifest,
@@ -24,6 +24,7 @@ import {
 } from './application-workspace.mjs';
 import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import { filesUnder } from './application-transaction.mjs';
+import { ownedAppNames } from './application-workspace-root.mjs';
 import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
 import { canonicalizeGeneratedFiles } from './canonicalize-generated.mjs';
 import {
@@ -174,7 +175,7 @@ function deriveChanges(app, before, after, prefixes) {
     for (const [path, content] of Object.entries(before.shell.files)) {
         const writer = writers.get(path);
         if (writer === undefined) shellNotReproducible(name, path);
-        const zone = writer === 'shell' || writer === RENAME_TOOL;
+        const zone = DERIVED_WRITERS.has(writer);
         if (zone) {
             if (files[path] !== content) shellNotReproducible(name, path);
             explained.add(path);
@@ -228,8 +229,7 @@ function deriveChanges(app, before, after, prefixes) {
     // (socle) n'est pas re-rendu : il reste égal à l'octet.
     for (const [path, writer] of writers) {
         if (explained.has(path)) continue;
-        if (writer === 'shell' || writer === RENAME_TOOL)
-            shellNotReproducible(name, path);
+        if (DERIVED_WRITERS.has(writer)) shellNotReproducible(name, path);
     }
     if (changes.length === 0)
         externalFailure(`rename without change for app ${name}`);
@@ -258,15 +258,6 @@ function applyChanges(files, changes, rendered) {
         else next[change.path] = rendered[change.path];
     }
     return next;
-}
-
-async function ownedAppNames(productRoot) {
-    return (
-        await readdir(resolve(productRoot, 'apps'), { withFileTypes: true })
-    )
-        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-        .map((entry) => entry.name)
-        .sort();
 }
 
 // Plan du renommage. `internal.renaming` : réservé à la transaction et à sa

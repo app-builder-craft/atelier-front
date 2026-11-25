@@ -13,6 +13,7 @@ import {
 import {
     assertNoPendingTransaction,
     pendingTransactionJournals,
+    RECOVERY_COMMANDS,
     WORKING_TREE,
 } from './application-transaction.mjs';
 import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
@@ -91,6 +92,17 @@ export async function ownedProductContext(options, internal = {}) {
     return context;
 }
 
+// Applis du produit, par nom (entrées de `apps/` hors arbres de travail et
+// verrous) : la liste que le renommage et la mise à jour parcourent.
+export async function ownedAppNames(productRoot) {
+    return (
+        await readdir(resolve(productRoot, 'apps'), { withFileTypes: true })
+    )
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name)
+        .sort();
+}
+
 // Manifeste d'une appli du produit, sous le dossier de signature courant : le
 // seul lecteur de ce marqueur avant la vérification de la racine. Une appli
 // sans lui (par exemple à la disposition d'avant le renommage de la signature,
@@ -159,7 +171,7 @@ export async function verifyWorkspaceRoot(
             );
         if (match[4] !== plan.transaction)
             externalFailure(
-                `interrupted application ${match[2]} pending; recover it first (recover:application-publication)`
+                `interrupted application ${match[2]} pending; recover it first (${RECOVERY_COMMANDS[match[2]]})`
             );
         return true;
     };

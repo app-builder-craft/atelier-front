@@ -139,7 +139,9 @@ test('V3.2 : table des classes exhaustive dans les deux sens ; défaut fermé co
             assert.ok(scriptRunsTool(scripts[name], row.tool), name);
     assert.equal(commandClass(undefined), 'consumer');
     assert.equal(commandClass('commande-inconnue'), 'consumer');
-    assert.equal(commandClass('update-app'), 'consumer'); // pending : pas encore outillée
+    // Lot 2, commit 6c : `update-app` et sa reprise sont outillées.
+    assert.equal(commandClass('update-app'), 'update');
+    assert.equal(commandClass('recover:application-update'), 'recovery');
 });
 
 test('V4.5 : la fermeture du genre contract lit les chemins DANS le contrat ; un chemin cité par deux genres est refusé', async () => {

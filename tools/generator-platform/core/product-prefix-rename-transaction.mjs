@@ -13,7 +13,11 @@ import { basename, resolve } from 'node:path';
 
 import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
 import { repositoryRoot } from '../validate-ir.mjs';
-import { lastWriters, RENAME_TOOL } from './application-ownership.mjs';
+import {
+    DERIVED_WRITERS,
+    lastWriters,
+    RENAME_TOOL,
+} from './application-ownership.mjs';
 import {
     installedBin,
     readOwnedWorkspace,
@@ -308,10 +312,7 @@ async function assertDerived(plan) {
         const writers = lastWriters(manifest, plan.workspace_id_after);
         for (const [path, content] of Object.entries(files)) {
             const writer = writers.get(path);
-            if (
-                [RENAME_TOOL, 'shell'].includes(writer) &&
-                (await read(path)) !== content
-            )
+            if (DERIVED_WRITERS.has(writer) && (await read(path)) !== content)
                 notDerived(app.app_name, path);
         }
     }

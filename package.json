@@ -24,6 +24,8 @@
     "recover:application-publication": "node tools/recover-application-publication.mjs",
     "rename-product-prefix": "node tools/rename-product-prefix.mjs",
     "recover:product-prefix": "node tools/recover-product-prefix.mjs",
+    "update-app": "node tools/update-app.mjs",
+    "recover:application-update": "node tools/recover-application-update.mjs",
     "test:external-application-shells": "node --test tools/generator-platform/application-workspace.test.mjs tools/generator-platform/external-product-confinement.test.mjs tools/generator-platform/external-application-paths.test.mjs tools/generator-platform/external-application-shell.test.mjs tools/generator-platform/external-application-session-shell.test.mjs tools/generator-platform/external-application-publication.test.mjs tools/generator-platform/external-application-recovery.test.mjs tools/generator-platform/external-action-request.test.mjs tools/generator-platform/external-action-request-guards.test.mjs tools/generator-platform/external-page-composition.test.mjs tools/generator-platform/external-page-composition-capability.test.mjs tools/generator-platform/external-application-diagnostics.test.mjs tools/generator-platform/external-closed-fallbacks.test.mjs tools/generator-platform/external-relay.test.mjs tools/generator-platform/check-nginx-digest.test.mjs tools/generator-platform/check-nginx-image.test.mjs tools/generator-platform/external-service-worker-policy.test.mjs tools/generator-platform/external-shell-lint.test.mjs",
     "check:external-application-shells": "node tools/generator-platform/check-external-application-shells.mjs",
     "check:nginx-relay": "node tools/generator-platform/check-nginx-relay.mjs --mutations",

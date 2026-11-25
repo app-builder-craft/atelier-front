@@ -79,7 +79,8 @@ test('X2 préparatoire : la reprise explicite prend le verrou de l’application
 
 // Fable I-1 (revue du suivi X1) : l'exception de reprise est un second
 // paramètre de fonctions exportées. Seuls le planificateur d'espace, la
-// vérification de la racine qu'il délègue et la publication la portent.
+// vérification de la racine qu'il délègue, la publication et la mise à jour
+// (lot 2, commit 6c) la portent.
 test('X2 préparatoire : le passe-droit `transaction` n’apparaît que dans les modules autorisés', async () => {
     // Lot 2 : une transaction tolère son propre journal par un second
     // paramètre (`internal.transaction`), jamais une option publique.
@@ -87,6 +88,10 @@ test('X2 préparatoire : le passe-droit `transaction` n’apparaît que dans les
         'tools/generator-platform/core/application-workspace.mjs',
         'tools/generator-platform/core/application-workspace-root.mjs',
         'tools/generator-platform/core/application-publication.mjs',
+        // Lot 2, commit 6c : la mise à jour (plan relu sous sa transaction,
+        // qui tolère son propre journal).
+        'tools/generator-platform/core/application-update.mjs',
+        'tools/generator-platform/core/application-update-transaction.mjs',
         relative(TOOLS_ROOT, new URL(import.meta.url).pathname),
     ]);
     const pattern =

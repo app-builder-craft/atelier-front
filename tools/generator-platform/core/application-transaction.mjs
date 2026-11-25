@@ -31,7 +31,13 @@ import {
 } from './product-transaction.mjs';
 import { APPS_ROOT, LIBS_ROOT } from './socle-names.mjs';
 
-export const TRANSACTION_GENRES = Object.freeze(['creation', 'publication']);
+// Lot 2, commit 6c : `update` (mise à jour de tout le produit, journal au
+// niveau du produit, `application-update-transaction.mjs`).
+export const TRANSACTION_GENRES = Object.freeze([
+    'creation',
+    'publication',
+    'update',
+]);
 export const TRANSACTION_PHASES = Object.freeze([
     'prepared',
     'staged',
@@ -45,6 +51,13 @@ const TRANSACTION_ROOT = new RegExp(
 );
 
 export const RECOVERY_COMMAND = 'recover:application-publication';
+export const UPDATE_RECOVERY_COMMAND = 'recover:application-update';
+// Commande de reprise de chaque genre, nommée par tout refus « pending ».
+export const RECOVERY_COMMANDS = Object.freeze({
+    creation: RECOVERY_COMMAND,
+    publication: RECOVERY_COMMAND,
+    update: UPDATE_RECOVERY_COMMAND,
+});
 
 // Journal d'une transaction d'appli, à côté du produit, nommé par son genre et
 // son plan_id.
@@ -77,8 +90,10 @@ export async function pendingTransactionJournals(productRoot) {
 // dans son dossier parent, nommés par le genre et le plan_id.
 export const workingTreeName = (rootName, genre, kind, planId) =>
     `.${rootName}.${genre}-${kind}-${planId}`;
+// `witness` : programme témoin d'une mise à jour (v3 V3.5 a), à côté de la
+// racine dont il prend la place le temps des contrôles.
 export const WORKING_TREE = new RegExp(
-    `^\\.([a-z][a-z0-9-]*)\\.(${TRANSACTION_GENRES.join('|')})-(candidate|previous)-([a-f0-9]{64})$`
+    `^\\.([a-z][a-z0-9-]*)\\.(${TRANSACTION_GENRES.join('|')})-(candidate|previous|witness)-([a-f0-9]{64})$`
 );
 
 // Tout journal présent bloque toute commande extérieure ; seule la
@@ -91,7 +106,7 @@ export async function assertNoPendingTransaction(productRoot, transaction) {
             // Transaction d'un autre processus vivant : il tient le verrou.
             await assertGenerationLockFree(productRoot);
             externalFailure(
-                `interrupted application ${genre} pending; recover it first (${RECOVERY_COMMAND})`
+                `interrupted application ${genre} pending; recover it first (${RECOVERY_COMMANDS[genre]})`
             );
         }
 }
@@ -156,6 +171,21 @@ const validArtifacts = (files) =>
             Number.isSafeInteger(file.bytes)
     );
 
+// Arbre d'une opération `tree` inscrit au journal (création, publication,
+// mise à jour) : racine d'appli, arbres de travail nommés par le genre et le
+// plan, listes d'artéfacts.
+export const validTransactionTree = (tree, genre, planId) =>
+    exactKeys(tree, ['root', 'candidate', 'previous', 'before', 'files']) &&
+    typeof tree.root === 'string' &&
+    posix.normalize(tree.root) === tree.root &&
+    TRANSACTION_ROOT.test(tree.root) &&
+    tree.candidate ===
+        workingTreeName(basename(tree.root), genre, 'candidate', planId) &&
+    tree.previous ===
+        workingTreeName(basename(tree.root), genre, 'previous', planId) &&
+    (tree.before === null || validArtifacts(tree.before)) &&
+    validArtifacts(tree.files);
+
 const validJournal = (journal, genre, planId) =>
     exactKeys(journal, [
         'schema_version',
@@ -177,35 +207,7 @@ const validJournal = (journal, genre, planId) =>
     TRANSACTION_PHASES.includes(journal.phase) &&
     Array.isArray(journal.trees) &&
     journal.trees.length > 0 &&
-    journal.trees.every(
-        (tree) =>
-            exactKeys(tree, [
-                'root',
-                'candidate',
-                'previous',
-                'before',
-                'files',
-            ]) &&
-            typeof tree.root === 'string' &&
-            posix.normalize(tree.root) === tree.root &&
-            TRANSACTION_ROOT.test(tree.root) &&
-            tree.candidate ===
-                workingTreeName(
-                    basename(tree.root),
-                    genre,
-                    'candidate',
-                    planId
-                ) &&
-            tree.previous ===
-                workingTreeName(
-                    basename(tree.root),
-                    genre,
-                    'previous',
-                    planId
-                ) &&
-            (tree.before === null || validArtifacts(tree.before)) &&
-            validArtifacts(tree.files)
-    );
+    journal.trees.every((tree) => validTransactionTree(tree, genre, planId));
 
 // Refus d'un état ambigu, avec le premier écart observé quand il est connu
 // (M-3) : la commande de reprise le nomme, en chemin relatif au produit.
@@ -300,6 +302,12 @@ export async function recoverApplicationTransactions(productRoot, appName) {
     for (const { genre, planId } of await pendingTransactionJournals(
         productRoot
     )) {
+        // Une mise à jour interrompue porte sur tout le produit : elle a sa
+        // propre reprise, et bloque celle d'une appli.
+        if (genre === 'update')
+            externalFailure(
+                `interrupted application update pending; recover it first (${UPDATE_RECOVERY_COMMAND})`
+            );
         const journal = await readJournal(productRoot, genre, planId);
         if (journal.app_name === appName) journals.push(journal);
     }
