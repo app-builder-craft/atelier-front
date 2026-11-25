@@ -153,7 +153,11 @@ for (const profile of ['angular-pwa', 'react-spa']) {
                 `${original}\nexport const worker = new Worker(new URL('./worker.js', import.meta.url));\n`
             );
             const faulty = await eslint();
-            assert.notEqual(faulty.code, 0, faulty.output);
+            assert.notEqual(
+                faulty.code,
+                0,
+                `amorce fautive refusée\n${faulty.output}`
+            );
             assert.match(faulty.output, /no-restricted-syntax/);
             assert.deepEqual(
                 failureLocation(APP, faulty.output, root, fallback),
@@ -169,7 +173,11 @@ for (const profile of ['angular-pwa', 'react-spa']) {
                 `${original}\n// eslint-disable-next-line no-console\nexport const quiet = 1;\n`
             );
             const warned = await eslint();
-            assert.notEqual(warned.code, 0, warned.output);
+            assert.notEqual(
+                warned.code,
+                0,
+                `avertissement seul refusé\n${warned.output}`
+            );
             assert.match(warned.output, /Unused eslint-disable directive/);
             assert.match(warned.output, /0 errors, 1 warning/);
             assert.deepEqual(
@@ -180,7 +188,11 @@ for (const profile of ['angular-pwa', 'react-spa']) {
             await writeFile(witnessSeed, original);
             // Nx voit les arbres témoins : deux projets du même nom.
             const seen = await nxProjects(root);
-            assert.notEqual(seen.code, 0, seen.output);
+            assert.notEqual(
+                seen.code,
+                0,
+                `Nx refuse le graphe, témoins présents\n${seen.output}`
+            );
             assert.match(seen.output, /defined in multiple locations/);
             assert.ok(seen.output.includes(interfaceWitness), seen.output);
             t.diagnostic(
