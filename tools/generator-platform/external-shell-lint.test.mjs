@@ -27,6 +27,7 @@ import { signatureName } from './core/atelier-signature.mjs';
 const LINT_PACKAGES = [
     'eslint',
     '@eslint/js',
+    '@nx/eslint-plugin',
     'typescript-eslint',
     'angular-eslint',
 ];

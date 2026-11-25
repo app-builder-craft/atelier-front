@@ -564,8 +564,9 @@ if (nativeCell !== undefined) {
             ...options,
             planId: plan.plan_id,
         });
+        // Lot 2, commit 3 (V3.3) : la conception extérieure ne déclare pas
+        // l'empreinte du contrat ; elle est lue dans ses octets.
         const design = structuredClone(fixture.design);
-        design.backend_contracts[0].sha256 = plan.output_sha256;
         design.pages[1].access.mode = 'authorized';
         design.pages[1].access.permissions = [];
         await writeFile(join(fixture.root, fixture.sourcePath), json(design));

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import {
     access,
@@ -480,6 +481,34 @@ async function acquireGenerationLock(outputRoot) {
     fail(`could not acquire generation lock for ${outputRoot}`);
 }
 
+// Verrous tenus par l'opération COURANTE (contexte asynchrone natif) : une
+// autre opération du même processus n'en hérite pas.
+const heldLocks = new AsyncLocalStorage();
+
+// Lot 2 : une commande qui trouve le journal d'une transaction d'appli dit si
+// une AUTRE génération vivante tient le verrou du produit (transaction en
+// cours, même refus que le verrou) ; sinon la transaction est interrompue.
+// L'opération qui tient elle-même ce verrou n'est jamais « une autre ».
+export async function assertGenerationLockFree(outputRoot) {
+    const lockRoot = lockRootFor(outputRoot);
+    if ((heldLocks.getStore() ?? []).includes(lockRoot)) return;
+    let owner;
+    try {
+        owner = JSON.parse(
+            await readFile(resolve(lockRoot, 'owner.json'), 'utf8')
+        );
+    } catch {
+        return;
+    }
+    if (
+        owner?.hostname !== GENERATION_PROCESS_HOSTNAME ||
+        processIsAlive(owner.pid)
+    )
+        fail(
+            `another generation owns ${outputRoot} (${JSON.stringify(owner)})`
+        );
+}
+
 export async function withGenerationLock(outputRoot, operation) {
     await assertPlainDirectory(dirname(outputRoot), 'generation output parent');
     const lockRoot = await acquireGenerationLock(outputRoot);
@@ -487,7 +516,10 @@ export async function withGenerationLock(outputRoot, operation) {
     let operationError;
     try {
         await recoverInterruptedTransactions(outputRoot);
-        result = await operation();
+        result = await heldLocks.run(
+            [...(heldLocks.getStore() ?? []), lockRoot],
+            operation
+        );
     } catch (error) {
         operationError = error;
     }

@@ -20,6 +20,7 @@ import {
 import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 import { renameAndSync } from './core/generation-transaction.mjs';
 import { recoverProductPrefixRename } from './core/product-prefix-rename-transaction.mjs';
+import { coqueRoot, socleRoot } from './core/socle-names.mjs';
 import { fixtureParent } from './test-support/external-application-fixture.mjs';
 import {
     renameProduct,
@@ -32,8 +33,18 @@ import {
 const PENDING = /interrupted prefix rename pending; recover it first/;
 const AMBIGUOUS = /ambiguous interrupted prefix rename/;
 const APPS = PRODUCT_APPS;
-// Contrôles natifs du point `verified` (spécification, § 4.3).
-const TARGETS = ['build:production', 'lint', 'test'];
+// Contrôles natifs du point `verified` (C-B2 : la liste unique, dérivée des
+// configurations rendues ; T-E8 = P1 : lint avant la construction). Oracle
+// écrit ici, fait mesuré au lot 2 : lint des trois projets, construction de la
+// coque, puis le test du projet qui porte les specs (le socle de l'appli à
+// session, dont la coque n'a plus de cible `test` ; la coque sinon).
+const controls = (app) => [
+    `${app}:lint`,
+    `${app}-socle:lint`,
+    `${app}-interface:lint`,
+    `${app}:build:production`,
+    app === SESSION_APP ? `${app}-socle:test` : `${app}:test`,
+];
 const PHASES_BEFORE_VERIFIED = [
     'prepared',
     'candidate-staged',
@@ -81,7 +92,10 @@ async function assertBlocked(product) {
         planApplicationPublication({
             ...product.app,
             tool: 'generate:action-request',
-            files: { 'src/app/generated/x1-proof/notice.ts': 'x\n' },
+            files: {
+                [`${socleRoot(SESSION_APP)}/src/actions/x1-proof/notice.ts`]:
+                    'x\n',
+            },
         }),
         PENDING
     );
@@ -132,7 +146,7 @@ test('renommage du préfixe : échec injecté, arrêt brutal et reprise par l’
     assert.notDeepEqual(after, before);
     assert.deepEqual(runs, [
         ...APPS.map((app) => `compile ${app}`),
-        ...APPS.flatMap((app) => TARGETS.map((target) => `${app}:${target}`)),
+        ...APPS.flatMap(controls),
         'check-workspace',
     ]);
     assert.equal(swaps.length, APPS.length * 2 + 1);
@@ -218,12 +232,13 @@ test('renommage du préfixe : échec injecté, arrêt brutal et reprise par l’
                             prefix === 'qz' &&
                             manifest.app_name === SESSION_APP
                         )
-                            files['src/main.ts'] += ' ';
+                            files[`${coqueRoot(SESSION_APP)}/src/main.ts`] +=
+                                ' ';
                         return files;
                     },
                 },
                 'derived',
-                /PRODUCT_RENAME_NOT_DERIVED: app session-observatory path src\/main\.ts/
+                /PRODUCT_RENAME_NOT_DERIVED: app session-observatory path apps\/session-observatory\/src\/main\.ts/
             );
             assert.equal(seen.at(-1), 'switched');
             assert.ok(!seen.includes('derived'));

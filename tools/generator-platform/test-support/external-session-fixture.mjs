@@ -6,7 +6,11 @@ import {
     createApplicationSessionFixture,
     SESSION_FIXTURE_DOMAINS,
 } from './application-session-fixture.mjs';
-import { hash, TOOLS_ROOT } from './external-application-fixture.mjs';
+import {
+    externalDesign,
+    hash,
+    TOOLS_ROOT,
+} from './external-application-fixture.mjs';
 import { sessionCatalogueDefinition } from './session-catalogue-query.mjs';
 
 export { SESSION_FIXTURE_DOMAINS };
@@ -51,8 +55,8 @@ export async function writeExternalSessionDesign(root, domain, edit) {
         design.backend_contracts[0] = {
             ...design.backend_contracts[0],
             snapshot_uri: paths.contract,
-            sha256: hash(contractBytes),
         };
+        externalDesign(design);
         const files = [
             [paths.source, sourceBytes],
             [paths.brief, briefBytes],

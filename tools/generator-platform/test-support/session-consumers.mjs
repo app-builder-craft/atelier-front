@@ -41,19 +41,22 @@ export function catalogueRead(data) {
 
 // Fixture consumers mount the produced page composition in the produced
 // shell. They are test applications, not generated business-page claims.
-export function sessionConsumers(data) {
+// Lot 2 : `modules` donne les spécifieurs, relatifs au fichier des
+// consommateurs, des routes de la coque (`routes`) et du dossier de la
+// composition d'une page (`composition(id)`), selon la disposition du produit.
+export function sessionConsumers(data, modules) {
     const imports = [
         "import { Component, ChangeDetectionStrategy, inject, signal } from '@angular/core';",
         "import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';",
         "import type { Routes } from '@angular/router';",
-        "import { appRoutes } from './src/app/app.routes';",
+        `import { appRoutes } from '${modules.routes}';`,
     ];
     const components = [],
         entries = [];
     for (const [id, { page, plan }] of data.pages) {
         if (!plan) continue;
         const name = pascalCase(page.path.slice(1)) + 'Consumer';
-        const root = `./src/app/pages/${id}/execution`;
+        const root = modules.composition(id);
         imports.push(
             `import { PageComposition as ${name}Composition } from '${root}/page-composition';`
         );

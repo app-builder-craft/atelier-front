@@ -189,9 +189,14 @@ test('les versions directes sont exactes et sans catalog, alias ou script d’in
         assert.equal(pkg.scripts.postinstall, undefined);
         assert.equal(pkg.scripts.prepare, undefined);
         assert.equal(pkg.workspaces.catalog, undefined);
+        // Lot 2 (V3.4 point 1, forme relative imposée par TS5090) : les deux
+        // seuls alias, FIXES, à une étoile, sans préfixe ; oracle écrit ici.
         assert.deepEqual(
             JSON.parse(plan.files['tsconfig.base.json']).compilerOptions.paths,
-            {}
+            {
+                '@socle/*': ['./libs/*-socle/src/index.ts'],
+                '@interface/*': ['./libs/*-interface/src/index.ts'],
+            }
         );
     }
 });
@@ -534,62 +539,6 @@ test('EXT01 v4 T-2 : pair optionnel qualifié par sa source, son champ et ses em
             assert.deepEqual(valid, before);
         });
     }
-});
-
-test('EXT01 v7 : STOP conserve un message explicite du code', () => {
-    assert.equal(
-        formatProofStop(new Error('Arrêt fictif du code')),
-        'STOP Error: Arrêt fictif du code; aucun succès global revendiqué.'
-    );
-});
-
-test('EXT01 v7 : STOP écarte aussi une assertion personnalisée avec diff intégré', () => {
-    const explicit = new assert.AssertionError({
-        message: 'Contrat fictif refusé',
-        actual: 'sortie-enfant-fictive',
-        expected: 'valeur-fictive',
-        operator: 'strictEqual',
-    });
-    assert.equal(explicit.generatedMessage, false);
-    assert.match(explicit.message, /sortie-enfant-fictive/);
-    assert.equal(
-        formatProofStop(explicit),
-        'STOP AssertionError; aucun succès global revendiqué.'
-    );
-});
-
-test('EXT01 v7 : STOP écarte le message d’une assertion générée', () => {
-    const generated = new assert.AssertionError({
-        actual: 'sortie-enfant-fictive',
-        expected: 'valeur-fictive',
-        operator: 'strictEqual',
-    });
-    assert.equal(generated.generatedMessage, true);
-    assert.match(generated.message, /sortie-enfant-fictive/);
-    assert.equal(
-        formatProofStop(generated),
-        'STOP AssertionError; aucun succès global revendiqué.'
-    );
-});
-
-test('EXT01 v7 : STOP tient sur une ligne sans contrôle ni séquence de terminal', () => {
-    const error = new Error(
-        'début \u001b[31mrouge\u001b[0m fin\u0000\t\u007f\u202esuite'
-    );
-    const line = formatProofStop(error);
-    assert.equal(
-        line,
-        'STOP Error: début rouge fin suite; aucun succès global revendiqué.'
-    );
-    error.name = 'Erreur\n\u0007fictive';
-    assert.doesNotMatch(formatProofStop(error), /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
-});
-
-test('EXT01 v7 : STOP borne la ligne entière à 400 caractères', () => {
-    const line = formatProofStop(new Error('é'.repeat(1000)));
-    assert.equal(line.length, 400);
-    assert.ok(line.startsWith('STOP Error: é'));
-    assert.ok(line.endsWith('; aucun succès global revendiqué.'));
 });
 
 test('EXT01 v7 : T14 contrôle produit et fixture sans parcourir les liens de l’atelier', async (t) => {

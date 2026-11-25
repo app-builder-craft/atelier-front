@@ -1,7 +1,9 @@
 // Lot MARQUE, commit 3 : enregistrement de renommage du préfixe dans le sceau
 // d'une appli extérieure (ADR-0103, voie R2). Zone fermée par le dernier
 // écrivain, paire de scripts d'entrée nginx, genre `removed`, rejeu inverse
-// jusqu'à la coque d'origine, version du sceau.
+// jusqu'à la coque d'origine, version du sceau. Lot 2 : chemins relatifs au
+// produit ; la zone d'un renommage est la COQUE seule (V5.3 : le socle et
+// l'interface ne portent aucune forme du préfixe).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
@@ -28,20 +30,28 @@ const digest = (text) => ({
 });
 const ID = { p: 'a'.repeat(64), q: 'b'.repeat(64), r: 'c'.repeat(64) };
 const PAGE = 'page_1111111111111111';
-const SPEC =
-    'src/app/generated/pages/page_1111111111111111/composition/src/page-composition.spec.ts';
-const MODEL = 'src/app/generated/actions/enter/execution-model.json';
-const PAGE_FILE = `src/app/pages/${PAGE}/page.component.ts`;
+// Oracle des chemins, écrit ici (appli `essai`).
+const MAIN = 'apps/essai/src/main.ts';
+const ENVSH = (prefix) => `apps/essai/${relayEnvshPath(prefix)}`;
+const CONTRACT = `apps/essai/${SIGNATURE_FILES.pages}/${PAGE}.json`;
+const SOCLE_INDEX = 'libs/essai-socle/src/index.ts';
+const INTERFACE_INDEX = 'libs/essai-interface/src/index.ts';
+const MODULE = `libs/essai-socle/src/pages/${PAGE}/composition/src/index.ts`;
+const SPEC = `libs/essai-socle/src/pages/${PAGE}/composition/src/page-composition.spec.ts`;
+const MODEL = 'libs/essai-socle/src/actions/enter/execution-model.json';
 
-// Coque fictive en `p` : un fichier de coque, un fichier de page, le script
-// d'entrée nginx de `p`, le contrat de page qui déclare la page.
+// Coque fictive en `p` : un fichier de coque, le script d'entrée nginx de
+// `p`, le contrat de page qui déclare la page ; l'entrée du socle et son module
+// de page vide, l'entrée de l'interface, écrits par la coque.
 function shell(prefix = 'ns') {
     const files = {
-        'src/main.ts': `policy ${prefix}-sw\n`,
-        [PAGE_FILE]: 'export class Page {}\n',
-        [relayEnvshPath(prefix)]:
+        [MAIN]: `policy ${prefix}-sw\n`,
+        [ENVSH(prefix)]:
             `export ${prefix.toUpperCase()}_UPSTREAMS_VALIDATED=1\n`,
-        [`${SIGNATURE_FILES.pages}/${PAGE}.json`]: '{}\n',
+        [CONTRACT]: '{}\n',
+        [SOCLE_INDEX]: 'export {};\n',
+        [MODULE]: 'export {};\n',
+        [INTERFACE_INDEX]: 'export const pages = {};\n',
     };
     const generated = Object.entries(files)
         .map(([path, content]) => ({ path, ...digest(content) }))
@@ -94,7 +104,7 @@ function published() {
         {
             plan_id: 'e'.repeat(64),
             tool: 'generate:page-composition',
-            files: [added(SPEC, 'ns@exemple.test\n')],
+            files: [added(SPEC, 'utilisateur@exemple.test\n')],
         },
         ID.p
     );
@@ -103,7 +113,7 @@ function published() {
         files: {
             ...files,
             [MODEL]: '{"p":"ns"}\n',
-            [SPEC]: 'ns@exemple.test\n',
+            [SPEC]: 'utilisateur@exemple.test\n',
         },
     };
 }
@@ -125,13 +135,9 @@ const renameRecord = (
 
 function renameFiles(files, from, to) {
     return [
-        replaced('src/main.ts', files['src/main.ts'], `policy ${to}-sw\n`),
-        replaced(SPEC, files[SPEC], `${to}@exemple.test\n`),
-        removed(relayEnvshPath(from), files[relayEnvshPath(from)]),
-        added(
-            relayEnvshPath(to),
-            `export ${to.toUpperCase()}_UPSTREAMS_VALIDATED=1\n`
-        ),
+        replaced(MAIN, files[MAIN], `policy ${to}-sw\n`),
+        removed(ENVSH(from), files[ENVSH(from)]),
+        added(ENVSH(to), `export ${to.toUpperCase()}_UPSTREAMS_VALIDATED=1\n`),
     ];
 }
 
@@ -150,8 +156,8 @@ test('renommage : enregistrement accepté, identité rattachée, version 1.1.0, 
         manifest.ownership.shell_tree_sha256
     );
     const paths = next.generated_files.map(({ path }) => path);
-    assert.ok(paths.includes(relayEnvshPath('qz')));
-    assert.ok(!paths.includes(relayEnvshPath('ns')));
+    assert.ok(paths.includes(ENVSH('qz')));
+    assert.ok(!paths.includes(ENVSH('ns')));
     verifyApplicationOwnership(next, ID.q);
     assert.throws(
         () => verifyApplicationOwnership(next, ID.p),
@@ -159,10 +165,12 @@ test('renommage : enregistrement accepté, identité rattachée, version 1.1.0, 
     );
     // Dernier écrivain : le renommage, pour les fichiers qu'il a écrits.
     const writers = lastWriters(next, ID.q);
-    assert.equal(writers.get('src/main.ts'), RENAME_TOOL);
-    assert.equal(writers.get(SPEC), RENAME_TOOL);
+    assert.equal(writers.get(MAIN), RENAME_TOOL);
+    // V5.3 : la composition n'est plus re-rendue par le renommage.
+    assert.equal(writers.get(SPEC), 'generate:page-composition');
     assert.equal(writers.get(MODEL), 'generate:action-request');
-    assert.equal(writers.get(PAGE_FILE), 'shell');
+    assert.equal(writers.get(MODULE), 'shell');
+    assert.equal(writers.get(SOCLE_INDEX), 'shell');
 });
 
 test('renommage : version du sceau liée à la présence d’un renommage', () => {
@@ -198,37 +206,67 @@ test('renommage forgé : dernier écrivain hors zone, fichier de page, paire de 
             [replaced(MODEL, files[MODEL], '{"p":"qz"}\n')],
             /outside its zone/,
         ],
+        // V5.3 : socle et interface hors zone, même écrits par la coque.
         [
-            'fichier de page de la coque',
-            [replaced(PAGE_FILE, files[PAGE_FILE], 'export class Autre {}\n')],
+            'spec de composition',
+            [replaced(SPEC, files[SPEC], 'qz@exemple.test\n')],
+            /outside its zone/,
+        ],
+        [
+            'entrée du socle écrite par la coque',
+            [
+                replaced(
+                    SOCLE_INDEX,
+                    files[SOCLE_INDEX],
+                    'export const X = 1;\n'
+                ),
+            ],
+            /outside its zone/,
+        ],
+        [
+            'module de page vide',
+            [replaced(MODULE, files[MODULE], 'export const X = 1;\n')],
+            /outside its zone/,
+        ],
+        [
+            'entrée de l’interface',
+            [
+                replaced(
+                    INTERFACE_INDEX,
+                    files[INTERFACE_INDEX],
+                    'export const pages = { x: 1 };\n'
+                ),
+            ],
+            /outside its zone/,
+        ],
+        [
+            'dossier de signature de la coque',
+            [replaced(CONTRACT, files[CONTRACT], '[]\n')],
             /outside its zone/,
         ],
         [
             'deux removed',
             [
-                removed(relayEnvshPath('ns'), files[relayEnvshPath('ns')]),
-                removed('src/main.ts', files['src/main.ts']),
+                removed(ENVSH('ns'), files[ENVSH('ns')]),
+                removed(MAIN, files[MAIN]),
             ],
             /outside its zone/,
         ],
         [
             'removed hors de la paire',
-            [
-                removed('src/main.ts', files['src/main.ts']),
-                added(relayEnvshPath('qz'), 'x\n'),
-            ],
+            [removed(MAIN, files[MAIN]), added(ENVSH('qz'), 'x\n')],
             /outside its zone/,
         ],
         [
             'removed sans added',
-            [removed(relayEnvshPath('ns'), files[relayEnvshPath('ns')])],
+            [removed(ENVSH('ns'), files[ENVSH('ns')])],
             /outside its zone/,
         ],
         [
             'added hors de la paire',
             [
-                removed(relayEnvshPath('ns'), files[relayEnvshPath('ns')]),
-                added('src/app/autre.ts', 'x\n'),
+                removed(ENVSH('ns'), files[ENVSH('ns')]),
+                added('apps/essai/src/app/autre.ts', 'x\n'),
             ],
             /outside its zone/,
         ],
@@ -254,7 +292,7 @@ test('renommage forgé : dernier écrivain hors zone, fichier de page, paire de 
                 renamedManifest(
                     manifest,
                     renameRecord(
-                        [replaced('src/main.ts', files['src/main.ts'], 'x\n')],
+                        [replaced(MAIN, files[MAIN], 'x\n')],
                         from,
                         to
                     ),
@@ -290,8 +328,8 @@ function forged(manifest, record) {
     return next;
 }
 
-const QUERY = 'src/app/generated/queries/catalogue/execution-model.json';
-const PLAN = `src/app/generated/pages/${PAGE}/plan/page-execution-plan.json`;
+const QUERY = 'libs/essai-socle/src/queries/catalogue/execution-model.json';
+const PLAN = `libs/essai-socle/src/pages/${PAGE}/plan/page-execution-plan.json`;
 
 test('D.4 : enregistrement forgé et rescellé, refusé par la zone structurelle', () => {
     let { manifest, files } = published();
@@ -310,33 +348,33 @@ test('D.4 : enregistrement forgé et rescellé, refusé par la zone structurelle
         [QUERY]: '{"q":1}\n',
         [PLAN]: '{"plan":1}\n',
     };
-    const pageContract = `${SIGNATURE_FILES.pages}/${PAGE}.json`;
     const cases = [
         ['commande', [replaced(MODEL, files[MODEL], '{"p":"qz"}\n')]],
         ['lecture', [replaced(QUERY, files[QUERY], '{"q":2}\n')]],
         ['plan', [replaced(PLAN, files[PLAN], '{"plan":2}\n')]],
+        ['dossier de signature', [replaced(CONTRACT, files[CONTRACT], '[]\n')]],
         [
-            'dossier de signature',
-            [replaced(pageContract, files[pageContract], '[]\n')],
+            'entrée du socle',
+            [
+                replaced(
+                    SOCLE_INDEX,
+                    files[SOCLE_INDEX],
+                    'export const X = 1;\n'
+                ),
+            ],
         ],
         [
             'deux removed',
             [
-                removed(relayEnvshPath('ns'), files[relayEnvshPath('ns')]),
-                removed('src/main.ts', files['src/main.ts']),
+                removed(ENVSH('ns'), files[ENVSH('ns')]),
+                removed(MAIN, files[MAIN]),
             ],
         ],
         [
             'removed hors de la paire',
-            [
-                removed('src/main.ts', files['src/main.ts']),
-                added(relayEnvshPath('qz'), 'x\n'),
-            ],
+            [removed(MAIN, files[MAIN]), added(ENVSH('qz'), 'x\n')],
         ],
-        [
-            'removed sans added',
-            [removed(relayEnvshPath('ns'), files[relayEnvshPath('ns')])],
-        ],
+        ['removed sans added', [removed(ENVSH('ns'), files[ENVSH('ns')])]],
     ];
     for (const [label, recordFiles] of cases)
         assert.throws(
@@ -354,13 +392,7 @@ test('D.4 : enregistrement forgé et rescellé, refusé par la zone structurelle
         forged(
             manifest,
             renameRecord(
-                [
-                    replaced(
-                        'src/main.ts',
-                        files['src/main.ts'],
-                        'policy qz-sw\n'
-                    ),
-                ],
+                [replaced(MAIN, files[MAIN], 'policy qz-sw\n')],
                 'ns',
                 'qz'
             )
@@ -378,21 +410,14 @@ test('chaîne des préfixes : un renommage part du préfixe auquel le précéden
     );
     const afterQ = {
         ...files,
-        'src/main.ts': 'policy qz-sw\n',
-        [SPEC]: 'qz@exemple.test\n',
+        [MAIN]: 'policy qz-sw\n',
     };
     assert.throws(
         () =>
             renamedManifest(
                 first,
                 renameRecord(
-                    [
-                        replaced(
-                            'src/main.ts',
-                            afterQ['src/main.ts'],
-                            'policy tt-sw\n'
-                        ),
-                    ],
+                    [replaced(MAIN, afterQ[MAIN], 'policy tt-sw\n')],
                     'rr',
                     'tt',
                     ID.q,
@@ -413,11 +438,10 @@ test('renommer deux fois : le script ajouté par le premier est retiré par le s
     );
     const afterQ = {
         ...files,
-        'src/main.ts': 'policy qz-sw\n',
-        [SPEC]: 'qz@exemple.test\n',
-        [relayEnvshPath('qz')]: 'export QZ_UPSTREAMS_VALIDATED=1\n',
+        [MAIN]: 'policy qz-sw\n',
+        [ENVSH('qz')]: 'export QZ_UPSTREAMS_VALIDATED=1\n',
     };
-    delete afterQ[relayEnvshPath('ns')];
+    delete afterQ[ENVSH('ns')];
     const second = renamedManifest(
         first,
         renameRecord(
@@ -431,16 +455,16 @@ test('renommer deux fois : le script ajouté par le premier est retiré par le s
     );
     verifyApplicationOwnership(second, ID.r);
     const paths = second.generated_files.map(({ path }) => path);
-    assert.ok(paths.includes(relayEnvshPath('rr')));
-    assert.ok(!paths.includes(relayEnvshPath('qz')));
-    assert.ok(!paths.includes(relayEnvshPath('ns')));
+    assert.ok(paths.includes(ENVSH('rr')));
+    assert.ok(!paths.includes(ENVSH('qz')));
+    assert.ok(!paths.includes(ENVSH('ns')));
     assert.equal(
         second.ownership.shell_tree_sha256,
         manifest.ownership.shell_tree_sha256
     );
 });
 
-test('renommer puis publier : une composition remplace la spec écrite par le renommage ; aucune publication ne touche le script ajouté', () => {
+test('renommer puis publier : la composition, jamais touchée par le renommage (V5.3), se republie ; aucune publication ne touche le script ajouté', () => {
     const { manifest, files } = published();
     const renamed = renamedManifest(
         manifest,
@@ -453,7 +477,11 @@ test('renommer puis publier : une composition remplace la spec écrite par le re
             plan_id: '8'.repeat(64),
             tool: 'generate:page-composition',
             files: [
-                replaced(SPEC, 'qz@exemple.test\n', 'qz@exemple.test\n// v2\n'),
+                replaced(
+                    SPEC,
+                    'utilisateur@exemple.test\n',
+                    'utilisateur@exemple.test\n// v2\n'
+                ),
             ],
         },
         ID.q
@@ -470,12 +498,8 @@ test('renommer puis publier : une composition remplace la spec écrite par le re
     // Le script d'entrée ajouté par le renommage n'est pas dans `published` :
     // aucune publication ne peut le remplacer, ni l'ajouter à nouveau.
     for (const change of [
-        replaced(
-            relayEnvshPath('qz'),
-            'export QZ_UPSTREAMS_VALIDATED=1\n',
-            'x\n'
-        ),
-        added(relayEnvshPath('qz'), 'x\n'),
+        replaced(ENVSH('qz'), 'export QZ_UPSTREAMS_VALIDATED=1\n', 'x\n'),
+        added(ENVSH('qz'), 'x\n'),
     ])
         assert.throws(
             () =>
@@ -496,7 +520,7 @@ test('renommer puis publier : une composition remplace la spec écrite par le re
             publishedManifest(
                 renamed,
                 renameRecord(
-                    [replaced('src/main.ts', 'policy qz-sw\n', 'x\n')],
+                    [replaced(MAIN, 'policy qz-sw\n', 'x\n')],
                     'qz',
                     'rr',
                     ID.q

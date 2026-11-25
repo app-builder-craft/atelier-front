@@ -44,7 +44,7 @@ function commandNode(id, { permissions } = {}) {
     return {
         id,
         primitive_ref: {
-            uri: `apps/fixture/src/app/generated/actions/${id}-op/execution-model.json`,
+            uri: `libs/fixture-socle/src/actions/${id}-op/execution-model.json`,
             kind: 'action-request-execution-model',
             schema_version: '1.1.0',
             operation_id: `${id}-op`,

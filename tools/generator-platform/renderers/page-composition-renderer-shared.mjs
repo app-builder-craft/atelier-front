@@ -24,7 +24,7 @@ export const ANGULAR_SESSION_PAGE_CAPABILITIES = Object.freeze([
     'action.typed-result@1',
     'action.declared-errors@1',
     'action.body.none@1',
-    'session.memory@1',
+    'session.tab@1',
     'session.decoded-producer@1',
     'session.epoch@1',
     // X5 C2 : profil extérieur d'une lecture, Angular de session seulement.

@@ -27,11 +27,7 @@ import {
     publishExternalApplicationShell,
     qualifyProductInstallation,
 } from './core/application-workspace.mjs';
-import {
-    pathExists,
-    stageGeneratedTree,
-    verifyGeneratedTree,
-} from './core/external-application-paths.mjs';
+import { pathExists } from './core/external-application-paths.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import { FIXTURE_PREFIX } from './test-support/application-design-fixture.mjs';
 import {
@@ -39,7 +35,10 @@ import {
     shellFixture,
     snapshotTree,
     TOOLS_ROOT,
+    writePlanRoots,
 } from './test-support/external-application-fixture.mjs';
+import { recoverApplicationPublication } from './core/application-publication.mjs';
+import { appManifestPath } from './renderers/external-product-layout.mjs';
 import {
     SIGNATURE_FILES,
     INTERNAL,
@@ -211,27 +210,28 @@ test('M3 : la provenance courante est dans le plan public et dans le reçu exté
     assert.equal(plan.workspace.manifest.provenance, undefined);
 });
 
-test('T7 : candidat partiel exact complété, puis refus du contrôle natif injecté', async (t) => {
+test('T7 : un candidat partiel sans journal est refusé, rien n’est déplacé (lot 2, V5.2)', async (t) => {
     const fixture = await shellFixture(t);
     const plan = await planExternalApplicationShell(fixture.shell);
-    const [path, content] = Object.entries(plan.files)[0];
-    const parent = new URL('.', pathToFileURL(join(plan.candidate, path)));
-    const { mkdir } = await import('node:fs/promises');
-    await mkdir(parent, { recursive: true });
-    await writeFile(join(plan.candidate, path), content, { flag: 'wx' });
+    // Un arbre de travail n'est admis que pour la transaction dont le journal
+    // existe : un candidat laissé sans journal est refusé, nommé.
+    const stray = join(
+        fixture.root,
+        'apps',
+        `.${plan.app_name}.creation-candidate-${plan.plan_id}`
+    );
+    const [path, content] = Object.entries(plan.roots[0].files)[0];
+    await mkdir(join(stray, path, '..'), { recursive: true });
+    await writeFile(join(stray, path), content, { flag: 'wx' });
+    const before = await snapshotTree(fixture.root, []);
     await assert.rejects(
         publishExternalApplicationShell(
             { ...fixture.shell, expectedPlanId: plan.plan_id },
-            {
-                run: () => {
-                    throw new Error('partial candidate compilation stopped');
-                },
-            }
+            { run: () => assert.fail('aucun contrôle natif') }
         ),
-        /partial candidate compilation stopped/
+        /creation working tree without a journal/
     );
-    await verifyGeneratedTree(plan.candidate, plan.files);
-    assert.equal(await pathExists(plan.outputAbsolute), false);
+    assert.deepEqual(await snapshotTree(fixture.root, []), before);
 });
 
 test('M3/T5 : la reprise sur snapshot conserve la protection des entrées des autres apps', async (t) => {
@@ -239,7 +239,7 @@ test('M3/T5 : la reprise sur snapshot conserve la protection des entrées des au
         await t.test(kind, async (child) => {
             const fixture = await shellFixture(child);
             const plan = await planExternalApplicationShell(fixture.shell);
-            await stageGeneratedTree(plan.outputAbsolute, plan.files);
+            await writePlanRoots(plan);
             const before = await planApplicationWorkspace(fixture.options);
             assert.equal(
                 before.manifest.workspace_id,
@@ -252,9 +252,16 @@ test('M3/T5 : la reprise sur snapshot conserve la protection des entrées des au
             const bytes = await readFile(join(fixture.root, path), 'utf8');
             await writeFile(join(fixture.root, path), bytes + '\n');
             const altered = await snapshotTree(fixture.root, []);
+            // Lot 2, commit 3 : une source liée retouchée est une dérive de
+            // FRAÎCHEUR, nommée (genre `design` : la conception et ses preuves).
+            // Message comparé comme chaîne (aucun motif construit : CI #48,
+            // CodeQL `js/incomplete-sanitization`).
             await assert.rejects(
                 planApplicationWorkspace(fixture.options),
-                /workspace app input drift/
+                (error) =>
+                    error.message.includes(
+                        `APP_SOURCES_STALE native-angular design ${path} ; lancer update-app`
+                    )
             );
             assert.deepEqual(await snapshotTree(fixture.root, []), altered);
         });
@@ -278,47 +285,55 @@ test('T5 : pas de recherche du design dans l’atelier si l’entrée du produit
 });
 
 test('T6 : sortie possédée puis fichier étranger : aucun déplacement ni contrôle natif lancé', async (t) => {
-    const fixture = await shellFixture(t);
-    const plan = await planExternalApplicationShell(fixture.shell);
-    await stageGeneratedTree(plan.outputAbsolute, plan.files);
-    await writeFile(
-        join(plan.outputAbsolute, 'foreign.txt'),
-        'ne pas déplacer\n'
-    );
-    const before = await snapshotTree(fixture.root, []);
-    let calls = 0;
-    await assert.rejects(
-        publishExternalApplicationShell(
-            { ...fixture.shell, expectedPlanId: plan.plan_id },
-            {
-                run: () => {
-                    calls += 1;
-                    assert.fail('Arbre étranger accepté');
-                },
-            }
-        ),
-        /generated inventory drift/
-    );
-    assert.equal(calls, 0);
-    assert.deepEqual(await snapshotTree(fixture.root, []), before);
+    for (const root of ['apps/native-angular', 'libs/native-angular-socle']) {
+        await t.test(root, async (child) => {
+            const fixture = await shellFixture(child);
+            const plan = await planExternalApplicationShell(fixture.shell);
+            await writePlanRoots(plan);
+            await writeFile(
+                join(fixture.root, root, 'foreign.txt'),
+                'ne pas déplacer\n'
+            );
+            const before = await snapshotTree(fixture.root, []);
+            let calls = 0;
+            await assert.rejects(
+                publishExternalApplicationShell(
+                    { ...fixture.shell, expectedPlanId: plan.plan_id },
+                    {
+                        run: () => {
+                            calls += 1;
+                            assert.fail('Arbre étranger accepté');
+                        },
+                    }
+                ),
+                /generated inventory drift/
+            );
+            assert.equal(calls, 0);
+            assert.deepEqual(await snapshotTree(fixture.root, []), before);
+        });
+    }
 });
 
-test('T7 : échec injecté à chaque phase ; jamais de résultat created et candidat conservé exact', async (t) => {
+test('T7 : échec injecté à chaque phase ; retour exact sur les trois racines, rien ne reste', async (t) => {
     for (const profile of ['angular-pwa', 'react-spa']) {
-        for (const failedPhase of [
-            'candidate-staged',
-            'compiled',
-            'published',
-            'build:production',
-            'lint',
-            'test',
-        ]) {
+        const fixture = await shellFixture(t, profile);
+        const plan = await planExternalApplicationShell(fixture.shell);
+        const labels = [];
+        await publishExternalApplicationShell(
+            { ...fixture.shell, expectedPlanId: plan.plan_id },
+            { run: () => undefined, phase: (phase) => labels.push(phase) }
+        );
+        // Chaque phase de la création réelle, dérivée de son exécution.
+        for (const failedPhase of labels.filter(
+            (label) => label !== 'verified'
+        )) {
             await t.test(`${profile}/${failedPhase}`, async (child) => {
-                const fixture = await shellFixture(child, profile);
-                const plan = await planExternalApplicationShell(fixture.shell);
+                const again = await shellFixture(child, profile);
+                const before = await snapshotTree(again.root, []);
+                const next = await planExternalApplicationShell(again.shell);
                 await assert.rejects(
                     publishExternalApplicationShell(
-                        { ...fixture.shell, expectedPlanId: plan.plan_id },
+                        { ...again.shell, expectedPlanId: next.plan_id },
                         {
                             run: () => undefined,
                             phase: (phase) => {
@@ -329,8 +344,7 @@ test('T7 : échec injecté à chaque phase ; jamais de résultat created et cand
                     ),
                     /injected phase failure/
                 );
-                assert.equal(await pathExists(plan.outputAbsolute), false);
-                await verifyGeneratedTree(plan.candidate, plan.files);
+                assert.deepEqual(await snapshotTree(again.root, []), before);
             });
         }
     }
@@ -363,7 +377,10 @@ test('m4 : refus de rollback sur arbre étranger conserve les deux causes', asyn
             assert.ok(error instanceof AggregateError);
             assert.equal(error.errors[0], original);
             assert.equal(error.cause, error.errors[1]);
-            assert.match(error.errors[1].message, /generated inventory drift/);
+            assert.match(
+                error.errors[1].message,
+                /ambiguous interrupted application creation: apps\/native-angular created tree drifted/
+            );
             return true;
         }
     );
@@ -371,63 +388,15 @@ test('m4 : refus de rollback sur arbre étranger conserve les deux causes', asyn
         await readFile(join(plan.outputAbsolute, 'foreign.txt'), 'utf8'),
         'intouchable\n'
     );
-    assert.equal(await pathExists(plan.candidate), false);
-});
-
-test('T7 : interruption réelle du processus avant/après publication et reprise du verrou mort', async (t) => {
-    for (const interruptedPhase of ['compiled', 'published']) {
-        await t.test(interruptedPhase, async (child) => {
-            const fixture = await shellFixture(child);
-            const plan = await planExternalApplicationShell(fixture.shell);
-            const options = { ...fixture.shell, expectedPlanId: plan.plan_id };
-            delete options.applicationDesignSchema;
-            delete options.backendContractSchema;
-            const moduleUrl = pathToFileURL(
-                join(
-                    TOOLS_ROOT,
-                    'tools/generator-platform/core/application-workspace.mjs'
-                )
-            ).href;
-            const program = `import { publishExternalApplicationShell } from ${JSON.stringify(moduleUrl)};
-await publishExternalApplicationShell(JSON.parse(process.argv[1]), {
-run() { return undefined; }, phase(phase) { if (phase === ${JSON.stringify(interruptedPhase)}) process.kill(process.pid, 'SIGKILL'); }
-});`;
-            const result = spawnSync(
-                process.execPath,
-                ['--input-type=module', '-e', program, JSON.stringify(options)],
-                {
-                    cwd: fixture.parent,
-                    encoding: 'utf8',
-                    timeout: 60_000,
-                    env: { HOME: fixture.parent, PATH: '/usr/bin:/bin' },
-                }
-            );
-            assert.equal(result.signal, 'SIGKILL', result.stderr);
-            await assert.rejects(
-                publishExternalApplicationShell(options, {
-                    run: () => {
-                        throw new Error('replayed native compilation');
-                    },
-                }),
-                /replayed native compilation/
-            );
-            assert.equal(
-                await pathExists(
-                    join(
-                        fixture.root,
-                        'apps',
-                        `.${plan.app_name}.generation-lock`
-                    )
-                ),
-                false
-            );
-            const location =
-                interruptedPhase === 'published'
-                    ? plan.outputAbsolute
-                    : plan.candidate;
-            await verifyGeneratedTree(location, plan.files);
-        });
-    }
+    // Rien n'a été déplacé : la reprise refuse à son tour, nommée.
+    await assert.rejects(
+        recoverApplicationPublication({
+            workspaceRoot: TOOLS_ROOT,
+            targetRoot: fixture.root,
+            appName: plan.app_name,
+        }),
+        /created tree drifted/
+    );
 });
 
 test('T8 : le publisher conserve son verrou jusqu’à la fin des contrôles', async (t) => {
@@ -713,17 +682,19 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
     );
     const session = JSON.parse(
         rendered.files[
-            `${SIGNATURE_FILES.pages}/${data.design.experiences[0].entry_page_id}.json`
+            `apps/portable-session/${SIGNATURE_FILES.pages}/${data.design.experiences[0].entry_page_id}.json`
         ]
     ).experience.session;
-    assert.equal(session.storage, 'memory');
+    assert.equal(session.storage, 'tab');
     assert.equal(
         session.producer.page_id,
         data.design.experiences[0].entry_page_id
     );
     assert.equal(data.networkVerified, false);
+    // Lot 2 : inventaire relatif au produit, sur les trois racines ; les
+    // amorces de l'interface n'y entrent pas.
     const generatedFiles = Object.entries(rendered.files)
-        .filter(([path]) => path !== SIGNATURE_FILES.appManifest)
+        .filter(([path]) => path !== appManifestPath('portable-session'))
         .map(([path, content]) => ({
             path,
             bytes: Buffer.byteLength(content),

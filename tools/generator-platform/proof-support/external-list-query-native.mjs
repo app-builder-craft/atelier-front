@@ -6,11 +6,12 @@
 // s'exécutent avec le vitest RÉEL du produit. Aucun backend n'est appelé.
 import assert from 'node:assert/strict';
 
-import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import {
     planExternalListQuery,
     publishExternalListQuery,
+    queryOutputRoot,
 } from '../core/external-list-query.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import {
     planExternalPageComposition,
     publishExternalPageComposition,
@@ -25,7 +26,7 @@ import { writeExternalQueryDefinition } from '../test-support/external-session-f
 import { publishNative } from './external-page-composition-native.mjs';
 
 function onlyProductImports(plan) {
-    const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
+    const manifest = JSON.parse(plan.files[appManifestPath(plan.app_name)]);
     assertProductOnlyImports(
         Object.fromEntries(
             plan.changes.map(({ path }) => [path, plan.files[path]])
@@ -90,7 +91,7 @@ export async function proveNativeListQuery(session, shell) {
     );
     onlyProductImports(plan);
     assert.deepEqual(plan.consumed_queries, [
-        `src/app/generated/queries/${readPlan.query_id}`,
+        queryOutputRoot(plan.app_name, readPlan.query_id),
     ]);
     session.lines.push(`PASS ${label}/consumes-published-read`);
     session.lines.push(

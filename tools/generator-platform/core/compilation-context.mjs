@@ -2,13 +2,15 @@ import { lstat } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 import { planCompilationWorkspace } from './application-workspace.mjs';
+import { sourcesToBindLines } from './application-sources.mjs';
 import {
     assertPhysicalPath,
+    assertSourcePath,
     externalApplicationContext,
     readProductFile,
-    safeRelativePath,
 } from './external-application-paths.mjs';
-import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
+import { SIGNATURE_FILES } from './atelier-signature.mjs';
+import { reviewedDocumentPlan } from './document-publication.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { withProductWriterLocks } from './generation-transaction.mjs';
 
@@ -36,17 +38,6 @@ const COMPILATION_FILES = [
     'tools/generator-platform/validate-ir.mjs',
     'tools/generator-platform/schemas/observation-evidence.schema.json',
 ];
-const RESERVED_ROOTS = new Set([
-    'apps',
-    'node_modules',
-    SIGNATURE.dir,
-    '.git',
-    '.nx',
-    '.angular',
-    'dist',
-    'coverage',
-    'tmp',
-]);
 
 function fail(message) {
     throw new Error(`external compilation: ${message}`);
@@ -65,6 +56,46 @@ async function identityChain(path) {
         if (current === sep) break;
     }
     return identities.reverse();
+}
+
+// Lot 2, commit 3 (V3.2) : la commande AUTRICE de chaque genre compilé ;
+// sa classe est lue dans la table des classes (`application-sources.mjs`).
+const AUTHOR_COMMANDS = Object.freeze({
+    design: 'compile:application-design',
+    backend: 'compile:backend-contract',
+});
+
+// V3.6 point 1 : un auteur qui laisse le produit périmé imprime une ligne
+// `SOURCES_A_LIER` par source à lier, sur la sortie d'erreur (la sortie
+// standard du plan reste du JSON), lue dans l'état du produit à la fin de la
+// commande, par la MÊME lecture que celle de son plan : l'espace d'un auteur,
+// où les voisins documentaires sont admis (CI #48 sur `be7bf4e9` : lu en
+// consommateur, un document hors de `descriptions/` faisait échouer la
+// commande après son plan).
+export async function reportSourcesToBind({ workspaceRoot, targetRoot, kind }) {
+    const context = await beginCompilationContext({
+        workspaceRoot,
+        targetRoot,
+    });
+    if (!context) return [];
+    const workspace = await authorWorkspace(context, kind, []);
+    const lines = sourcesToBindLines(workspace.stale_sources);
+    for (const line of lines) process.stderr.write(`${line}\n`);
+    return lines;
+}
+
+// Espace relu par un auteur : documents voisins admis (`planCompilationWorkspace`),
+// classe de sa commande (fraîcheur rapportée, intégrité exigée).
+function authorWorkspace(context, kind, inputPaths) {
+    return planCompilationWorkspace({
+        workspaceRoot: context.toolsRoot,
+        targetRoot: context.productRoot,
+        profiles: context.marker.profiles,
+        githubRepository: context.marker.github_repository,
+        reviewOwner: context.marker.review_owner,
+        inputPaths,
+        command: AUTHOR_COMMANDS[kind],
+    });
 }
 
 // Without targetRoot the existing library protocol, hashes and paths are used.
@@ -87,10 +118,17 @@ export async function beginCompilationContext({ workspaceRoot, targetRoot }) {
     };
 }
 
-function inputPath(context, path) {
-    safeRelativePath(path);
+// Lot 2 (V3.1, §V4.6 point 1) : toute référence que lit ou écrit un auteur
+// passe le contrôle unique `assertSourcePath` (racines réservées du produit,
+// `libs` compris, et chemin physique) ; les fichiers d'espace et le verrou
+// restent refusés ici en plus. Un chemin encore absent est admis : sa
+// lecture, plus loin, exige le fichier.
+async function inputPath(context, path) {
+    await assertSourcePath(context.productRoot, path, {
+        missing: true,
+        label: 'document',
+    });
     if (
-        RESERVED_ROOTS.has(path.split('/')[0]) ||
         (context.marker.files ?? []).some((file) => file.path === path) ||
         path === 'bun.lock'
     )
@@ -98,10 +136,10 @@ function inputPath(context, path) {
     return path;
 }
 
-export function assertCompilationPaths(context, sourcePath, outputPath) {
+export async function assertCompilationPaths(context, sourcePath, outputPath) {
     if (!context) return;
-    inputPath(context, sourcePath);
-    inputPath(context, outputPath);
+    await inputPath(context, sourcePath);
+    await inputPath(context, outputPath);
     if (sourcePath === outputPath) fail('output must not replace an input');
 }
 
@@ -115,22 +153,22 @@ async function collectInputs(
     additionalInputs
 ) {
     const hashes = new Map([
-        [inputPath(context, sourcePath), sha256(sourceContent)],
+        [await inputPath(context, sourcePath), sha256(sourceContent)],
     ]);
-    const add = (reference) => {
+    const add = async (reference) => {
         if (reference?.snapshot_uri === undefined) return;
-        const path = inputPath(context, reference.snapshot_uri);
+        const path = await inputPath(context, reference.snapshot_uri);
         if (!/^[a-f0-9]{64}$/.test(reference.sha256 ?? ''))
             fail('snapshot digest required');
         if (hashes.has(path) && hashes.get(path) !== reference.sha256)
             fail('conflicting snapshot digests');
         hashes.set(path, reference.sha256);
     };
-    for (const source of document.sources ?? []) add(source);
-    for (const reference of additionalInputs) add(reference);
+    for (const source of document.sources ?? []) await add(source);
+    for (const reference of additionalInputs) await add(reference);
     if (kind === 'design') {
         for (const reference of document.backend_contracts ?? []) {
-            add(reference);
+            await add(reference);
             const bytes = await inputReader(
                 context.productRoot,
                 reference.snapshot_uri
@@ -138,7 +176,7 @@ async function collectInputs(
             if (sha256(bytes) !== reference.sha256)
                 fail('backend snapshot drift');
             const contract = JSON.parse(bytes.toString('utf8'));
-            for (const source of contract.sources ?? []) add(source);
+            for (const source of contract.sources ?? []) await add(source);
         }
     }
     const inputs = [];
@@ -172,7 +210,7 @@ export async function bindCompilationContext(
     }
 ) {
     if (!context) return undefined;
-    assertCompilationPaths(context, sourcePath, outputPath);
+    await assertCompilationPaths(context, sourcePath, outputPath);
     const inputs = await collectInputs(
         context,
         sourcePath,
@@ -196,14 +234,10 @@ export async function bindCompilationContext(
     } catch (error) {
         if (error.code !== 'ENOENT') throw error;
     }
-    const workspace = await planCompilationWorkspace({
-        workspaceRoot: context.toolsRoot,
-        targetRoot: context.productRoot,
-        profiles: context.marker.profiles,
-        githubRepository: context.marker.github_repository,
-        reviewOwner: context.marker.review_owner,
-        inputPaths: [...inputs.map((input) => input.path), outputPath],
-    });
+    const workspace = await authorWorkspace(context, kind, [
+        ...inputs.map((input) => input.path),
+        outputPath,
+    ]);
     if (sha256(workspace.files[MARKER]) !== context.markerSha256)
         fail('workspace marker changed during planning');
     const code = {};
@@ -277,15 +311,20 @@ export async function publishCompilationWithContext(
         plan.compilation_context.lock_product,
         [plan.compilation_context.lock_output],
         async () => {
+            // Lot 2, commit 6a (L-21) : le plan relu est retrouvé sur l'état
+            // observé SOUS verrou (`reviewedDocumentPlan`) ; après la
+            // publication, la sortie a changé par construction, et seule
+            // l'identité du plan hors état de sortie (`creation_plan_id`)
+            // doit être restée la même.
             const current = await replan(options);
-            if (
-                current.plan_id !== plan.plan_id ||
-                current.plan_id !== options.planId
-            )
+            if (current.creation_plan_id !== plan.creation_plan_id)
                 fail('reviewed plan changed under lock');
-            const result = await publish(current, failPlan);
+            const reviewed = reviewedDocumentPlan(current, options.planId, () =>
+                fail('reviewed plan changed under lock')
+            );
+            const result = await publish(reviewed, failPlan);
             const after = await replan(options);
-            if (after.plan_id !== current.plan_id)
+            if (after.creation_plan_id !== current.creation_plan_id)
                 fail(
                     'context changed during publication; inspect the preserved output'
                 );

@@ -3,7 +3,11 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { basename, dirname, relative, resolve, sep } from 'node:path';
 
 import { validateApplicationDesignWithDependencies } from './application-design.mjs';
-import { publishDocument } from './document-publication.mjs';
+import {
+    documentPlan,
+    publishDocument,
+    reviewedDocumentPlan,
+} from './document-publication.mjs';
 import {
     assertCompilationPaths,
     beginCompilationContext,
@@ -12,6 +16,11 @@ import {
     publishCompilationWithContext,
 } from './compilation-context.mjs';
 import { assertNoProductDesignPrefix } from './product-prefix.mjs';
+import { resolveDesignDigests } from './application-sources.mjs';
+import {
+    assertSourcePath,
+    readProductFile,
+} from './external-application-paths.mjs';
 import { parseStructuredSource } from './source-document.mjs';
 
 function fail(message) {
@@ -37,13 +46,26 @@ function assertInside(root, absolute, label) {
         fail(`${label} must be a file inside the workspace`);
 }
 
+// Lot 2, commit 6a (A-7) : un composant absent est un refus NOMMÉ, par son
+// chemin RELATIF au produit, jamais un `ENOENT` brut ni un chemin local.
 async function assertComponents(root, absolute, includeLeaf) {
     const parts = relative(root, absolute).split(sep).filter(Boolean);
     const limit = includeLeaf ? parts.length : parts.length - 1;
     let current = root;
     for (let index = 0; index < limit; index += 1) {
         current = resolve(current, parts[index]);
-        const metadata = await lstat(current);
+        const shown = relative(root, current).split(sep).join('/');
+        let metadata;
+        try {
+            metadata = await lstat(current);
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+            fail(
+                includeLeaf
+                    ? `source missing: ${shown}`
+                    : `output parent directory missing: ${shown}`
+            );
+        }
         if (metadata.isSymbolicLink())
             fail(`symbolic path component forbidden: ${current}`);
         if (index < limit - 1 && !metadata.isDirectory())
@@ -97,24 +119,35 @@ export async function planApplicationDesignPublication({
         workspaceRoot,
         targetRoot,
     });
-    assertCompilationPaths(context, sourcePath, outputPath);
+    await assertCompilationPaths(context, sourcePath, outputPath);
     const root =
         context?.productRoot ?? (await realpath(resolve(workspaceRoot)));
     const source = await sourceFile(root, sourcePath);
     const output = await outputFile(root, outputPath);
+    // Lot 2, commit 3 (V3.3) : empreintes de contrat résolues UNE fois, à
+    // l'entrée ; interne : déclarées ; extérieur : lues dans les octets (la
+    // conception compilée est la PROCHAINE valeur d'une source, liée ensuite
+    // par la mise à jour).
+    const { design: resolved } = await resolveDesignDigests(source.design, {
+        mode: context ? 'external' : 'internal',
+        read: async (path) => {
+            await assertSourcePath(root, path, { label: 'document' });
+            return readProductFile(root, path);
+        },
+    });
     const compilationContext = await bindCompilationContext(context, {
         kind: 'design',
         sourcePath,
         sourceContent: source.content,
         outputPath,
-        document: source.design,
+        document: resolved,
         schemas: {
             'application-design': applicationDesignSchema,
             'backend-contract': backendContractSchema,
         },
     });
     const errors = await validateApplicationDesignWithDependencies({
-        design: source.design,
+        design: resolved,
         applicationDesignSchema,
         backendContractSchema,
         workspaceRoot: root,
@@ -129,8 +162,8 @@ export async function planApplicationDesignPublication({
     );
     const sourceHash = sha256(source.content);
     const outputHash = sha256(content);
-    const planId = sha256(
-        JSON.stringify({
+    const identity = await documentPlan(
+        {
             source: source.relative,
             source_sha256: sourceHash,
             output: output.relative,
@@ -138,10 +171,12 @@ export async function planApplicationDesignPublication({
             ...(compilationContext
                 ? { compilation_context_sha256: compilationContext.sha256 }
                 : {}),
-        })
+        },
+        output,
+        fail
     );
     return {
-        plan_id: planId,
+        ...identity,
         ...(compilationContext
             ? { compilation_context: compilationContext }
             : {}),
@@ -149,21 +184,17 @@ export async function planApplicationDesignPublication({
         source_sha256: sourceHash,
         output: output.relative,
         output_sha256: outputHash,
-        candidate: resolve(
-            output.parent,
-            `.${basename(output.absolute)}.${planId}.candidate`
-        ),
         content,
         design: source.design,
-        outputAbsolute: output.absolute,
-        outputParent: output.parent,
     };
 }
 
 export async function publishApplicationDesign(options) {
-    const plan = await planApplicationDesignPublication(options);
-    if (options.planId !== plan.plan_id)
-        fail('reviewed plan id is stale or invalid');
+    const plan = reviewedDocumentPlan(
+        await planApplicationDesignPublication(options),
+        options.planId,
+        fail
+    );
     return publishCompilationWithContext(
         options,
         plan,
@@ -181,5 +212,6 @@ export function publicApplicationDesignPlan(plan) {
         source_sha256: plan.source_sha256,
         output: plan.output,
         output_sha256: plan.output_sha256,
+        output_before_sha256: plan.output_before_sha256,
     };
 }

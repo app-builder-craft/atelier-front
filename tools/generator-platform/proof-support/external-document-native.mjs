@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
+import { nativeRunLabels } from '../core/application-native-controls.mjs';
+import { planExternalApplicationShell } from '../core/application-workspace.mjs';
 import { toolEnv } from '../core/atelier-signature.mjs';
 import { isWithin } from '../core/external-application-paths.mjs';
 import {
+    interfaceLibraryName,
+    socleLibraryName,
+} from '../core/socle-names.mjs';
+import {
+    assertionControl,
     hash,
+    isProofControl,
     TOOLS_ROOT,
 } from '../test-support/external-application-fixture.mjs';
 import {
@@ -89,6 +97,126 @@ export function nativeCellContext(context, root, cell, contextPath) {
     };
 }
 
+// CI #48 (`be7bf4e9`) : la ligne FAIL d'une cellule native nomme, sous forme
+// FERMÉE, l'appel natif en échec : son label, pris dans `nativeRunLabels(plan)`
+// par la cellule, et son code de sortie ; hors appel natif, le contrôle en
+// cause (opérateur et lieu dans l'atelier, comme le STOP d'`e023a1ed`). Jamais
+// une sortie ni un message. La cellule écrit la note ; le coordinateur la
+// revérifie (clés exactes, label dans la liste fermée de SON appli) avant de
+// l'écrire au rapport.
+const NOTE_KEYS = ['call', 'control', 'exit'];
+const CELL_TARGETS = ['lint', 'build:production', 'test'];
+const cellApp = (cell) => `ext03a-${cell.replace('/', '-').toLowerCase()}`;
+const cellLabels = (cell) => {
+    const app = cellApp(cell);
+    return new Set([
+        'native-compiler',
+        'workspace-contract',
+        ...[app, socleLibraryName(app), interfaceLibraryName(app)].flatMap(
+            (project) => CELL_TARGETS.map((target) => `${project}:${target}`)
+        ),
+    ]);
+};
+const isExit = (value) =>
+    value === 'interrupted' ||
+    (Number.isInteger(value) && value >= 0 && value <= 255);
+
+export function cellFailureNote({ error, failed, expected }) {
+    const call =
+        failed && expected.includes(failed.label) && isExit(failed.exit)
+            ? failed.label
+            : null;
+    return {
+        call,
+        control: call || !error ? '' : assertionControl(error),
+        exit: call ? failed.exit : null,
+    };
+}
+
+export function cellFailureDetail(note, cell) {
+    if (
+        note === null ||
+        typeof note !== 'object' ||
+        Object.keys(note).sort().join() !== NOTE_KEYS.join()
+    )
+        return 'call=illisible';
+    if (note.call !== null) {
+        if (!cellLabels(cell).has(note.call) || !isExit(note.exit))
+            return 'call=illisible';
+        return `call=${note.call} call_exit=${note.exit}`;
+    }
+    if (note.exit !== null || typeof note.control !== 'string')
+        return 'call=illisible';
+    if (!note.control) return 'call=aucun';
+    return isProofControl(note.control)
+        ? `call=aucun at=${note.control}`
+        : 'call=illisible';
+}
+
+// Note d'échec écrite par la cellule ; absente ou spéciale : `call=absent`.
+async function readCellFailure(contextPath, cell) {
+    const path = `${contextPath}.failure.json`;
+    try {
+        const metadata = await lstat(path);
+        if (!metadata.isFile() || metadata.size > 4096) return 'call=illisible';
+    } catch {
+        return 'call=absent';
+    }
+    try {
+        return cellFailureDetail(
+            JSON.parse(await readFile(path, 'utf8')),
+            cell
+        );
+    } catch {
+        return 'call=illisible';
+    }
+}
+
+// Appels natifs d'une cellule (CI #48) : label de chaque appel, liste fermée
+// du plan de la création (`nativeRunLabels`, reçue par `onPlan`) et appel en
+// échec ; sur un échec, la note fermée est remise à `onFailure` avant que
+// l'erreur ne remonte. Exécution et compte rendu injectés.
+export async function proveCellCalls({
+    root,
+    cell,
+    fixture,
+    execute,
+    report,
+    onFailure,
+}) {
+    const labels = [];
+    let expected = [];
+    let failed = null;
+    const run = (command, args, cwd) => {
+        assert.equal(command, process.execPath);
+        assert.equal(cwd, root);
+        const label =
+            args[1] === 'run'
+                ? args[2]
+                : args[0].endsWith('check-workspace.mjs')
+                  ? 'workspace-contract'
+                  : 'native-compiler';
+        const result = execute(args);
+        if (result.status !== 0 || result.signal)
+            failed = { label, exit: result.status ?? 'interrupted' };
+        report(label, result);
+        labels.push(label);
+    };
+    try {
+        const receipt = await proveNativeDocumentCell(root, cell, {
+            fixture,
+            run,
+            onPlan: (plan) => {
+                expected = nativeRunLabels(plan);
+            },
+        });
+        return { labels, receipt };
+    } catch (error) {
+        await onFailure(cellFailureNote({ error, failed, expected }));
+        throw error;
+    }
+}
+
 // The test runner stays in the trusted workshop; every compiler/Nx child is
 // executed by the existing native sandbox with no workshop mount and no network.
 export async function provePreparedDocumentCell(root, cell, contextPath) {
@@ -99,33 +227,22 @@ export async function provePreparedDocumentCell(root, cell, contextPath) {
         cell,
         contextPath
     );
-    const labels = [];
-    const run = (command, args, cwd) => {
-        assert.equal(command, process.execPath);
-        assert.equal(cwd, root);
-        const label =
-            args[1] === 'run'
-                ? args[2]
-                : args[0].endsWith('check-workspace.mjs')
-                  ? 'workspace-contract'
-                  : 'native-compiler';
-        record(
-            session,
-            `EXT03a/${cell}/${label}`,
-            confinedNode(session, root, args)
-        );
-        labels.push(label);
-    };
-    const receipt = await proveNativeDocumentCell(root, cell, { fixture, run });
-    const [kind, profile] = cell.split('/');
-    const app = `ext03a-${kind.toLowerCase()}-${profile}`;
-    assert.deepEqual(labels, [
-        'native-compiler',
-        `${app}:build:production`,
-        `${app}:lint`,
-        `${app}:test`,
-        'workspace-contract',
-    ]);
+    const { labels, receipt } = await proveCellCalls({
+        root,
+        cell,
+        fixture,
+        execute: (args) => confinedNode(session, root, args),
+        report: (label, result) =>
+            record(session, `EXT03a/${cell}/${label}`, result),
+        onFailure: (note) =>
+            writeFile(`${contextPath}.failure.json`, json(note), {
+                flag: 'wx',
+                mode: 0o600,
+            }),
+    });
+    // C-B2 : liste dérivée du plan de création (sans session : test de la
+    // coque, lint des trois projets avant la construction).
+    assert.deepEqual(labels, receipt.native_labels);
     receipt.native = {
         backend: session.backend,
         labels,
@@ -133,6 +250,49 @@ export async function provePreparedDocumentCell(root, cell, contextPath) {
     };
     await writeFile(receiptPath, json(receipt), { flag: 'wx' });
     return receipt;
+}
+
+// C-B2 : les appels du runner d'une cellule sont ceux que la liste unique
+// dérive du plan de la création (`nativeRunLabels`), RECALCULÉ ici par le
+// coordinateur ; jamais un nombre écrit à la main (CI #48, 1b : la création
+// fait 8 appels, le contrôle en attendait 5).
+export function assertNativeCellLabels(receipt, plan) {
+    const expected = nativeRunLabels(plan);
+    assert.deepEqual(receipt.native.labels, expected, 'native cell labels');
+    assert.deepEqual(
+        receipt.native_labels,
+        expected,
+        'native cell plan labels'
+    );
+}
+
+// CI #48 (run 45377254689, sur 845fa02e) : le plan d'une création LIE la
+// liaison des sources de TOUTES les autres applis du produit (v3 V3.5 b
+// point 2) ; un plan relu devient donc périmé dès qu'une autre appli est
+// créée après lui (point 3 : « plan périmé »), à juste titre. Les plans des
+// coques d'un produit sont relus APRÈS toutes ses cellules, dans l'état que
+// la reprise (T9–T12) appliquera.
+export async function reviewCellShells(root, kind, fixture, profiles, runCell) {
+    const receipts = [];
+    for (const profile of profiles) receipts.push(await runCell(profile));
+    const reviewed = [];
+    for (const [index, profile] of profiles.entries()) {
+        const shell = {
+            workspaceRoot: TOOLS_ROOT,
+            targetRoot: root,
+            appName: `ext03a-${kind.toLowerCase()}-${profile}`,
+            profile,
+            designPath: fixture.designPath,
+            experienceId: fixture.design.experiences[0].id,
+        };
+        const plan = await planExternalApplicationShell(shell);
+        reviewed.push({
+            shell: { ...shell, expectedPlanId: plan.plan_id },
+            plan,
+            receipt: receipts[index],
+        });
+    }
+    return reviewed;
 }
 
 export async function runNativeDocumentCell(session, fixture, profile) {
@@ -190,12 +350,18 @@ export async function runNativeDocumentCell(session, fixture, profile) {
             { flag: 'wx', mode: 0o600 }
         );
     }
-    record(session, `EXT03a/${cell}/native-cell`, child);
+    record(session, `EXT03a/${cell}/native-cell`, child, {
+        detail:
+            child.status !== 0 || child.signal
+                ? await readCellFailure(contextPath, cell)
+                : '',
+    });
     const receiptBytes = await readFile(`${contextPath}.receipt.json`);
     const receipt = JSON.parse(receiptBytes.toString('utf8'));
     assert.equal(receipt.cell, cell);
     assert.equal(receipt.native.backend, session.backend);
-    assert.equal(receipt.native.labels.length, 5);
+    // Les appels du runner sont jugés par `assertNativeCellLabels`, contre le
+    // plan de la création recalculé par le coordinateur.
     session.lines.push(
         ...receipt.native.report,
         `EXT03a/${cell} receipt_sha256=${hash(receiptBytes)} elapsed_ms=${Math.round(performance.now() - start)}`,

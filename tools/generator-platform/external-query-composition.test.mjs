@@ -28,14 +28,14 @@ test('C4 : page à lecture composée sur deux produits fictifs, en consommant la
         const plan = await planExternalPageComposition(options);
         const visible = publicExternalPageCompositionPlan(plan);
         assert.deepEqual(visible.consumed_commands, []);
-        assert.deepEqual(visible.consumed_queries, [
-            `src/app/generated/queries/${queryId}`,
-        ]);
+        // Lot 2 (V5.1) : la lecture publiée vit dans le socle de l'appli.
+        const queryRoot = queryOutputRoot(options.appName, queryId);
+        assert.deepEqual(visible.consumed_queries, [queryRoot]);
         // La lecture n'est pas recopiée : seule la composition est publiée.
         assert.ok(
             plan.changes.every(
                 ({ path }) =>
-                    !path.startsWith(`${queryOutputRoot(queryId)}/`) &&
+                    !path.startsWith(`${queryRoot}/`) &&
                     path.includes('/composition/')
             )
         );
@@ -132,7 +132,7 @@ test('C4 : page à lecture composée sur deux produits fictifs, en consommant la
 
 test('C4 : une lecture publiée qui diffère du rendu attendu est refusée, nommée', async (t) => {
     const { product, options, queryId } = await queryPage(t, 'observatory');
-    const facade = `${queryOutputRoot(queryId)}/src/${queryId}.facade.ts`;
+    const facade = `${queryOutputRoot(options.appName, queryId)}/src/${queryId}.facade.ts`;
     await publish(
         publication(
             product,

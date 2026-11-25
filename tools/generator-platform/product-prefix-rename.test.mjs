@@ -31,6 +31,7 @@ import {
 } from './core/external-publication-paths.mjs';
 import { withProductWriterLocks } from './core/generation-transaction.mjs';
 import { productNameForms } from './core/product-identity.mjs';
+import { coqueRoot, LIBS_ROOT, socleRoot } from './core/socle-names.mjs';
 import {
     planProductPrefixRename,
     publicProductPrefixRenamePlan,
@@ -59,7 +60,8 @@ import {
 
 const LOCKED = /another generation owns/;
 const APPS = PRODUCT_APPS;
-const NOTICE = 'src/app/generated/x1-proof/notice.ts';
+// Lot 2 : chemins relatifs au produit ; une publication écrit dans le socle.
+const NOTICE = `${socleRoot(SESSION_APP)}/src/actions/x1-proof/notice.ts`;
 
 // Familles portées par les fichiers possédés (hors manifestes d'appli) :
 // famille → préfixes trouvés.
@@ -77,17 +79,22 @@ async function productFamilies(product) {
     return found;
 }
 
-// Écarts d'une appli entre deux produits, manifeste d'appli exclu (il porte
-// le sceau) : ce que le plan d'un renommage de l'un vers l'autre annonce.
+// Écarts de la COQUE d'une appli entre deux produits, manifeste d'appli exclu
+// (il porte le sceau) : ce que le plan d'un renommage de l'un vers l'autre
+// annonce. Chemins relatifs au produit (lot 2).
 async function treeChanges(from, to, appName) {
+    const coque = coqueRoot(appName);
     const entries = async (product) =>
         new Map(
-            (await snapshotTree(join(product.apps, appName)))
+            (await snapshotTree(join(product.root, coque)))
                 .filter(
                     ([path, kind]) =>
                         kind !== 'directory' && path !== APP_MANIFEST
                 )
-                .map(([path, kind, value]) => [path, `${kind}:${value}`])
+                .map(([path, kind, value]) => [
+                    `${coque}/${path}`,
+                    `${kind}:${value}`,
+                ])
         );
     const left = await entries(from);
     const right = await entries(to);
@@ -102,7 +109,11 @@ async function treeChanges(from, to, appName) {
 }
 
 const compositionManifest = (product) =>
-    `${pageCompositionRoot(product.page.pageId)}/generation-manifest.json`;
+    `${pageCompositionRoot(SESSION_APP, product.page.pageId)}/generation-manifest.json`;
+
+// V5.3 : les bibliothèques de deux produits créés à des préfixes différents
+// sont égales à l'octet (aucune forme du préfixe dans `libs/`).
+const libraries = (product) => snapshotTree(join(product.root, LIBS_ROOT));
 
 // Création d'une appli NOUVELLE dans le produit (conception des coques du
 // produit fictif, déjà présente).
@@ -196,12 +207,18 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 reviewed.apps.map(({ app_name }) => app_name).sort(),
                 [...APPS]
             );
-            for (const { app_name, changes } of reviewed.apps)
+            for (const { app_name, changes } of reviewed.apps) {
                 assert.deepEqual(
                     changes,
                     await treeChanges(a, b, app_name),
                     `changements du plan de ${app_name}`
                 );
+                // V5.3 : aucun chemin du plan hors de la coque.
+                for (const { path } of changes)
+                    assert.ok(path.startsWith(`${coqueRoot(app_name)}/`), path);
+            }
+            assert.deepEqual(await libraries(a), await libraries(b));
+            const librariesBefore = await libraries(a);
             const seen = [];
             const { visible, result } = await renameTo(a, 'qz', {
                 phase: async (name) => {
@@ -243,6 +260,8 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 'verified',
             ]);
             await assertRenamedEqualsCreated(a, b);
+            // V5.3 : le renommage n'a touché aucun octet des bibliothèques.
+            assert.deepEqual(await libraries(a), librariesBefore);
             // Aucun artefact de transaction ne survit à côté du produit.
             assert.deepEqual(
                 [
@@ -261,8 +280,8 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 (app) => app.app_name === SESSION_APP
             );
             assert.deepEqual(session.relay_entry_script, {
-                before: relayEnvshPath('ns'),
-                after: relayEnvshPath('qz'),
+                before: `${coqueRoot(SESSION_APP)}/${relayEnvshPath('ns')}`,
+                after: `${coqueRoot(SESSION_APP)}/${relayEnvshPath('qz')}`,
             });
             assert.ok(
                 visible.operator_variables.some(({ before }) =>
@@ -287,7 +306,7 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 { name: 'ns-shell-v1', replaced_by: 'qz-shell-v1' },
             ]);
             // P6 : l'auteur du manifeste de composition reste la composition ;
-            // le dernier écrivain du sceau est le renommage.
+            // V5.3 : son dernier écrivain aussi (le renommage n'y touche plus).
             const renamed = await readManifest(a, SESSION_APP);
             assert.equal(
                 publishingTool(renamed, compositionManifest(a)),
@@ -297,7 +316,7 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 lastWriters(renamed, renamed.ownership.workspace_id).get(
                     compositionManifest(a)
                 ),
-                RENAME_TOOL
+                PAGE_COMPOSITION_TOOL
             );
             // Contre-preuve dérivée : mêmes familles qu'avant, toutes en qz.
             const familiesAfter = await productFamilies(a);
@@ -309,6 +328,18 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 assert.deepEqual([...prefixes], ['qz'], family);
             for (const [family, prefixes] of familiesBefore)
                 assert.deepEqual([...prefixes], ['ns'], family);
+            // Lot 2, commit 4 (S12) : la clé de la session de l'onglet suit le
+            // préfixe, dans la coque seule ; l'ancienne disparaît du produit.
+            const appConfig = await readFile(
+                join(a.root, coqueRoot(SESSION_APP), 'src/app/app.config.ts'),
+                'utf8'
+            );
+            assert.ok(appConfig.includes(`'qz-session-v1:${SESSION_APP}'`));
+            assert.equal(appConfig.includes('ns-session-v1:'), false);
+            assert.deepEqual(
+                [...familiesAfter.get('clé de session de l’onglet')],
+                ['qz']
+            );
         }
     );
 
@@ -333,8 +364,9 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
             );
             const path = (record, kind) =>
                 record.files.find((file) => file.change === kind)?.path;
-            assert.equal(path(renames[0], 'added'), relayEnvshPath('qz'));
-            assert.equal(path(renames[1], 'removed'), relayEnvshPath('qz'));
+            const envsh = `${coqueRoot(SESSION_APP)}/${relayEnvshPath('qz')}`;
+            assert.equal(path(renames[0], 'added'), envsh);
+            assert.equal(path(renames[1], 'removed'), envsh);
             // Le rejeu inverse redonne la coque créée en ns (sceau inchangé).
             assert.equal(
                 manifest.ownership.shell_tree_sha256,
@@ -351,8 +383,8 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
     await t.test(
         'D.2 : publier après le renommage, puis vérifier',
         async () => {
-            // Le générateur de composition, en rr, rend exactement ce que le
-            // renommage a écrit : rien à publier.
+            // V5.3 : la composition ne dépend pas du préfixe ; en rr, son
+            // générateur rend exactement ce qui est publié : rien à publier.
             await assert.rejects(
                 planExternalPageComposition(a.page),
                 /publication without change/
@@ -365,12 +397,9 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 lastWriters(manifest, manifest.ownership.workspace_id).get(
                     spec
                 ),
-                RENAME_TOOL
+                PAGE_COMPOSITION_TOOL
             );
-            const content = await readFile(
-                join(a.apps, SESSION_APP, spec),
-                'utf8'
-            );
+            const content = await readFile(join(a.root, spec), 'utf8');
             await publish({
                 ...a.app,
                 tool: PAGE_COMPOSITION_TOOL,
@@ -399,13 +428,10 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 join(a.apps, SESSION_APP, APP_MANIFEST),
                 'utf8'
             );
-            await interruptAfterSwap(
-                { ...a, app: join(a.apps, SESSION_APP) },
-                notice(a, 2)
-            );
+            await interruptAfterSwap(a, notice(a, 2));
             await assert.rejects(
                 readOwnedWorkspace(a.base),
-                /interrupted publication/
+                /interrupted application publication/
             );
             await recoverApplicationPublication(a.app);
             assert.deepEqual(await snapshot(a), renamed);

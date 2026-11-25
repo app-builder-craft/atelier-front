@@ -1,8 +1,8 @@
 // Lot MARQUE, commit 3 : produits fictifs pour `rename-product-prefix`. Un
 // produit porte trois applis : une coque Angular avec session (domaine
-// `observatory`), sa commande, son plan de page et sa composition (dont la
-// spec porte des valeurs d'exemple dérivées du préfixe) ; une coque Angular
-// et une coque React sans session. Le runner injecté ne compile rien.
+// `observatory`), sa commande, son plan de page et sa composition (lot 2,
+// V5.3 : valeurs d'exemple fixes, indépendantes du préfixe) ; une coque
+// Angular et une coque React sans session. Le runner injecté ne compile rien.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

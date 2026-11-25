@@ -12,6 +12,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 
 import { repositoryRoot } from '../validate-ir.mjs';
@@ -20,12 +21,63 @@ import {
     publishApplicationWorkspace,
 } from '../core/application-workspace.mjs';
 import { signatureName } from '../core/atelier-signature.mjs';
-import { pathExists } from '../core/external-application-paths.mjs';
+import { filesUnder } from '../core/application-transaction.mjs';
+import {
+    pathExists,
+    stageGeneratedTree,
+} from '../core/external-application-paths.mjs';
 import { stableStringify } from '../core/generation-manifest.mjs';
 import { writeApplicationDesignFixture } from './application-design-fixture.mjs';
 
 export const TOOLS_ROOT = repositoryRoot;
 export const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+// Contrôle en cause d'une assertion : son opérateur et le lieu de l'appel
+// dans l'atelier (chemin RELATIF à l'atelier, ligne, colonne), lus dans la
+// pile. Ce sont des faits du code, jamais des valeurs : le message d'une
+// assertion, généré ou non, peut porter des sorties d'enfant ou des valeurs
+// comparées et reste écarté (EXT01 v7). Forme FERMÉE, sinon rien : aucun
+// chemin hors de l'atelier, aucune dépendance installée, aucun `..`.
+const ASSERT_OPERATOR = /^[a-z][A-Za-z]{1,30}$/;
+const CODE_LOCATION =
+    /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+\.m?js:\d{1,6}:\d{1,6}$/;
+export function assertionControl(error) {
+    const operator = ASSERT_OPERATOR.test(error.operator ?? '')
+        ? error.operator
+        : '';
+    const root = `${pathToFileURL(TOOLS_ROOT).href}/`;
+    let location = '';
+    for (const frame of String(error.stack ?? '').split('\n')) {
+        const url = /(file:\/\/[^\s()]+)/.exec(frame)?.[1];
+        if (!url?.startsWith(root)) continue;
+        const candidate = url.slice(root.length);
+        if (
+            CODE_LOCATION.test(candidate) &&
+            !candidate.split('/').includes('node_modules')
+        )
+            location = candidate;
+        break;
+    }
+    return [operator && `[${operator}]`, location].filter(Boolean).join(' ');
+}
+
+// Forme FERMÉE d'un contrôle en cause (`assertionControl`), revérifiée par un
+// lecteur qui la reçoit d'un autre processus : `[opérateur]`, lieu, ou les deux.
+export function isProofControl(text) {
+    if (typeof text !== 'string' || text.length > 200) return false;
+    const parts = text.split(' ');
+    if (parts.length > 2 || parts.some((part) => !part)) return false;
+    const [first, second] = parts;
+    const operator = /^\[([a-z][A-Za-z]{1,30})\]$/.exec(first)?.[1];
+    const location = operator ? second : first;
+    if (operator && !ASSERT_OPERATOR.test(operator)) return false;
+    if (!operator && second !== undefined) return false;
+    return (
+        location === undefined ||
+        (CODE_LOCATION.test(location) &&
+            !location.split('/').includes('node_modules'))
+    );
+}
 
 export function formatProofStop(error) {
     const assertion = error?.code === 'ERR_ASSERTION';
@@ -39,9 +91,11 @@ export function formatProofStop(error) {
         typeof error.message === 'string'
             ? error.message.split(/[\r\n\u0085\u2028\u2029]/u, 1)[0]
             : '';
+    const control =
+        assertion && error instanceof Error ? assertionControl(error) : '';
     const suffix = '; aucun succès global revendiqué.';
     const detail = stripVTControlCharacters(
-        `STOP ${name}${message ? ': ' + message : ''}`
+        `STOP ${name}${control ? ' ' + control : ''}${message ? ': ' + message : ''}`
     )
         .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
         .replace(/\s+/gu, ' ')
@@ -147,6 +201,15 @@ export async function prepareFixture(t, profiles) {
     return { parent, root: options.targetRoot, options, plan };
 }
 
+// Lot 2, commit 3 (V3.3) : forme EXTÉRIEURE d'une conception : version
+// 1.3.0, aucune empreinte de contrat (elle vit dans la liaison de l'appli).
+export function externalDesign(design) {
+    design.schema_version = '1.3.0';
+    for (const reference of design.backend_contracts ?? [])
+        delete reference.sha256;
+    return design;
+}
+
 export async function writeExternalDesign(root, sharedSource) {
     const loaded = await schemas();
     const fixture = await writeApplicationDesignFixture(
@@ -154,7 +217,7 @@ export async function writeExternalDesign(root, sharedSource) {
         loaded.backendContractSchema,
         'descriptions'
     );
-    const design = fixture.design;
+    const design = externalDesign(fixture.design);
     design.design.title = 'Laboratoire des shells natifs';
     design.experiences[0].offline_policy = 'none';
     design.pages[0].title = 'Accueil fictif';
@@ -236,6 +299,19 @@ export async function shellFixture(t, profile = 'angular-pwa') {
             backendContractSchema: input.backendContractSchema,
         },
     };
+}
+
+// Lot 2 : fichiers de la coque d'un plan, relatifs à elle (inventaire et
+// plans relatifs au produit).
+export const coqueFiles = (plan) =>
+    filesUnder(plan.files, `apps/${plan.app_name}`);
+
+// Lot 2 : les trois racines d'un plan de création écrites à leur place, sans
+// transaction (état d'une appli déjà créée).
+export async function writePlanRoots(plan) {
+    await mkdir(join(plan.root, 'libs'), { recursive: true });
+    for (const { root, files } of plan.roots)
+        await stageGeneratedTree(join(plan.root, root), files);
 }
 
 export async function snapshotTree(root, excluded = ['node_modules', '.git']) {

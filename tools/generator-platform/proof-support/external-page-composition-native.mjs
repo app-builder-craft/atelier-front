@@ -13,10 +13,14 @@ import {
     planExternalPagePlan,
     publishExternalPagePlan,
 } from '../core/external-page-plan.mjs';
-import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
-import { verifyGeneratedTree } from '../core/external-application-paths.mjs';
+import { actionOutputRoot } from '../core/external-publication-paths.mjs';
+import { appManifestPath } from '../renderers/external-product-layout.mjs';
 import { TOOLS_ROOT } from '../test-support/external-application-fixture.mjs';
 import { assertProductOnlyImports } from '../test-support/external-publication-fixture.mjs';
+import {
+    nativeLabels,
+    verifyPlanTrees,
+} from './external-application-runtime.mjs';
 import { nativePublicationRunner } from './external-publication-native.mjs';
 
 export async function publishNative(
@@ -33,8 +37,8 @@ export async function publishNative(
         { run }
     );
     assert.equal(result.replayed, false);
-    assert.equal(labels.length, 5);
-    await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+    assert.deepEqual(labels, nativeLabels(plan));
+    await verifyPlanTrees(plan);
 }
 
 export async function proveNativePageComposition(session, shell) {
@@ -72,7 +76,7 @@ export async function proveNativePageComposition(session, shell) {
         options
     );
     // T11 : imports limités au produit ; la commande consommée est celle de X2.
-    const manifest = JSON.parse(plan.files[SIGNATURE_FILES.appManifest]);
+    const manifest = JSON.parse(plan.files[appManifestPath(plan.app_name)]);
     assertProductOnlyImports(
         Object.fromEntries(
             plan.changes.map(({ path }) => [path, plan.files[path]])
@@ -81,7 +85,7 @@ export async function proveNativePageComposition(session, shell) {
     );
     session.lines.push(`PASS ${label}/product-only-imports`);
     assert.deepEqual(plan.consumed_commands, [
-        `src/app/generated/actions/${domain}-enter`,
+        actionOutputRoot(plan.app_name, `${domain}-enter`),
     ]);
     session.lines.push(`PASS ${label}/consumes-x2-command`);
     const replay = await publishExternalPageComposition(

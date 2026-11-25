@@ -7,6 +7,7 @@ import {
     publicBackendPublicationPlan,
     publishStructuredBackendContract,
 } from './generator-platform/core/structured-backend-publication.mjs';
+import { reportSourcesToBind } from './generator-platform/core/compilation-context.mjs';
 import { loadJson, repositoryRoot } from './generator-platform/validate-ir.mjs';
 
 function fail(message) {
@@ -124,6 +125,7 @@ export async function main(argv = process.argv.slice(2)) {
         console.log(
             JSON.stringify(publicBackendPublicationPlan(plan), null, 2)
         );
+        await reportSourcesToBind({ ...common, kind: 'backend' });
         return;
     }
     const result = await publishStructuredBackendContract({
@@ -134,6 +136,7 @@ export async function main(argv = process.argv.slice(2)) {
         `${result.already_published ? 'Déjà publié' : 'Publié'} : ${result.plan.output} ` +
             `(sha256 ${result.plan.output_sha256})`
     );
+    await reportSourcesToBind({ ...common, kind: 'backend' });
 }
 
 if (

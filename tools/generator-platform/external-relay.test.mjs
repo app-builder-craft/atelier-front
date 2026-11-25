@@ -43,6 +43,12 @@ import {
 import { TOOLS_ROOT } from './test-support/external-application-fixture.mjs';
 import { sessionApp } from './test-support/external-publication-fixture.mjs';
 import { signatureName } from './core/atelier-signature.mjs';
+import {
+    coqueRoot,
+    SOCLE_COQUE_ENTRY,
+    SOCLE_SESSION_DIR,
+    socleRoot,
+} from './core/socle-names.mjs';
 
 // Formes du préfixe du produit fictif, écrites ici (oracle du test) :
 // variables de l'opérateur `<P>_*`, variables nginx et fonctions `<p>_*`.
@@ -60,6 +66,26 @@ async function scratch(t, prefix) {
     return root;
 }
 
+const APP = 'relay-app';
+// Lot 2 (V5.1) : le rendu extérieur est relatif au produit ; la session, dont
+// les liaisons du relais, va au socle, le reste du relais reste à la coque.
+// Oracle écrit ici : chemin de rendu (relatif à l'appli) → chemin du produit.
+const SESSION_SOURCES = 'src/app/session/';
+const productPath = (path) =>
+    path.startsWith(SESSION_SOURCES)
+        ? `${socleRoot(APP)}/${SOCLE_SESSION_DIR}/${path.slice(SESSION_SOURCES.length)}`
+        : `${coqueRoot(APP)}/${path}`;
+// Vue des fichiers du relais par leur chemin de rendu ; chacun DOIT exister à
+// sa place dans le produit.
+function relayView(files) {
+    return Object.fromEntries(
+        RELAY_PATHS.map((path) => {
+            assert.equal(typeof files[productPath(path)], 'string', path);
+            return [path, files[productPath(path)]];
+        })
+    );
+}
+
 async function renderShells(t, domain) {
     const data = await createApplicationSessionFixture({ domain });
     t.after(() => rm(data.root, { recursive: true, force: true }));
@@ -68,7 +94,7 @@ async function renderShells(t, domain) {
             await renderAngularPwaShell({
                 design: data.design,
                 experienceId: data.design.experiences[0].id,
-                appName: 'relay-app',
+                appName: APP,
                 designPath: `design/${domain}.json`,
                 designSha256: 'a'.repeat(64),
                 externalWorkspace,
@@ -79,16 +105,21 @@ async function renderShells(t, domain) {
         data.design,
         data.design.experiences[0]
     );
+    const product = await render(true);
     return {
         atelier: await render(false),
-        external: await render(true),
+        external: relayView(product),
+        product,
         table: relayServiceTable(config, FIXTURE_PREFIX),
     };
 }
 
 test('X4-config : une seule table de chemins, lue à l’identique par tous ses consommateurs', async (t) => {
     for (const domain of SESSION_FIXTURE_DOMAINS) {
-        const { atelier, external, table } = await renderShells(t, domain);
+        const { atelier, external, product, table } = await renderShells(
+            t,
+            domain
+        );
         assert.ok(table.length > 0, domain);
         const paths = table.map((entry) => entry.path);
         // Fabrique de SESSION_ENDPOINTS.
@@ -158,18 +189,26 @@ test('X4-config : une seule table de chemins, lue à l’identique par tous ses 
             table.map((entry) => entry.service_id)
         );
         assert.ok(external[RELAY_FILES.readme].includes(nginxImage()));
-        // Câblage : fournisseur et proxy du serveur de développement.
+        // Câblage : fournisseur (lot 2 : `provideSocle`, entrée de la coque
+        // du socle) et proxy du serveur de développement.
+        const providers = product[`${socleRoot(APP)}/${SOCLE_COQUE_ENTRY}`];
         assert.match(
-            external['src/app/app.config.ts'],
+            providers,
             /import \{ RELAY_ENDPOINTS \} from '\.\/session\/relay-endpoints';/
         );
         assert.match(
-            external['src/app/app.config.ts'],
+            providers,
             /useExisting: ApplicationSession \},\n\s+RELAY_ENDPOINTS,\n/
         );
         assert.equal(
-            JSON.parse(external['project.json']).targets.serve.options
-                .proxyConfig,
+            product[`${coqueRoot(APP)}/src/app/app.config.ts`].includes(
+                'RELAY'
+            ),
+            false
+        );
+        assert.equal(
+            JSON.parse(product[`${coqueRoot(APP)}/project.json`]).targets.serve
+                .options.proxyConfig,
             'apps/relay-app/proxy.conf.mjs'
         );
         // Mode atelier inchangé.
@@ -523,4 +562,31 @@ test('X4-config : le harnais compare le chemin relayé sans expression réguliè
     assert.equal(echoes('path=/aXcss|', '/a.css'), false);
     assert.equal(echoes('path=/a.cs|', '/a.css?'), false);
     assert.equal(echoes(undefined, '/'), false);
+});
+
+// Revue Fable du 1b, B-1 (CI #48 rouge à « Relais nginx de même origine ») : le
+// harnais lit le rendu extérieur aux chemins du PRODUIT (coque) ; chaque
+// fichier du relais est une chaîne, et la mise en place du harnais (sans
+// Docker) les écrit à l'octet.
+test('X4-config : le harnais du relais lit ses fichiers dans la coque rendue et les met en place', async (t) => {
+    const { HOST_CONF, relayFixture, stage } =
+        await import('./check-nginx-relay.mjs');
+    const { files, table } = await relayFixture();
+    for (const name of ['template', 'headers', 'envsh', 'csp'])
+        assert.equal(typeof files[name], 'string', name);
+    assert.ok(table.length > 0);
+    assert.ok(files.template.includes('location ^~ /api/ {'));
+    const root = await scratch(t, signatureName('relay-stage-'));
+    await stage(root, files);
+    assert.equal(
+        await readFile(
+            join(root, 'templates', 'default.conf.template'),
+            'utf8'
+        ),
+        files.template
+    );
+    assert.equal(
+        await readFile(join(root, HOST_CONF, 'security-headers.conf'), 'utf8'),
+        files.headers
+    );
 });

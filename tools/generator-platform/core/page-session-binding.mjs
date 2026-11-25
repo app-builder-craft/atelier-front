@@ -135,7 +135,7 @@ export function parsePageArtifact(artifact, label, validate) {
 
 export function sessionCapabilityRequirements(plan) {
     return plan.schema_version === '1.1.0'
-        ? ['session.memory@1', 'session.decoded-producer@1', 'session.epoch@1']
+        ? ['session.tab@1', 'session.decoded-producer@1', 'session.epoch@1']
         : [];
 }
 
@@ -166,7 +166,7 @@ export function compilePageSessionBinding(pageContract, commandPairs) {
     if (session === undefined) return undefined;
     if (
         !session ||
-        session.storage !== 'memory' ||
+        session.storage !== 'tab' ||
         !Array.isArray(session.stages) ||
         session.stages.length > 4 ||
         !Array.isArray(session.routes) ||

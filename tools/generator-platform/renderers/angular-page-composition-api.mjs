@@ -1,7 +1,7 @@
 // X4-sécurité-3, O-A : table `api` de la composition extérieure, source unique
 // de ses membres publiés (G-A1), et assertion de type générée (G-A5).
 // Profil extérieur seulement : le profil interne n'a ni table ni assertion.
-import { productForms } from '../core/product-identity.mjs';
+import { SAMPLE_EMAIL, SAMPLE_TEXT } from '../core/socle-names.mjs';
 import { camelCase } from './shared.mjs';
 
 // Genres publiés. `read` reste réservé et non ajouté (X5, D-X5-3, R1) : une
@@ -223,9 +223,9 @@ ${assertions.map((assertion) => `    PageCompositionAssert<${assertion}>,`).join
 
 // Entrée d'exemple valide d'une commande : chaînes non vides, format courriel
 // et bornes de longueur déclarées (seules contraintes du validateur rendu).
-export function sampleCommandInput(model, prefix) {
-    // Formes du préfixe du produit (valeurs d'exemple de la spec générée).
-    const forms = productForms(prefix);
+// Lot 2 (V5.3) : valeurs FIXES et neutres (`socle-names.mjs`), sans aucune
+// forme du préfixe du produit ; la règle de longueur est inchangée.
+export function sampleCommandInput(model) {
     const [action] = model.actions;
     if (action.port.input.kind === 'none') return {};
     return Object.fromEntries(
@@ -235,15 +235,13 @@ export function sampleCommandInput(model, prefix) {
                     validation.kind === 'format' &&
                     validation.format === 'email'
             );
-            const domain = '@exemple.test';
-            let value = email
-                ? `${forms.prefix}${domain}`
-                : `${forms.kebab}contrat`;
+            const domain = SAMPLE_EMAIL.slice(SAMPLE_EMAIL.indexOf('@'));
+            let value = email ? SAMPLE_EMAIL : SAMPLE_TEXT;
             const min = field.constraints?.min_length ?? 0;
             const max = field.constraints?.max_length;
             while (value.length < min) value += 'x';
             // Un courriel trop long est tronqué sur sa PARTIE LOCALE (au moins
-            // un caractère), jamais sur son domaine : avec un préfixe long,
+            // un caractère), jamais sur son domaine : sous une borne courte,
             // l'exemple reste un courriel valide sous `max_length`.
             if (max !== undefined && value.length > max)
                 value = email

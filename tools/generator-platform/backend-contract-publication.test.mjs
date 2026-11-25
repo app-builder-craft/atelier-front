@@ -688,3 +688,36 @@ test('adoption : cardinalité16 et budget cumulé2Mio avant lecture des capsules
         );
     }
 });
+
+// Lot 2, commit 6a (L-21) : le plan relit la sortie présente ; un dossier ou
+// un lien à sa place est refusé dès le plan, sans rien écrire.
+test('L-21 : une sortie présente qui n’est pas un fichier régulier est refusée au plan', async () => {
+    const options = await fixture();
+    const output = join(options.workspaceRoot, options.outputPath);
+    await mkdir(output);
+    await assert.rejects(
+        () => planStructuredBackendPublication(options),
+        /^Error: backend contract publication: existing output is not a regular file$/
+    );
+    const elsewhere = join(options.workspaceRoot, 'contracts/elsewhere.json');
+    await writeFile(elsewhere, '{}\n');
+    // Témoin : sans le lien, la même sortie est absente et le plan passe.
+    const witness = await planStructuredBackendPublication({
+        ...options,
+        outputPath: 'contracts/link.json',
+    });
+    assert.equal(witness.output_before_sha256, null);
+    await symlink(
+        elsewhere,
+        join(options.workspaceRoot, 'contracts/link.json')
+    );
+    await assert.rejects(
+        () =>
+            planStructuredBackendPublication({
+                ...options,
+                outputPath: 'contracts/link.json',
+            }),
+        /^Error: backend contract publication: existing output is not a regular file$/
+    );
+    assert.equal(await readFile(elsewhere, 'utf8'), '{}\n');
+});

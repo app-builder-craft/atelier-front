@@ -26,9 +26,12 @@ test('B+ : texte scellé au plan, constante de composition', async (t) => {
             nullableLabel(domain, TEXT)
         );
         const composition = await planExternalPageComposition(options);
-        // Le plan scellé porte le texte.
+        // Le plan scellé porte le texte (lot 2 : sous le socle de l'appli).
         const plan = JSON.parse(
-            await readFile(join(product.app, pagePlanPath(page.id)), 'utf8')
+            await readFile(
+                join(product.root, pagePlanPath(options.appName, page.id)),
+                'utf8'
+            )
         );
         assert.deepEqual(
             plan.output_bindings.map((binding) => [

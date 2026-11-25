@@ -44,7 +44,6 @@ import {
 } from './test-support/external-application-fixture.mjs';
 import {
     assertProductOnlyImports,
-    MANIFEST,
     readManifest,
     sessionApp,
 } from './test-support/external-publication-fixture.mjs';
@@ -55,6 +54,9 @@ import {
 import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
 
 const native = () => ({ run: () => undefined });
+// Lot 2 (V5.1) : le code publié vit dans le socle ; chemins relatifs au
+// produit.
+const socle = (app) => `libs/${app}-socle`;
 const cli = (script, args) =>
     spawnSync(
         process.execPath,
@@ -116,7 +118,7 @@ test('X3 : page Connexion planifiée puis composée sur deux produits fictifs, e
         assert.equal(visible.page_id, product.pageId);
         assert.deepEqual(
             visible.changes.map(({ path, change }) => [path, change]),
-            [[pagePlanPath(product.pageId), 'added']]
+            [[pagePlanPath(product.shell.appName, product.pageId), 'added']]
         );
         assert.deepEqual(visible.inputs, []);
         await publishExternalPagePlan(
@@ -124,13 +126,13 @@ test('X3 : page Connexion planifiée puis composée sur deux produits fictifs, e
             native()
         );
         const document = JSON.parse(
-            pagePlan.files[pagePlanPath(product.pageId)]
+            pagePlan.files[pagePlanPath(product.shell.appName, product.pageId)]
         );
         assert.equal(document.schema_version, '1.1.0');
         assert.deepEqual(
             document.command_nodes.map((node) => node.primitive_ref.uri),
             [
-                `apps/${product.shell.appName}/src/app/generated/actions/${domain}-enter/execution-model.json`,
+                `${socle(product.shell.appName)}/src/actions/${domain}-enter/execution-model.json`,
             ]
         );
         assert.equal(
@@ -154,18 +156,28 @@ test('X3 : page Connexion planifiée puis composée sur deux produits fictifs, e
                       : 'native-compiler'
             )
         );
+        const app = product.shell.appName;
         assert.deepEqual(labels, [
             'native-compiler',
-            `${product.shell.appName}:build:production`,
-            `${product.shell.appName}:lint`,
-            `${product.shell.appName}:test`,
+            `${app}:lint`,
+            `${app}-socle:lint`,
+            `${app}-interface:lint`,
+            `${app}:build:production`,
+            `${app}-socle:test`,
             'workspace-contract',
         ]);
-        const base = `src/app/generated/pages/${product.pageId}/composition`;
+        const base = `${socle(app)}/src/pages/${product.pageId}/composition`;
         const visibleComposition = publicExternalPageCompositionPlan(plan);
         assert.deepEqual(visibleComposition.consumed_commands, [
-            `src/app/generated/actions/${domain}-enter`,
+            `${socle(app)}/src/actions/${domain}-enter`,
         ]);
+        // V5.4 : l'API publique de la composition REMPLACE le module de page
+        // vide rendu par la coque.
+        assert.deepEqual(
+            plan.changes.find(({ path }) => path === `${base}/src/index.ts`)
+                .before.sha256,
+            sha256('export {};\n')
+        );
         assert.deepEqual(
             plan.changes.map(({ path }) => path),
             [
@@ -185,11 +197,13 @@ test('X3 : page Connexion planifiée puis composée sur deux produits fictifs, e
                 `from '\\.\\./\\.\\./\\.\\./\\.\\./actions/${domain}-enter/src/${domain}-enter\\.facade'`
             )
         );
+        // C-A7 : la session vue de la composition passe de cinq niveaux à
+        // quatre (spécifieur dérivé).
         assert.match(
             composition,
-            /import \{ APPLICATION_SESSION \} from '\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/session'/
+            /import \{ APPLICATION_SESSION \} from '\.\.\/\.\.\/\.\.\/\.\.\/session'/
         );
-        const manifest = await readManifest(product.app);
+        const manifest = await readManifest(product);
         const owned = new Map(
             manifest.generated_files.map((entry) => [entry.path, entry])
         );
@@ -210,7 +224,7 @@ test('X3 : page Connexion planifiée puis composée sur deux produits fictifs, e
         for (const entry of consumed)
             assert.equal(
                 entry.sha256,
-                owned.get(`src/app/generated/${entry.path}`).sha256,
+                owned.get(`${socle(app)}/src/${entry.path}`).sha256,
                 entry.path
             );
         assert.equal(
@@ -321,19 +335,19 @@ test('X3 : commande absente, plan absent, page inconnue ou à lectures refusés 
 // Fichier possédé modifié avec son entrée de registre, sans recalculer le
 // sceau : les gardes de la composition le refusent avant la primitive.
 async function forgeOwned(product, path, content) {
-    const manifestPath = join(product.app, MANIFEST);
+    const manifestPath = join(product.root, product.manifestPath);
     const original = await readFile(manifestPath);
-    const previous = await readFile(join(product.app, path));
+    const previous = await readFile(join(product.root, path));
     const manifest = JSON.parse(original.toString('utf8'));
     const entry = manifest.generated_files.find(
         (candidate) => candidate.path === path
     );
     entry.sha256 = sha256(content);
     entry.bytes = Buffer.byteLength(content);
-    await writeFile(join(product.app, path), content);
+    await writeFile(join(product.root, path), content);
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
     return async () => {
-        await writeFile(join(product.app, path), previous);
+        await writeFile(join(product.root, path), previous);
         await writeFile(manifestPath, original);
     };
 }
@@ -342,28 +356,27 @@ test('X3 : références du plan hors de l’application et commande consommée d
     const product = await connexionProduct(t, 'observatory');
     await publishPlan(product.options);
     const app = product.shell.appName;
-    const planPath = pagePlanPath(product.pageId);
+    const planPath = pagePlanPath(product.shell.appName, product.pageId);
     const plan = JSON.parse(
-        await readFile(join(product.app, planPath), 'utf8')
+        await readFile(join(product.root, planPath), 'utf8')
     );
     const owned = new Set(
-        (await readManifest(product.app)).generated_files.map(
-            ({ path }) => path
-        )
+        (await readManifest(product)).generated_files.map(({ path }) => path)
     );
-    assert.deepEqual(assertPlanReferences(plan, app, owned), [
-        `${SIGNATURE_FILES.pages}/${product.pageId}.json`,
-        'src/app/generated/actions/observatory-enter/execution-model.json',
+    // V5.1 règle 4 : la référence EST le chemin de l'inventaire de l'appli.
+    assert.deepEqual(assertPlanReferences(plan, owned), [
+        `apps/${app}/${SIGNATURE_FILES.pages}/${product.pageId}.json`,
+        `${socle(app)}/src/actions/observatory-enter/execution-model.json`,
     ]);
     for (const uri of [
         '../outside.json',
         '/absolute/model.json',
         'descriptions/session-observatory/backend.json',
-        'apps/other-app/src/app/generated/actions/x/execution-model.json',
+        'libs/other-app-socle/src/actions/x/execution-model.json',
         // Autre application dont le nom a la même longueur.
-        `apps/${'x'.repeat(app.length)}/src/app/generated/actions/observatory-enter/execution-model.json`,
-        `apps/${app}/src/app/generated/unowned.json`,
-        `apps/${app}/src/../src/app/generated/actions/observatory-enter/execution-model.json`,
+        `${socle('x'.repeat(app.length))}/src/actions/observatory-enter/execution-model.json`,
+        `${socle(app)}/src/unowned.json`,
+        `${socle(app)}/src/../src/actions/observatory-enter/execution-model.json`,
         // Validation X3, S5 : une URI non textuelle reçoit le même refus fermé.
         42,
         null,
@@ -372,7 +385,7 @@ test('X3 : références du plan hors de l’application et commande consommée d
         const forged = structuredClone(plan);
         forged.command_nodes[0].primitive_ref.uri = uri;
         assert.throws(
-            () => assertPlanReferences(forged, app, owned),
+            () => assertPlanReferences(forged, owned),
             /page plan references a file outside the application/,
             String(uri)
         );
@@ -393,7 +406,7 @@ test('X3 : références du plan hors de l’application et commande consommée d
     );
     await restore();
     // Plan inscrit au registre par un autre outil : non reconnu comme plan.
-    const manifestPath = join(product.app, MANIFEST);
+    const manifestPath = join(product.root, product.manifestPath);
     const original = await readFile(manifestPath);
     const registry = JSON.parse(original.toString('utf8'));
     registry.ownership.publications.findLast((record) =>
@@ -406,12 +419,11 @@ test('X3 : références du plan hors de l’application et commande consommée d
     );
     await writeFile(manifestPath, original);
     // Commande publiée différente de ce que la composition rendrait.
-    const facade =
-        'src/app/generated/actions/observatory-enter/src/observatory-enter.facade.ts';
+    const facade = `${socle(app)}/src/actions/observatory-enter/src/observatory-enter.facade.ts`;
     restore = await forgeOwned(
         product,
         facade,
-        (await readFile(join(product.app, facade), 'utf8')) + '// modifié\n'
+        (await readFile(join(product.root, facade), 'utf8')) + '// modifié\n'
     );
     await assert.rejects(
         planExternalPageComposition(product.options),
@@ -421,14 +433,13 @@ test('X3 : références du plan hors de l’application et commande consommée d
     assert.deepEqual(await snapshotTree(product.root, []), before);
 });
 
-const ENTER_MODEL =
-    'src/app/generated/actions/observatory-enter/execution-model.json';
+const ENTER_MODEL = `${socle('session-observatory')}/src/actions/observatory-enter/execution-model.json`;
 
 // Registre modifié puis rescellé de façon cohérente (forge exclue par
 // l'ADR-0103) : montre ce que fait le code devant un registre valide mais
 // différent, comme la sonde P5 du validateur.
 async function sealedForge(product, edit) {
-    const path = join(product.app, MANIFEST);
+    const path = join(product.root, product.manifestPath);
     const original = await readFile(path);
     const manifest = JSON.parse(original.toString('utf8'));
     edit(manifest);
@@ -464,19 +475,20 @@ test('X3 : modèle attribué à un autre outil, refusé dès le plan de page, et
     // Validation X3, S1 et S2 : fichier non inscrit, puis octets possédés
     // modifiés sur disque.
     const app = await sessionApplication(product.root, product.shell.appName);
-    await writeFile(join(product.app, 'src/stray.ts'), 'export {};\n');
+    const stray = 'apps/session-observatory/src/stray.ts';
+    await writeFile(join(product.root, stray), 'export {};\n');
     await assert.rejects(
-        ownedAppFile(app, 'src/stray.ts'),
+        ownedAppFile(app, stray),
         /file is not owned by the application/
     );
-    await rm(join(product.app, 'src/stray.ts'));
-    const model = await readFile(join(product.app, ENTER_MODEL));
-    await writeFile(join(product.app, ENTER_MODEL), `${model} `);
+    await rm(join(product.root, stray));
+    const model = await readFile(join(product.root, ENTER_MODEL));
+    await writeFile(join(product.root, ENTER_MODEL), `${model} `);
     await assert.rejects(
         ownedAppFile(app, ENTER_MODEL),
         /owned application file drift/
     );
-    await writeFile(join(product.app, ENTER_MODEL), model);
+    await writeFile(join(product.root, ENTER_MODEL), model);
     assert.equal((await ownedAppFile(app, ENTER_MODEL)).equals(model), true);
     assert.deepEqual(await snapshotTree(product.root, []), before);
 });
@@ -517,11 +529,11 @@ test('X3 : deux commandes publiées pour la même action de page, refusées en l
     );
     const plan = await planExternalPagePlan(product.options);
     assert.deepEqual(
-        JSON.parse(plan.files[pagePlanPath(product.pageId)]).command_nodes.map(
-            (node) => node.primitive_ref.uri
-        ),
+        JSON.parse(
+            plan.files[pagePlanPath(product.shell.appName, product.pageId)]
+        ).command_nodes.map((node) => node.primitive_ref.uri),
         [
-            `apps/${product.shell.appName}/src/app/generated/actions/observatory-enter/execution-model.json`,
+            `${socle(product.shell.appName)}/src/actions/observatory-enter/execution-model.json`,
         ]
     );
     // Deux commandes pour l'action de la page : refus qui les nomme.
@@ -608,7 +620,9 @@ test('X3 : commande republiée après le plan ou la composition, pages dépendan
     const restore = await sealedForge(product, (manifest) => {
         manifest.ownership.publications.findLast((record) =>
             record.files.some(
-                (file) => file.path === pagePlanPath(product.pageId)
+                (file) =>
+                    file.path ===
+                    pagePlanPath(product.shell.appName, product.pageId)
             )
         ).tool = 'generate:page-composition';
     });
@@ -626,6 +640,22 @@ test('X3 : commande republiée après le plan ou la composition, pages dépendan
     await assert.rejects(
         planExternalPageComposition(product.options),
         /page execution plan is stale; recompile it with compile:page-execution-plan/
+    );
+    // C-B3 : la composition est publiée une SECONDE fois après la commande
+    // republiée (plan recompilé) : la zone de remplacement est celle du
+    // DERNIER ÉCRIVAIN. Ici, seul le manifeste de génération change ; le cas
+    // d'un fichier REMPLACÉ (jamais ajouté) remplacé de nouveau, l'API
+    // publique du module de page, est prouvé sur la zone elle-même
+    // (`application-publication-zones.test.mjs`).
+    const base = `${socle(product.shell.appName)}/src/pages/${product.pageId}/composition`;
+    await publishPlan(product.options);
+    const second = await publishComposition(product.options);
+    assert.equal(second.result.replayed, false);
+    const record = (await readManifest(product)).ownership.publications.at(-1);
+    assert.equal(record.tool, 'generate:page-composition');
+    assert.deepEqual(
+        record.files.map(({ path, change }) => [path, change]),
+        [[`${base}/generation-manifest.json`, 'replaced']]
     );
 });
 

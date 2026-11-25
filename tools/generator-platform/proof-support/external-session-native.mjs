@@ -14,6 +14,7 @@ import {
     pathExists,
     verifyGeneratedTree,
 } from '../core/external-application-paths.mjs';
+import { coqueRoot } from '../core/socle-names.mjs';
 import { EXTERNAL_WORKSPACE_SIGNATURE as WORKSPACE } from '../renderers/application-workspace-renderer.mjs';
 import {
     hash,
@@ -29,8 +30,10 @@ import {
 import { fileMutation } from './external-application-checks.mjs';
 import {
     confinedNode,
+    nativeLabels,
     record,
     targetArguments,
+    verifyPlanTrees,
 } from './external-application-runtime.mjs';
 
 export async function publishNativeSessionShell(session, root, domain) {
@@ -78,14 +81,11 @@ export async function publishNativeSessionShell(session, root, domain) {
         { run }
     );
     assert.equal(result.recovered, false);
-    assert.deepEqual(labels, [
-        'native-compiler',
-        `${plan.app_name}:build:production`,
-        `${plan.app_name}:lint`,
-        `${plan.app_name}:test`,
-        'workspace-contract',
-    ]);
-    await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+    // C-B2 : lint des trois projets, construction, puis le test du SOCLE.
+    assert.deepEqual(labels, nativeLabels(plan));
+    assert.ok(labels.includes(`${plan.app_name}-socle:test`));
+    assert.ok(!labels.includes(`${plan.app_name}:test`));
+    await verifyPlanTrees(plan);
     assert.doesNotMatch(
         Object.entries(plan.files)
             .filter(([path]) => path.endsWith('.ts'))
@@ -227,7 +227,7 @@ export async function qualifySessionBrowser(session, shells, browser) {
             await fileMutation(
                 session,
                 product,
-                `${plan.output}/src/app/app.routes.ts`,
+                `${coqueRoot(plan.app_name)}/src/app/app.routes.ts`,
                 (value) =>
                     value.replace(
                         /canActivate:\s*\[applicationSessionGuard\],?/g,
@@ -244,6 +244,6 @@ export async function qualifySessionBrowser(session, shells, browser) {
             await verifyGeneratedTree(proof, files);
             await rm(proof, { recursive: true });
         }
-        await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+        await verifyPlanTrees(plan);
     }
 }

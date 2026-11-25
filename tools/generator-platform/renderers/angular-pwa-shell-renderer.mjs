@@ -5,6 +5,7 @@ import { canonicalizeGeneratedFiles } from '../core/canonicalize-generated.mjs';
 import { productForms } from '../core/product-identity.mjs';
 import { adaptExternalShellFiles } from './application-workspace-renderer.mjs';
 import {
+    angularPageLoader,
     renderAngularApplicationSession,
     renderExternalSessionGuardSpec,
 } from './angular-application-session-renderer.mjs';
@@ -16,6 +17,10 @@ import {
 import { sessionRenderConfiguration } from '../core/application-design-session.mjs';
 import { applicationRoutePattern } from '../core/application-route-pattern.mjs';
 import { renderExternalRelayFiles } from './external-relay-renderer.mjs';
+import {
+    coqueSpecifiers,
+    externalShellProduct,
+} from './external-product-layout.mjs';
 
 function sha256(content) {
     return createHash('sha256').update(content).digest('hex');
@@ -42,7 +47,7 @@ function routePath(page) {
         : page.path.replace(/^\//, '').replace(/\/$/, '');
 }
 
-function renderRoutes(pages) {
+function renderRoutes(pages, layout) {
     const guardImport = pages.some((page) => page.access.mode !== 'public')
         ? "\nimport { appAccessGuard } from './access.guard';\n"
         : '';
@@ -51,10 +56,7 @@ function renderRoutes(pages) {
             (page) => `    {
         path: ${quoted(routePath(page))},
         data: { access: ${JSON.stringify(page.access)} },
-${page.access.mode === 'public' ? '' : '        canActivate: [appAccessGuard],\n'}        loadComponent: () =>
-            import('./pages/${page.id}/page.component').then(
-                (module) => module.PageComponent
-            ),
+${page.access.mode === 'public' ? '' : '        canActivate: [appAccessGuard],\n'}        loadComponent: ${angularPageLoader(page.id, layout)},
     },`
         )
         .join('\n');
@@ -283,7 +285,9 @@ export class PageComponent {}
 }
 
 // Relais de même origine : fichiers possédés, liaisons de même origine
-// fournies à SESSION_ENDPOINTS, proxy du serveur de développement.
+// fournies à SESSION_ENDPOINTS, proxy du serveur de développement. Lot 2 :
+// les liaisons vont au socle avec la session, et `provideSocle` (entrée de la
+// coque) les fournit.
 function addExternalRelay(files, appName, design, experience, prefix) {
     const relay = renderExternalRelayFiles({
         appName,
@@ -291,27 +295,6 @@ function addExternalRelay(files, appName, design, experience, prefix) {
         prefix,
     });
     Object.assign(files, relay.files);
-    const config = files['src/app/app.config.ts'];
-    const imported =
-        "import { applicationSessionInterceptor } from './session/session.interceptor';";
-    const provided =
-        '{ provide: APPLICATION_SESSION, useExisting: ApplicationSession }]';
-    if (
-        config.split(imported).length !== 2 ||
-        config.split(provided).length !== 2
-    )
-        throw new Error(
-            'application shell: app config is not the session config'
-        );
-    files['src/app/app.config.ts'] = config
-        .replace(
-            imported,
-            `${imported}\nimport { RELAY_ENDPOINTS } from './session/relay-endpoints';`
-        )
-        .replace(
-            provided,
-            '{ provide: APPLICATION_SESSION, useExisting: ApplicationSession }, RELAY_ENDPOINTS]'
-        );
     const project = JSON.parse(files['project.json']);
     project.targets.serve.options = {
         ...project.targets.serve.options,
@@ -326,6 +309,8 @@ export async function renderAngularPwaShell({
     appName,
     designPath,
     designSha256,
+    // Lot 2, commit 3 : liaison des sources de l'appli, rendue au manifeste.
+    sources = [],
     externalWorkspace = false,
     prefix,
 }) {
@@ -355,6 +340,9 @@ export async function renderAngularPwaShell({
         );
 
     const root = `apps/${appName}`;
+    // Lot 2 : en mode extérieur, la coque importe le socle et l'interface par
+    // leurs alias ; le mode interne garde sa disposition à une racine.
+    const layout = externalWorkspace ? coqueSpecifiers(appName) : undefined;
     const escapedTitle = escapedMarkup(design.design.title);
     const files = {
         [SIGNATURE_FILES.libraries]: json({
@@ -568,7 +556,7 @@ export const appConfig: ApplicationConfig = {
 `,
         'src/app/access.guard.ts': accessGuard(forms),
         'src/app/access.guard.spec.ts': accessGuardSpec(),
-        'src/app/app.routes.ts': renderRoutes(pages),
+        'src/app/app.routes.ts': renderRoutes(pages, layout),
         'src/styles.scss': `:root {
     color-scheme: light;
     font-family: system-ui, sans-serif;
@@ -671,6 +659,8 @@ self.addEventListener('fetch', (event) => {
                 design,
                 experience,
                 prefix,
+                appName,
+                layout,
             })
         );
         delete files['src/app/access.guard.ts'];
@@ -697,6 +687,17 @@ self.addEventListener('fetch', (event) => {
                 );
         }
     }
+    if (externalWorkspace)
+        return externalShellProduct({
+            profile: 'angular-pwa',
+            files,
+            appName,
+            pages,
+            experience,
+            designPath,
+            designSha256,
+            sources,
+        });
     const canonicalFiles = await canonicalizeGeneratedFiles(
         Object.fromEntries(
             Object.entries(files).map(([path, content]) => [
@@ -721,6 +722,7 @@ self.addEventListener('fetch', (event) => {
         app_name: appName,
         profile: 'angular-pwa',
         design_ref: { path: designPath, sha256: designSha256 },
+        sources,
         experience_id: experience.id,
         generated_files: artifacts,
         tree_sha256: sha256(

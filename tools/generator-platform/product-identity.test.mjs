@@ -39,6 +39,7 @@ import {
 import { sampleCommandInput } from './renderers/angular-page-composition-api.mjs';
 import { renderAngularPwaShell } from './renderers/angular-pwa-shell-renderer.mjs';
 import { renderReactSpaShell } from './renderers/react-spa-shell-renderer.mjs';
+import { appManifestPath } from './renderers/external-product-layout.mjs';
 import {
     applicationDesign,
     FIXTURE_PREFIX,
@@ -473,7 +474,7 @@ test('banc interne : préfixe obligatoire dans la conception 1.2.0, réservés r
 // rendu au préfixe `qz`, où `qz` est remplacé par `qx`, est le rendu au
 // préfixe `qx`, à l'octet (le manifeste, qui porte les empreintes, est
 // comparé par ses chemins).
-test('valeurs d’exemple : un courriel trop long est tronqué sur sa partie locale, domaine intact', () => {
+test('valeurs d’exemple (V5.3) : FIXES, sans préfixe ; un courriel trop long est tronqué sur sa partie locale, domaine intact', () => {
     const model = (constraints) => ({
         actions: [
             {
@@ -499,26 +500,28 @@ test('valeurs d’exemple : un courriel trop long est tronqué sur sa partie loc
             },
         ],
     });
-    const sample = (prefix, constraints) =>
-        sampleCommandInput(model(constraints), prefix);
-    // Préfixe de 6, `max_length` 16 : exemple valide, sous la borne.
-    const long = sample('abcdef', { max_length: 16 });
-    assert.equal(long.courriel, 'abc@exemple.test');
-    assert.ok(long.courriel.length <= 16);
-    assert.match(long.courriel, /^[a-z0-9]+@exemple\.test$/);
-    assert.equal(long.reference, 'abcdef-contrat');
-    // Préfixe de 3 et `max_length` ≥ 16 : octets inchangés.
-    for (const constraints of [{}, { max_length: 16 }, { max_length: 40 }])
+    const sample = (constraints) => sampleCommandInput(model(constraints));
+    // Le modèle seul : aucun préfixe n'entre dans la valeur d'exemple.
+    assert.equal(sampleCommandInput.length, 1);
+    // Sans borne ou sous une borne large : valeurs fixes, oracle écrit ici.
+    for (const constraints of [{}, { max_length: 24 }, { max_length: 40 }]) {
+        const values = sample(constraints);
         assert.equal(
-            sample('abc', constraints).courriel,
-            'abc@exemple.test',
+            values.courriel,
+            'utilisateur@exemple.test',
             JSON.stringify(constraints)
         );
-    // Au moins un caractère local ; le domaine n'est jamais coupé.
-    assert.equal(sample('abc', { max_length: 15 }).courriel, 'ab@exemple.test');
-    assert.equal(sample('abc', { max_length: 5 }).courriel, 'a@exemple.test');
+        assert.equal(values.reference, 'contrat-exemple');
+    }
+    // Borne courte : exemple valide, sous la borne ; au moins un caractère
+    // local ; le domaine n'est jamais coupé.
+    const short = sample({ max_length: 16 });
+    assert.equal(short.courriel, 'uti@exemple.test');
+    assert.match(short.courriel, /^[a-z0-9]+@exemple\.test$/);
+    assert.equal(short.reference, 'contrat-exemple');
+    assert.equal(sample({ max_length: 15 }).courriel, 'ut@exemple.test');
+    assert.equal(sample({ max_length: 5 }).courriel, 'u@exemple.test');
 });
-
 // Familles de noms que le produit possède : source unique dans
 // product-identity.mjs (aussi lue par la contre-preuve du renommage).
 const FAMILIES = PRODUCT_NAME_FAMILIES;
@@ -556,6 +559,9 @@ test('rendu : un seul préfixe, porté par chaque nom que le produit possède', 
                 '$qz_cache_control',
                 '$qz_relay_guard',
                 'qz_check ',
+                // Lot 2, commit 4 (§ 22) : clé de la session de l'onglet,
+                // rendue par la coque.
+                'qz-session-v1:prefix-flow',
             ],
             SESSION_FAMILIES,
         ],
@@ -594,8 +600,11 @@ test('rendu : un seul préfixe, porté par chaque nom que le produit possède', 
             ).files;
         const qz = await files('qz');
         const qx = await files('qx');
-        const { [SIGNATURE_FILES.appManifest]: manifestQz, ...restQz } = qz;
-        const { [SIGNATURE_FILES.appManifest]: manifestQx, ...restQx } = qx;
+        // Lot 2 : rendu relatif au produit, manifeste de l'appli sous la coque.
+        const manifest = appManifestPath('prefix-flow');
+        const { [manifest]: manifestQz, ...restQz } = qz;
+        const { [manifest]: manifestQx, ...restQx } = qx;
+        assert.equal(typeof manifestQz, 'string', name);
         assert.deepEqual(
             Object.fromEntries(
                 Object.entries(restQz).map(([path, content]) => [

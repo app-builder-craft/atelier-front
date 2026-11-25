@@ -9,6 +9,7 @@ import {
     planExternalApplicationShell,
     publishExternalApplicationShell,
 } from '../core/application-workspace.mjs';
+import { nativeRunLabels } from '../core/application-native-controls.mjs';
 import { SIGNATURE_FILES } from '../core/atelier-signature.mjs';
 import {
     readProductFile,
@@ -18,6 +19,7 @@ import { sha256 } from '../core/generation-manifest.mjs';
 import { serializeCanonicalBackendContract } from '../core/structured-backend-adapter.mjs';
 import { writeApplicationDesignFixture } from './application-design-fixture.mjs';
 import {
+    externalDesign,
     prepareFixture,
     schemas,
     TOOLS_ROOT,
@@ -205,10 +207,6 @@ export async function writeDocumentInputs(root, kind, { shell = false } = {}) {
         ]) {
             reference.snapshot_uri =
                 prefix + reference.snapshot_uri.slice(original.length);
-            const request = backendRequests.find(
-                (item) => item.outputPath === reference.snapshot_uri
-            );
-            if (request) reference.sha256 = request.expectedSha256;
         }
     } else {
         const fixture = await writeApplicationDesignFixture(
@@ -237,6 +235,9 @@ export async function writeDocumentInputs(root, kind, { shell = false } = {}) {
         original_design_sha256: originalDesignSha256,
         changes: [],
     };
+    // Lot 2, commit 3 (V3.3) : forme EXTÉRIEURE de la conception (1.3.0,
+    // aucune empreinte de contrat) ; ce n'est pas une variante de fixture.
+    externalDesign(design);
     if (shell) {
         // Explicit technical fixture variant for the common four-cell shell
         // proof. Original document compilation retains shell-only. React's
@@ -392,6 +393,8 @@ export async function proveNativeDocumentCell(root, cell, prepared = {}) {
         backendContractSchema: fixture.backendContractSchema,
     };
     const plan = await planExternalApplicationShell(options);
+    // CI #48 : la cellule nomme son appel natif en échec dans la liste du plan.
+    prepared.onPlan?.(plan);
     const args = [
         '--target-root',
         root,
@@ -427,7 +430,9 @@ export async function proveNativeDocumentCell(root, cell, prepared = {}) {
         result = JSON.parse(applied.stdout);
         assert.equal(result.status, 'created');
     }
-    await verifyGeneratedTree(plan.outputAbsolute, plan.files);
+    // Lot 2 : les trois racines de l'appli, chacune exacte.
+    for (const { root: tree, files } of plan.roots)
+        await verifyGeneratedTree(join(root, tree), files);
     const manifest = JSON.parse(
         await readFile(
             join(plan.outputAbsolute, SIGNATURE_FILES.appManifest),
@@ -457,5 +462,7 @@ export async function proveNativeDocumentCell(root, cell, prepared = {}) {
             tree_sha256: plan.tree_sha256,
             routes,
         },
+        // C-B2 : appels du runner attendus de cette création.
+        native_labels: nativeRunLabels(plan),
     };
 }

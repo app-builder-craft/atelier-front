@@ -10,6 +10,8 @@ import {
     runConfined,
     selectSandboxBackend,
 } from '../../library-setup/sandbox.mjs';
+import { nativeRunLabels } from '../core/application-native-controls.mjs';
+import { filesUnder } from '../core/application-transaction.mjs';
 import { qualifyFrozenInstallation } from '../core/application-workspace-toolchain.mjs';
 import { escapeRegExp, toolEnv } from '../core/atelier-signature.mjs';
 import {
@@ -18,6 +20,7 @@ import {
     isWithin,
     pathExists,
     readProductFile,
+    verifyGeneratedTree,
 } from '../core/external-application-paths.mjs';
 import {
     hash,
@@ -154,11 +157,13 @@ export function diagnosticLines(output) {
     return lines;
 }
 
+// `detail` : complément de la ligne, en forme FERMÉE construite et vérifiée
+// par l'appelant (CI #48 : l'appel natif en échec d'une cellule).
 export function record(
     session,
     label,
     result,
-    { negative = false, diagnostic } = {}
+    { negative = false, diagnostic, detail = '' } = {}
 ) {
     const output = stripVTControlCharacters(result.stdout + result.stderr);
     const expected = negative
@@ -168,10 +173,9 @@ export function record(
         : result.status === 0 && !result.signal;
     const status =
         result.status === null ? 'interrupted' : String(result.status);
-    session.lines.push(`${expected ? 'PASS' : 'FAIL'} ${label} exit=${status}`);
-    process.stdout.write(
-        `${expected ? 'PASS' : 'FAIL'} ${label} exit=${status}\n`
-    );
+    const line = `${expected ? 'PASS' : 'FAIL'} ${label} exit=${status}${detail ? ` ${detail}` : ''}`;
+    session.lines.push(line);
+    process.stdout.write(`${line}\n`);
     if (!expected) {
         // Inputs are fictitious and the child has a clean environment, but
         // retain only diagnostic hashes in the durable report, never env/JSON.
@@ -248,15 +252,42 @@ function nativeBin(plan, name, command) {
     return resolve(info.packageRoot, info.bin[command].path);
 }
 
-export function targetArguments(plan, target) {
+// `project` : un projet Nx de l'appli (lot 2 : la coque par défaut, ou son
+// socle, ou son interface).
+export function targetArguments(plan, target, project = plan.app_name) {
     return [
         nativeBin(plan, 'nx', 'nx'),
         'run',
-        `${plan.app_name}:${target}`,
+        `${project}:${target}`,
         '--skipNxCache',
         '--outputStyle=stream',
     ];
 }
+
+// Lot 2 (V5.2) : les arbres d'un plan, racine par racine (`plan.roots`,
+// chemins relatifs à chaque racine), chacun exactement égal à son contenu.
+export async function verifyPlanTrees(plan) {
+    assert.ok(plan.roots?.length > 0, 'Plan sans racine');
+    for (const { root, files } of plan.roots)
+        await verifyGeneratedTree(resolve(plan.root, root), files);
+}
+
+// Plan de création suivi après une publication : fichiers possédés de
+// l'appli publiée, amorces de la création, racines recalculées.
+export function withPublished(plan, published) {
+    const written = { ...published.files, ...(plan.seeds ?? {}) };
+    return {
+        ...plan,
+        files: published.files,
+        roots: plan.roots.map((entry) => ({
+            ...entry,
+            files: filesUnder(written, entry.root),
+        })),
+    };
+}
+
+// C-B2 : appels du runner attendus d'un plan, source unique du cœur.
+export const nativeLabels = nativeRunLabels;
 
 export function compilerArguments(plan) {
     return [

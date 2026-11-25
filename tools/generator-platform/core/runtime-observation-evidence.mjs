@@ -4,9 +4,10 @@ import { dirname, isAbsolute, resolve, sep } from 'node:path';
 import { isDeepStrictEqual, TextDecoder } from 'node:util';
 
 import { repositoryRoot, validateJsonSchema } from '../validate-ir.mjs';
-import { SIGNATURE, SIGNATURE_FILES } from './atelier-signature.mjs';
+import { SIGNATURE_FILES } from './atelier-signature.mjs';
 import {
     assertPhysicalPath,
+    assertSourcePath,
     isWithin,
     safeRelativePath,
 } from './external-application-paths.mjs';
@@ -31,17 +32,6 @@ export const OBSERVATION_LIMITS = Object.freeze({
 
 const MARKER = SIGNATURE_FILES.workspaceManifest;
 const SCHEMAS = 'tools/generator-platform/schemas/';
-const RESERVED = new Set([
-    'apps',
-    'node_modules',
-    SIGNATURE.dir,
-    '.git',
-    '.nx',
-    '.angular',
-    'dist',
-    'coverage',
-    'tmp',
-]);
 const UNKNOWN = [
     'network-authenticity',
     'permissions',
@@ -339,12 +329,14 @@ async function context(targetRoot) {
     }
 }
 
-function inputPath(path, marker) {
+// Lot 2 (V3.1, §V4.6 point 1) : contrôle unique `assertSourcePath` (racines
+// réservées du produit, `libs` compris, chemin physique), plus le verrou et
+// les fichiers possédés de l'espace. Tout refus est `OBS_FILE`.
+async function inputPath(root, path, marker) {
     try {
         if (typeof path !== 'string' || path.length > 256) fail('OBS_FILE');
-        safeRelativePath(path);
+        await assertSourcePath(root, path, { missing: true });
         if (
-            RESERVED.has(path.split('/')[0]) ||
             path === 'bun.lock' ||
             marker.files.some((file) => file.path === path)
         )
@@ -495,7 +487,7 @@ export async function inspectRuntimeObservations(options) {
         );
         const selectionBytes = await boundedFile(
             targetRoot,
-            inputPath(selectionPath, marker),
+            await inputPath(targetRoot, selectionPath, marker),
             OBSERVATION_LIMITS.documentBytes
         );
         const selection = parse(selectionBytes);
@@ -509,7 +501,7 @@ export async function inspectRuntimeObservations(options) {
             if (source.path === selectionPath) fail('OBS_FILE');
             const bytes = await boundedFile(
                 targetRoot,
-                inputPath(source.path, marker),
+                await inputPath(targetRoot, source.path, marker),
                 OBSERVATION_LIMITS.documentBytes
             );
             if (sha256(bytes) !== source.sha256) fail('OBS_HASH');
@@ -585,7 +577,7 @@ export async function loadObservationModelInputs(options) {
         );
         const bytes = await boundedFile(
             targetRoot,
-            inputPath(mappingPath, marker),
+            await inputPath(targetRoot, mappingPath, marker),
             OBSERVATION_LIMITS.documentBytes
         );
         const selection = parse(bytes);
@@ -605,7 +597,7 @@ export async function loadObservationModelInputs(options) {
         for (const input of inputs) {
             const content = await boundedFile(
                 targetRoot,
-                inputPath(input.path, marker),
+                await inputPath(targetRoot, input.path, marker),
                 OBSERVATION_LIMITS.documentBytes
             );
             if (sha256(content) !== input.sha256) fail('OBS_HASH');
@@ -620,7 +612,7 @@ export async function loadObservationModelInputs(options) {
             fail('OBS_FILE');
         const sourceBytes = await boundedFile(
             targetRoot,
-            inputPath(fragment.path, marker),
+            await inputPath(targetRoot, fragment.path, marker),
             OBSERVATION_LIMITS.documentBytes
         );
         if (sha256(sourceBytes) !== fragment.sha256) fail('OBS_HASH');

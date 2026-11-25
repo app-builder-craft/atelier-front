@@ -5,30 +5,51 @@ import { lstat, readdir } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 
 import { EXTERNAL_WORKSPACE_SIGNATURE } from '../renderers/application-workspace-renderer.mjs';
-import { verifyApplicationOwnership } from './application-ownership.mjs';
 import {
-    escapeRegExp,
-    SIGNATURE,
-    SIGNATURE_FILES,
-} from './atelier-signature.mjs';
+    applicationRoots,
+    isInterfaceFreePath,
+    verifyApplicationOwnership,
+} from './application-ownership.mjs';
+import {
+    assertNoPendingTransaction,
+    pendingTransactionJournals,
+    RECOVERY_COMMANDS,
+    WORKING_TREE,
+} from './application-transaction.mjs';
+import { escapeRegExp, SIGNATURE_FILES } from './atelier-signature.mjs';
 import {
     assertNoLocalConfiguration,
     assertPhysicalPath,
+    assertSourcePath,
     externalApplicationContext,
     externalFailure,
+    isReservedProductPath,
     pathExists,
     readProductFile,
+    RUNTIME_ROOTS,
     safeRelativePath,
+    treeInventory,
     verifyGeneratedTree,
 } from './external-application-paths.mjs';
+import {
+    applicationSources,
+    assertApplicationSources,
+    commandClass,
+    staleMessage,
+    staleSources,
+} from './application-sources.mjs';
 import { sha256 } from './generation-manifest.mjs';
 import { prefixRefusals } from './product-identity.mjs';
+import {
+    coqueRoot,
+    interfaceLibraryName,
+    interfaceRoot,
+    LIBS_ROOT,
+    socleLibraryName,
+    socleRoot,
+} from './socle-names.mjs';
 
 const MANIFEST = EXTERNAL_WORKSPACE_SIGNATURE.manifest;
-// Espaces de noms réservés à la racine du produit.
-const RESERVED_NAMESPACE = new RegExp(
-    `^(?:apps|node_modules|${escapeRegExp(SIGNATURE.dir)}|\\.git|\\.nx|\\.angular|dist|coverage|tmp)/`
-);
 
 // Renommage du préfixe (lot MARQUE, commit 3) : son journal vit à côté du
 // produit, comme son verrou ; ses arbres de travail dans apps/.
@@ -64,8 +85,22 @@ export async function ownedProductContext(options, internal = {}) {
     if (!(await pathExists(resolve(context.productRoot, MANIFEST))))
         externalFailure('workspace ownership marker missing');
     await assertNoPendingRename(context.productRoot, internal.renaming);
+    // Lot 2 (V5.2) : tout journal de transaction d'appli bloque toute autre
+    // commande ; seule la transaction elle-même le tolère.
+    await assertNoPendingTransaction(context.productRoot, internal.transaction);
     await assertNoLocalConfiguration(context.productRoot);
     return context;
+}
+
+// Applis du produit, par nom (entrées de `apps/` hors arbres de travail et
+// verrous) : la liste que le renommage et la mise à jour parcourent.
+export async function ownedAppNames(productRoot) {
+    return (
+        await readdir(resolve(productRoot, 'apps'), { withFileTypes: true })
+    )
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name)
+        .sort();
 }
 
 // Manifeste d'une appli du produit, sous le dossier de signature courant : le
@@ -91,11 +126,55 @@ export async function sealedProductPrefix(productRoot) {
     return prefix;
 }
 
-export async function verifyWorkspaceRoot(plan, documentSources = false) {
+// Empreinte d'une source liée, lue par le contrôle de chemin unique ;
+// absente : null (la fraîcheur la rapporte `missing`).
+async function sourceDigest(productRoot, path) {
+    await assertSourcePath(productRoot, path, {
+        missing: true,
+        label: 'source',
+    });
+    if (!(await pathExists(resolve(productRoot, path)))) return null;
+    const content = await readProductFile(productRoot, path);
+    return { sha256: sha256(content), bytes: content.length };
+}
+
+// Lot 2, commit 3 (v2 R2.2, v3 V3.2 et V3.5 b) : deux contrôles distincts.
+// INTÉGRITÉ, toujours et d'abord : sceau, inventaire, arbres, fichiers
+// d'espace et non possédés, interruptions. FRAÎCHEUR : la liaison `sources`
+// de chaque appli comparée aux fichiers présents ; son effet dépend de la
+// classe de la commande (`command`, défaut fermé : consommateur). Une
+// transaction relue par elle-même (`plan.transaction`, `plan.renaming`) ne
+// refuse pas : ses empreintes courantes entrent dans `sources_binding`, et
+// son `plan_id` change (« … inputs changed »). Rend la liaison courante.
+export async function verifyWorkspaceRoot(
+    plan,
+    { documentSources = false, command } = {}
+) {
     const { productRoot } = plan;
     if (!(await pathExists(resolve(productRoot, MANIFEST))))
         externalFailure('workspace ownership marker missing');
     await assertNoPendingRename(productRoot, plan.renaming);
+    await assertNoPendingTransaction(productRoot, plan.transaction);
+    const journals = new Set(
+        (await pendingTransactionJournals(productRoot)).map(
+            ({ genre, planId }) => `${genre}-${planId}`
+        )
+    );
+    // Arbre de travail d'une transaction d'appli : toléré seulement pour la
+    // transaction en cours, dont le journal existe (V5.2, garde).
+    const transactionTree = (name) => {
+        const match = WORKING_TREE.exec(name);
+        if (!match) return false;
+        if (!journals.has(`${match[2]}-${match[4]}`))
+            externalFailure(
+                `application ${match[2]} working tree without a journal: ${name}; inspect the product`
+            );
+        if (match[4] !== plan.transaction)
+            externalFailure(
+                `interrupted application ${match[2]} pending; recover it first (${RECOVERY_COMMANDS[match[2]]})`
+            );
+        return true;
+    };
     if (
         sha256(await readProductFile(productRoot, MANIFEST)) !==
         sha256(plan.files[MANIFEST])
@@ -115,30 +194,25 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
     const expected = new Set(Object.keys(plan.files));
     const inputs = new Set(plan.inputPaths ?? []);
     const ownedRoots = new Set([...expected].map((path) => path.split('/')[0]));
+    const appNames = new Set();
+    const apps = [];
     for (const entry of await readdir(resolve(productRoot, 'apps'), {
         withFileTypes: true,
     })) {
         const working =
-            /^\.([a-z][a-z0-9-]*)\.(?:(external|publication|previous)-candidate-[a-f0-9]{64}|rename-(?:candidate|previous)-([a-f0-9]{64})|generation-lock(?:\..*)?)$/.exec(
+            /^\.([a-z][a-z0-9-]*)\.(?:rename-(?:candidate|previous)-([a-f0-9]{64})|generation-lock(?:\..*)?)$/.exec(
                 entry.name
             );
-        if (working) {
+        if (working || WORKING_TREE.test(entry.name)) {
             if (!entry.isDirectory() || entry.isSymbolicLink())
                 externalFailure('invalid working directory');
             // Arbre d'un renommage du préfixe : seul ce renommage le tolère.
-            if (working[3] !== undefined && working[3] !== plan.renaming)
+            if (working?.[2] !== undefined && working[2] !== plan.renaming)
                 externalFailure(RENAME_PENDING);
-            // ADR-0103 : une publication interrompue bloque toute autre
-            // commande ; seule la reprise de cette application passe.
-            if (
-                ['publication', 'previous'].includes(working[2]) &&
-                working[1] !== plan.recoveringApp
-            )
-                externalFailure(
-                    `interrupted publication pending for app ${working[1]}; recover it first`
-                );
+            if (!working) transactionTree(entry.name);
             continue;
         }
+        if (entry.name.startsWith('.')) externalFailure('unowned app entry');
         if (!entry.isDirectory() || entry.isSymbolicLink())
             externalFailure('unowned app entry');
         const appRoot = resolve(productRoot, 'apps', entry.name);
@@ -147,37 +221,70 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         );
         if (app.app_name !== entry.name || !plan.profiles.includes(app.profile))
             externalFailure('unowned app manifest');
+        appNames.add(entry.name);
         // ADR-0103 : inventaire scellé, expliqué par ses publications.
         verifyApplicationOwnership(app, plan.manifest.workspace_id);
-        const designBytes = await readProductFile(
-            productRoot,
-            app.design_ref.path
-        );
-        if (sha256(designBytes) !== app.design_ref.sha256)
-            externalFailure('workspace app input drift');
-        const design = JSON.parse(designBytes.toString('utf8'));
-        for (const input of await productInputClosure(
-            productRoot,
-            app.design_ref.path,
-            design
-        ))
-            inputs.add(input.path);
-        const files = await ownedFiles(appRoot, app.generated_files);
-        files[SIGNATURE_FILES.appManifest] = await readProductFile(
-            appRoot,
-            SIGNATURE_FILES.appManifest
-        );
-        await verifyGeneratedTree(appRoot, files);
+        for (const source of assertApplicationSources(app))
+            inputs.add(source.path);
+        await verifyApplicationTrees(productRoot, app);
+        apps.push(app);
     }
-    const runtimeRoots = new Set([
-        'node_modules',
-        '.git',
-        '.nx',
-        '.angular',
-        'dist',
-        'coverage',
-        'tmp',
-    ]);
+    // Lot 2 (V3.1 point 3) : `libs` est un espace de produit comme `apps`,
+    // pour TOUTES les classes de commande : jamais une source de document ;
+    // chaque entrée est le socle ou l'interface d'une appli présente.
+    const libraries = resolve(productRoot, LIBS_ROOT);
+    if (await pathExists(libraries)) {
+        const allowed = new Set(
+            [...appNames].flatMap((name) => [
+                socleLibraryName(name),
+                interfaceLibraryName(name),
+            ])
+        );
+        for (const entry of await readdir(libraries, { withFileTypes: true })) {
+            if (!entry.isDirectory() || entry.isSymbolicLink())
+                externalFailure('unowned library entry');
+            if (
+                /^\.[a-z][a-z0-9-]*\.generation-lock(?:\..*)?$/.test(entry.name)
+            )
+                continue;
+            if (WORKING_TREE.test(entry.name)) {
+                transactionTree(entry.name);
+                continue;
+            }
+            if (!allowed.has(entry.name))
+                externalFailure('unowned library entry');
+        }
+    }
+    // Fraîcheur, après l'intégrité de toutes les applis (N3).
+    const binding = [];
+    const stale = [];
+    for (const app of apps) {
+        const read = (path) => sourceDigest(productRoot, path);
+        for (const source of app.sources) {
+            const found = await read(source.path);
+            binding.push({
+                app: app.app_name,
+                genre: source.genre,
+                path: source.path,
+                sha256: found?.sha256 ?? null,
+                bytes: found?.bytes ?? null,
+            });
+        }
+        for (const drift of await staleSources(app.sources, read))
+            stale.push({ app: app.app_name, ...drift });
+    }
+    const order = (left, right) =>
+        left.app < right.app ||
+        (left.app === right.app && left.path < right.path)
+            ? -1
+            : 1;
+    binding.sort(order);
+    stale.sort(order);
+    const ownTransaction =
+        plan.transaction !== undefined || plan.renaming !== undefined;
+    if (stale.length && commandClass(command) === 'consumer' && !ownTransaction)
+        externalFailure(stale.map(staleMessage).join('\n'));
+    const runtimeRoots = new Set(RUNTIME_ROOTS);
     async function reserved(directory, prefix = '') {
         for (const entry of await readdir(directory, { withFileTypes: true })) {
             const path = prefix + entry.name;
@@ -186,10 +293,14 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
                     externalFailure('symbolic runtime root');
                 continue;
             }
-            if (path === 'descriptions' || path === 'apps') {
+            if (
+                path === 'descriptions' ||
+                path === 'apps' ||
+                path === LIBS_ROOT
+            ) {
                 if (!entry.isDirectory() || entry.isSymbolicLink())
                     externalFailure('invalid product namespace');
-                if (path === 'apps' || !documentSources) continue;
+                if (path !== 'descriptions' || !documentSources) continue;
             }
             if (entry.isSymbolicLink())
                 externalFailure('symbolic workspace entry');
@@ -217,6 +328,54 @@ export async function verifyWorkspaceRoot(plan, documentSources = false) {
         }
     }
     await reserved(productRoot);
+    return { sourcesBinding: binding, stale };
+}
+
+// Lot 2 (V3.1 point 4, L-1) : l'inventaire d'une appli, relatif au produit,
+// porte sur ses trois racines. Coque et socle : arbres EXACTS (rien d'ajouté) ;
+// interface : fichiers possédés exacts, fichiers non possédés admis SEULEMENT
+// dans sa zone libre.
+export async function verifyApplicationTrees(productRoot, app) {
+    const roots = applicationRoots(app.app_name);
+    const owned = await ownedFiles(productRoot, app.generated_files);
+    const byRoot = new Map(roots.map((root) => [root, {}]));
+    for (const [path, content] of Object.entries(owned)) {
+        const root = roots.find((candidate) =>
+            path.startsWith(`${candidate}/`)
+        );
+        if (!root) externalFailure('app inventory outside its roots');
+        byRoot.get(root)[path.slice(root.length + 1)] = content;
+    }
+    const coque = coqueRoot(app.app_name);
+    byRoot.get(coque)[SIGNATURE_FILES.appManifest] = await readProductFile(
+        resolve(productRoot, coque),
+        SIGNATURE_FILES.appManifest
+    );
+    await verifyGeneratedTree(resolve(productRoot, coque), byRoot.get(coque));
+    const socle = socleRoot(app.app_name);
+    await verifyGeneratedTree(resolve(productRoot, socle), byRoot.get(socle));
+    const ui = interfaceRoot(app.app_name);
+    const uiOwned = byRoot.get(ui);
+    const uiRoot = resolve(productRoot, ui);
+    for (const entry of await treeInventory(uiRoot)) {
+        if (Object.hasOwn(uiOwned, entry.path)) continue;
+        if (!isInterfaceFreePath(app.app_name, `${ui}/${entry.path}`))
+            externalFailure('unowned interface file');
+    }
+    // Un dossier vide hors de la zone libre n'acquiert pas de propriété.
+    const visit = async (directory, prefix) => {
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const path = `${prefix}${entry.name}/`;
+            if (
+                !isInterfaceFreePath(app.app_name, `${ui}/${path}`) &&
+                !Object.keys(uiOwned).some((owned) => owned.startsWith(path))
+            )
+                externalFailure('unowned interface directory');
+            await visit(resolve(directory, entry.name), path);
+        }
+    };
+    await visit(uiRoot, '');
 }
 
 export async function ownedFiles(root, artifacts) {
@@ -249,51 +408,44 @@ export function inputFilePath(path) {
         'README.md',
         'AGENTS.md',
     ]);
-    if (reserved.has(path) || RESERVED_NAMESPACE.test(path))
+    if (reserved.has(path) || isReservedProductPath(path))
         externalFailure('input collides with reserved workspace namespace');
     return path;
 }
 
+// Fermeture des entrées d'une conception (lot 2, commit 3 : par GENRE, table
+// de `application-sources.mjs`, v4 V4.5). Chaque chemin passe le contrôle
+// unique des sources ; une empreinte DÉCLARÉE (preuves de la conception,
+// contrat résolu, sources relues dans le contrat) doit égaler les octets.
+// Rend [{genre, path, sha256, bytes}], trié par chemin.
 export async function productInputClosure(root, designPath, design) {
-    const paths = new Set([inputFilePath(designPath)]);
-    const expectedHashes = new Map();
+    inputFilePath(designPath);
+    const declared = new Map();
+    const declare = (source) => {
+        if (source?.snapshot_uri && source.sha256 !== undefined)
+            declared.set(source.snapshot_uri, source.sha256);
+    };
     for (const source of [
         ...(design.sources ?? []),
         ...(design.backend_contracts ?? []),
-    ]) {
-        paths.add(inputFilePath(source.snapshot_uri));
-        expectedHashes.set(source.snapshot_uri, source.sha256);
-    }
-    for (const reference of design.backend_contracts ?? []) {
-        const contract = JSON.parse(
-            (await readProductFile(root, reference.snapshot_uri)).toString(
-                'utf8'
-            )
-        );
-        for (const source of contract.sources ?? []) {
-            if (source.snapshot_uri) {
-                paths.add(inputFilePath(source.snapshot_uri));
-                expectedHashes.set(source.snapshot_uri, source.sha256);
-            }
-        }
-    }
-    const artifacts = [];
-    for (const path of [...paths].sort()) {
-        // Inputs stay at their declared relative paths; descriptions/ is a
-        // convention, not a fallback or an additional business schema.
+    ])
+        declare(source);
+    // Inputs stay at their declared relative paths; descriptions/ is a
+    // convention, not a fallback or an additional business schema.
+    const read = async (path) => {
+        inputFilePath(path);
+        await assertSourcePath(root, path, { label: 'input' });
         const content = await readProductFile(root, path);
-        if (
-            expectedHashes.has(path) &&
-            sha256(content) !== expectedHashes.get(path)
-        )
+        if (declared.has(path) && sha256(content) !== declared.get(path))
             externalFailure(
                 'product application-design rejected: workspace app input drift'
             );
-        artifacts.push({
-            path,
-            sha256: sha256(content),
-            bytes: content.length,
-        });
-    }
-    return artifacts;
+        return content;
+    };
+    for (const reference of design.backend_contracts ?? [])
+        for (const source of JSON.parse(
+            (await read(reference.snapshot_uri)).toString('utf8')
+        ).sources ?? [])
+            declare(source);
+    return applicationSources(design, designPath, read);
 }
