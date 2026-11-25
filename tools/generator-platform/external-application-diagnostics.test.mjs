@@ -126,3 +126,41 @@ test('http et route : ligne en forme de jeton abandonnée, routes légitimes pub
     ];
     assert.deepEqual(diagnosticLines([...legit, ...secret].join('\n')), legit);
 });
+
+// Réserve R2 de la validation de l'étape A (CI #48 `missing/…/red exit=0`) :
+// un REFUS attendu exige un code de sortie entier NON NUL ; une sortie 0, même
+// avec le diagnostic attendu, est un FAIL, comme une interruption.
+test('record négatif : un refus exige un code de sortie non nul', () => {
+    const run = (status, { signal = null, diagnostic } = {}) => {
+        const session = { lines: [] };
+        let error;
+        try {
+            record(
+                session,
+                'R2/fictif/red',
+                { status, signal, stdout: 'refus attendu\n', stderr: '' },
+                { negative: true, diagnostic }
+            );
+        } catch (caught) {
+            error = caught;
+        }
+        return { line: session.lines[0], error };
+    };
+    for (const [status, options, expected] of [
+        [1, {}, 'PASS R2/fictif/red exit=1'],
+        [2, { diagnostic: /refus attendu/ }, 'PASS R2/fictif/red exit=2'],
+        [0, {}, 'FAIL R2/fictif/red exit=0'],
+        [0, { diagnostic: /refus attendu/ }, 'FAIL R2/fictif/red exit=0'],
+        [null, { signal: 'SIGKILL' }, 'FAIL R2/fictif/red exit=interrupted'],
+        [1, { diagnostic: /autre refus/ }, 'FAIL R2/fictif/red exit=1'],
+    ]) {
+        const { line, error } = run(status, options);
+        assert.equal(line, expected, `${status} ${String(options.diagnostic)}`);
+        assert.equal(Boolean(error), expected.startsWith('FAIL'), expected);
+        if (error)
+            assert.match(
+                error.message,
+                /^Échec de la preuve R2\/fictif\/red\./
+            );
+    }
+});
