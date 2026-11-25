@@ -6,7 +6,12 @@
 //   après le plan, ou étrangère, elle est refusée et laissée telle quelle ;
 // - reprise après une coupure (candidat écrit, ou sortie liée) ;
 // - gardes de course de `publishCompilationWithContext`.
+// - T-B4 (décision du pilote : (a)) : l'idempotence vaut au niveau du cycle
+//   `--dry-run` puis `--apply` ; après une coupure réelle juste après le
+//   renommage, le rejeu de l'identifiant appliqué est refusé, et le plan à
+//   vide suivant voit l'après et n'écrit rien.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -22,7 +27,10 @@ import {
     planStructuredBackendPublication,
     publishStructuredBackendContract,
 } from './core/structured-backend-publication.mjs';
-import { TOOLS_ROOT } from './test-support/external-application-fixture.mjs';
+import {
+    snapshotTree,
+    TOOLS_ROOT,
+} from './test-support/external-application-fixture.mjs';
 import {
     compileDocumentFixture,
     documentFixture,
@@ -252,4 +260,78 @@ test('L-21 : sous verrou, plan relu retrouvé sur l’état observé ; après, s
         /external compilation: context changed during publication; inspect the preserved output$/
     );
     assert.deepEqual(changed.calls, [base.plan_id]);
+});
+
+// Publication lancée dans un processus enfant, tué par SIGKILL juste après le
+// renommage atomique du candidat sur la sortie (coupure réelle, `rename` de
+// `node:fs/promises` intercepté avant le chargement du module).
+const PUBLICATION = new URL(
+    './core/structured-backend-publication.mjs',
+    import.meta.url
+).href;
+const CUT_AFTER_RENAME = `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const options = JSON.parse(process.argv[1]);
+const target = process.argv[2];
+const original = fs.promises.rename;
+fs.promises.rename = async (from, to) => { await original(from, to); if (to === target) process.kill(process.pid, 'SIGKILL'); };
+syncBuiltinESMExports();
+const { publishStructuredBackendContract } = await import(${JSON.stringify(PUBLICATION)});
+await publishStructuredBackendContract(options);`;
+
+test('T-B4 : coupure juste après le renommage ; rejeu de l’identifiant refusé ; plan à vide suivant sans écriture', async (t) => {
+    const fixture = await documentFixture(t, 'B');
+    await compileDocumentFixture(fixture);
+    const request = fixture.backendRequests.at(-1);
+    const options = backendOptions(fixture, request);
+    const output = join(fixture.root, request.outputPath);
+    const definition = join(fixture.root, request.definitionPath);
+    await writeFile(
+        definition,
+        Buffer.concat([await readFile(definition), Buffer.from('\n')])
+    );
+    const plan = await planStructuredBackendPublication(options);
+    assert.notEqual(plan.output_before_sha256, plan.output_sha256);
+    const cut = spawnSync(
+        process.execPath,
+        [
+            '--input-type=module',
+            '-e',
+            CUT_AFTER_RENAME,
+            JSON.stringify({ ...options, planId: plan.plan_id }),
+            plan.outputAbsolute,
+        ],
+        { encoding: 'utf8', timeout: 60_000 }
+    );
+    assert.equal(cut.signal, 'SIGKILL', cut.stderr);
+    assert.equal(sha256(await readFile(output)), plan.output_sha256);
+    await assert.rejects(readFile(plan.candidate), /ENOENT/);
+    // Rejeu de l'identifiant appliqué : périmé, la sortie ne bouge pas.
+    await assert.rejects(
+        publishStructuredBackendContract({
+            ...options,
+            planId: plan.plan_id,
+        }),
+        /reviewed plan id is stale or invalid/
+    );
+    assert.equal(sha256(await readFile(output)), plan.output_sha256);
+    // Plan à vide suivant : il voit l'après ; son application n'écrit rien
+    // (elle reprend seulement le verrou du processus tué).
+    const locks = (tree) =>
+        tree.filter(([path]) => path.includes('.generation-lock'));
+    const unlocked = (tree) =>
+        tree.filter(([path]) => !path.includes('.generation-lock'));
+    const seen = await snapshotTree(fixture.root);
+    assert.notDeepEqual(locks(seen), []);
+    const next = await planStructuredBackendPublication(options);
+    assert.equal(next.output_before_sha256, plan.output_sha256);
+    assert.equal(next.output_sha256, plan.output_sha256);
+    const done = await publishStructuredBackendContract({
+        ...options,
+        planId: next.plan_id,
+    });
+    assert.equal(done.already_published, true);
+    const after = await snapshotTree(fixture.root);
+    assert.deepEqual(unlocked(after), unlocked(seen));
+    assert.deepEqual(locks(after), []);
 });

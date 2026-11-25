@@ -260,11 +260,13 @@ migration.
   (`documentPlan`). L'application ne remplace que cette sortie, par le renommage
   atomique d'un candidat nommé par le plan relu ; une sortie étrangère, ou
   changée depuis le plan, est refusée et laissée telle quelle ; l'après déjà en
-  place est un rejeu sans effet. Limite : le rejeu d'un remplacement FAIT est
-  refusé comme périmé, puisque son « avant » n'existe plus ; un plan neuf voit
-  l'après, et son application ne change rien. La seconde compilation d'un
-  contrat à la même sortie est prouvée ; la preuve P8 est complète au commit 6c,
-  avec `update-app`.
+  place est un rejeu sans effet. L'idempotence vaut au niveau du cycle
+  `--dry-run` puis `--apply` : le rejeu d'un identifiant déjà appliqué est
+  refusé, et le plan à vide suivant voit l'après et n'écrit rien (décision du
+  pilote, T-B4 : l'application ne reçoit que l'identifiant, et l'avant n'existe
+  plus après le remplacement) ; prouvé après une coupure réelle juste après le
+  renommage. La seconde compilation d'un contrat à la même sortie est prouvée ;
+  la preuve P8 est complète au commit 6c, avec `update-app`.
 - Un dossier de sortie absent, ou une source absente, est un refus nommé par son
   chemin relatif au produit (`output parent directory missing: <chemin>`), sans
   `ENOENT` brut ni chemin local (commit 6a).
