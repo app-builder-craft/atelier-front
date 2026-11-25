@@ -1107,7 +1107,7 @@
       ],
       "properties": {
         "storage": {
-          "const": "memory"
+          "const": "tab"
         },
         "producer": {
           "$ref": "#/$defs/sessionProducer"

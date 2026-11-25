@@ -133,6 +133,9 @@ const FAMILY_PREFIX = '([a-z][a-z0-9]{1,5})';
 export const PRODUCT_NAME_FAMILIES = Object.freeze({
     'politique du service worker': `\\b${FAMILY_PREFIX}-sw\\b`,
     'caches du service worker': `\\b${FAMILY_PREFIX}-(?:shell|session-static)-v1\\b`,
+    // Lot 2, cadrage § 22 : clé de la session gardée dans l'onglet,
+    // `<p>-session-v1:<app>`, rendue par la coque seule (V3.7.2).
+    'clé de session de l’onglet': `\\b${FAMILY_PREFIX}-session-v1:`,
     'contexte d’accès du navigateur': `\\b__${FAMILY_PREFIX}AppAccessContext\\b`,
     "variables de l'opérateur":
         '\\b([A-Z][A-Z0-9]{1,5})_(?:UPSTREAMS?_|ENVSUBST_FILTER_INVALID|DEV_PROXY)',

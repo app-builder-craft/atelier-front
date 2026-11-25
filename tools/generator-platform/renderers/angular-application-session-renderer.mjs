@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { sessionRenderConfiguration } from '../core/application-design-session.mjs';
+import { sha256, stableStringify } from '../core/generation-manifest.mjs';
 import { productForms } from '../core/product-identity.mjs';
+import { renderTabSessionProjection } from './angular-session-tab-renderer.mjs';
 
 export const SESSION_NATIVE_SOURCES = Object.freeze({
     'auth-context.token.ts':
@@ -44,7 +46,7 @@ export interface SessionRoute {
     readonly access: { readonly mode: 'public' | 'authenticated' | 'authorized'; readonly permissions: readonly string[] };
 }
 export interface SessionConfiguration {
-    readonly storage: 'memory';
+    readonly storage: 'tab';
     readonly producer: SessionProducer;
     readonly projection: {
         readonly token_pointer: string; readonly subject_pointer: string;
@@ -81,11 +83,15 @@ export interface ApplicationSessionPort {
 }
 export const APPLICATION_SESSION = new InjectionToken<ApplicationSessionPort>('Application session');
 export const SESSION_ENDPOINTS = new InjectionToken<readonly SessionEndpoint[]>('Session endpoint bindings', { factory: () => Object.freeze([]) });
+// Clé de la session gardée dans l'onglet (cadrage § 22) : fournie par la COQUE,
+// seule à porter le préfixe du produit. Sans fournisseur, la session vit en
+// mémoire pour ce document.
+export const SESSION_STORAGE_KEY = new InjectionToken<string | null>('Session tab storage key', { factory: () => null });
 `;
 }
 
 export function renderSessionProjection() {
-    return `import type { SessionConfiguration, SessionMenuItem, SessionRoute } from './session.types';
+    return `import type { SessionConfiguration, SessionMenuItem, SessionRoute, SessionStage } from './session.types';
 
 export class SessionFailure extends Error {
     constructor(readonly code: 'SESSION_REQUIRED' | 'SESSION_CHANGED' | 'SESSION_RESULT' | 'SESSION_ENDPOINT') {
@@ -183,45 +189,97 @@ export function sessionMenu(value: unknown, paths: readonly string[], permission
     }
     return visit(value, 0, 'item');
 }
-`;
+${renderTabSessionProjection()}`;
 }
 
-function sessionStore(config) {
-    return `import { computed, inject, Service, signal } from '@angular/core';
+function sessionStore(config, appName) {
+    return `import { DOCUMENT } from '@angular/common';
+import { computed, inject, Service, signal } from '@angular/core';
 import type { HttpRequest } from '@angular/common/http';
-import { SESSION_ENDPOINTS, type ApplicationSessionPort, type SessionConfiguration, type SessionProducer, type SessionMenuItem } from './session.types';
-import { pointer, snapshot, stringList, sessionMenu, routePermitted, SessionFailure } from './session.projection';
+import { SESSION_ENDPOINTS, SESSION_STORAGE_KEY, type ApplicationSessionPort, type SessionConfiguration, type SessionProducer, type SessionMenuItem } from './session.types';
+import { pendingStage, pointer, projectSession, snapshot, sessionMenu, routePermitted, restoreTabSession, serializeTabSession, staleTabSessionKeys,
+    SessionFailure, TAB_SESSION_MAX_CHARS, type TabSession } from './session.projection';
 
 export const SESSION_CONFIGURATION: SessionConfiguration = ${JSON.stringify(config)};
-interface MemorySession {
-    readonly token: string;
-    readonly result: unknown;
-    readonly paths: readonly string[];
-    readonly permissions: readonly string[];
-    readonly acknowledged: ReadonlySet<string>;
-}
+// Empreinte de la configuration rendue (V3.7.10) : une session gardée sous
+// une autre configuration (étapes, pointeurs, protocole) est effacée.
+export const SESSION_CONFIGURATION_SHA256 = ${JSON.stringify(sha256(stableStringify(config)))};
+const SESSION_APP = ${JSON.stringify(appName)};
 function sameProducer(left: SessionProducer, right: SessionProducer): boolean {
     return left.page_id === right.page_id && left.action_id === right.action_id &&
         left.response_status === right.response_status && left.result_model_id === right.result_model_id;
 }
+// Stockage de session de l'onglet, ou rien : indisponible (SecurityError quand
+// la persistance est bloquée), la session vit en mémoire pour ce document.
+function tabStorage(view: (Window & typeof globalThis) | null): Storage | null {
+    try { return view?.sessionStorage ?? null; } catch { return null; }
+}
 @Service({ autoProvided: true })
 export class ApplicationSession implements ApplicationSessionPort {
     private readonly endpoints = inject(SESSION_ENDPOINTS);
-    private readonly state = signal<MemorySession | null>(null);
+    private readonly key = inject(SESSION_STORAGE_KEY);
+    private readonly view = inject(DOCUMENT).defaultView;
+    private readonly storage = this.key === null ? null : tabStorage(this.view);
+    private readonly state = signal<TabSession | null>(null);
     private readonly generation = signal(0);
     readonly epoch = this.generation.asReadonly();
     readonly connected = computed(() => this.state() !== null);
     readonly stage = computed(() => {
         const session = this.state();
-        if (!session) return null;
-        return SESSION_CONFIGURATION.stages.find((stage) => !session.acknowledged.has(stage.id) &&
-            (stage.predicate.operator === 'is-null' ? pointer(session.result, stage.predicate.pointer) === null :
-                pointer(session.result, stage.predicate.pointer) === true)) ?? null;
+        return session ? pendingStage(session, SESSION_CONFIGURATION) : null;
     });
     readonly menu = computed<readonly SessionMenuItem[]>(() => {
         const state = this.state();
-        return !state || this.stage() ? Object.freeze([]) : sessionMenu(pointer(state.result, SESSION_CONFIGURATION.projection.menu_pointer), state.paths, state.permissions, SESSION_CONFIGURATION);
+        return !state || this.stage() ? Object.freeze([]) : sessionMenu(state.menu, state.paths, state.permissions, SESSION_CONFIGURATION);
     });
+    // Reprise SYNCHRONE, avant la première décision de route : le service naît
+    // à sa première injection, par la garde de la navigation initiale.
+    constructor() {
+        const restored = this.restore();
+        if (restored) this.state.set(restored);
+    }
+    private restore(): TabSession | null {
+        const storage = this.storage;
+        const key = this.key;
+        if (!storage || key === null) return null;
+        try {
+            for (const stale of staleTabSessionKeys(Array.from({ length: storage.length }, (_, index) => storage.key(index)), key, SESSION_APP))
+                storage.removeItem(stale);
+            // Copie de l'onglet ouvreur (norme HTML) : effacée, jamais reprise.
+            if (this.view?.opener !== null) {
+                storage.removeItem(key);
+                return null;
+            }
+            const raw = storage.getItem(key);
+            if (raw === null) return null;
+            try {
+                return restoreTabSession(raw, SESSION_APP, SESSION_CONFIGURATION_SHA256, SESSION_CONFIGURATION);
+            } catch {
+                storage.removeItem(key);
+                return null;
+            }
+        } catch {
+            return null;
+        }
+    }
+    private persist(session: TabSession): void {
+        const storage = this.storage;
+        if (!storage || this.key === null) return;
+        try {
+            const value = serializeTabSession(session, SESSION_APP, SESSION_CONFIGURATION_SHA256);
+            if (value.length > TAB_SESSION_MAX_CHARS) storage.removeItem(this.key);
+            else storage.setItem(this.key, value);
+        } catch {
+            this.forget();
+        }
+    }
+    private forget(): void {
+        try {
+            if (this.storage && this.key !== null) this.storage.removeItem(this.key);
+        } catch {
+            // Stockage indisponible : rien n'est gardé.
+        }
+    }
     path(pageId: string): string {
         const route = SESSION_CONFIGURATION.routes.find((entry) => entry.page_id === pageId);
         if (!route) throw new SessionFailure('SESSION_RESULT');
@@ -231,21 +289,10 @@ export class ApplicationSession implements ApplicationSessionPort {
     establish(producer: SessionProducer, result: unknown, epoch: number): string {
         if (epoch !== this.epoch()) throw new SessionFailure('SESSION_CHANGED');
         if (!sameProducer(producer, SESSION_CONFIGURATION.producer)) throw new SessionFailure('SESSION_RESULT');
-        const candidate = snapshot(result);
-        const projection = SESSION_CONFIGURATION.projection;
-        const token = pointer(candidate, projection.token_pointer);
-        const subject = pointer(candidate, projection.subject_pointer);
-        if (typeof token !== 'string' || !token || token.length > 8192 || /\\s|[\\u0000-\\u001f\\u007f]/.test(token) ||
-            !subject || typeof subject !== 'object' || Array.isArray(subject)) throw new SessionFailure('SESSION_RESULT');
-        const paths = stringList(pointer(candidate, projection.allowed_paths_pointer));
-        const permissions: readonly string[] = projection.permissions_pointer === undefined ? Object.freeze([]) : stringList(pointer(candidate, projection.permissions_pointer));
-        for (const stage of SESSION_CONFIGURATION.stages) {
-            const value = pointer(candidate, stage.predicate.pointer);
-            if (value === undefined || (stage.predicate.operator === 'is-true' && typeof value !== 'boolean')) throw new SessionFailure('SESSION_RESULT');
-        }
-        sessionMenu(pointer(candidate, projection.menu_pointer), paths, permissions, SESSION_CONFIGURATION);
+        const session = projectSession(snapshot(result), SESSION_CONFIGURATION);
         this.generation.update((value) => value + 1);
-        this.state.set(Object.freeze({ token, result: candidate, paths, permissions, acknowledged: new Set<string>() }));
+        this.state.set(session);
+        this.persist(session);
         return this.nextPath();
     }
     complete(stageId: string, producer: SessionProducer, result: unknown, epoch: number): string {
@@ -257,14 +304,19 @@ export class ApplicationSession implements ApplicationSessionPort {
         if (condition && pointer(snapshot(result), condition.pointer) !== condition.equals) throw new SessionFailure('SESSION_RESULT');
         if (stage.completion.effect === 'clear-and-reconnect') this.clear(epoch);
         else {
+            const next: TabSession = Object.freeze({ ...state, acknowledged: new Set<string>([...state.acknowledged, stageId]) });
             this.generation.update((value) => value + 1);
-            this.state.set(Object.freeze({ ...state, acknowledged: new Set<string>([...state.acknowledged, stageId]) }));
+            this.state.set(next);
+            this.persist(next);
         }
         return this.nextPath();
     }
+    // Déconnexion, 401, effet clear-and-reconnect : la clé de l'onglet est
+    // effacée, PUIS l'état.
     clear(epoch = this.epoch()): boolean {
         if (epoch !== this.epoch()) return false;
         const wasConnected = this.connected();
+        this.forget();
         this.generation.update((value) => value + 1);
         this.state.set(null);
         return wasConnected;
@@ -623,13 +675,22 @@ describe('applicationSessionGuard sans session', () => {
 // `layout` (lot 2, mode extérieur seulement) : spécifieurs du socle, de
 // l'entrée de la coque et de la carte des pages ; absent, le mode interne
 // garde sa disposition à une racine.
+// Clé de la session de l'onglet (V3.7.2) : une forme du préfixe, rendue par la
+// COQUE seule (famille « clé de session de l'onglet » de MARQUE).
+export const tabSessionKey = (prefix, appName) =>
+    `${productForms(prefix).kebab}session-v1:${appName}`;
+
 export async function renderAngularApplicationSession({
     design,
     experience,
     prefix,
+    appName,
     layout,
 }) {
+    if (typeof appName !== 'string' || !appName)
+        throw new Error('APP_SESSION_APP_NAME');
     const config = sessionRenderConfiguration(design, experience);
+    const key = JSON.stringify(tabSessionKey(prefix, appName));
     const support = await renderSessionHostSupport();
     return {
         ...Object.fromEntries(
@@ -640,7 +701,7 @@ export async function renderAngularApplicationSession({
         ),
         'src/app/session/session.types.ts': sessionTypes(),
         'src/app/session/session.projection.ts': renderSessionProjection(),
-        'src/app/session/session.store.ts': sessionStore(config),
+        'src/app/session/session.store.ts': sessionStore(config, appName),
         'src/app/session/session.interceptor.ts': sessionHttp(),
         'src/app/session/session.guard.ts': sessionGuard(),
         'src/app/session/session-menu.ts': navigationComponent(),
@@ -651,20 +712,20 @@ export async function renderAngularApplicationSession({
         'src/app/app.config.ts': layout
             ? `import { provideBrowserGlobalErrorListeners, type ApplicationConfig } from '@angular/core';
 import { provideRouter } from '@angular/router';
-import { provideSocle } from '${layout.coque}';
+import { SESSION_STORAGE_KEY, provideSocle } from '${layout.coque}';
 import { appRoutes } from './app.routes';
 
-export const appConfig: ApplicationConfig = { providers: [provideBrowserGlobalErrorListeners(), provideSocle(), provideRouter(appRoutes)] };
+export const appConfig: ApplicationConfig = { providers: [provideBrowserGlobalErrorListeners(), provideSocle(), { provide: SESSION_STORAGE_KEY, useValue: ${key} }, provideRouter(appRoutes)] };
 `
             : `import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideBrowserGlobalErrorListeners, type ApplicationConfig } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { appRoutes } from './app.routes';
 import { ApplicationSession } from './session/session.store';
-import { APPLICATION_SESSION } from './session/session.types';
+import { APPLICATION_SESSION, SESSION_STORAGE_KEY } from './session/session.types';
 import { applicationSessionInterceptor } from './session/session.interceptor';
 
-export const appConfig: ApplicationConfig = { providers: [provideBrowserGlobalErrorListeners(), provideHttpClient(withInterceptors([applicationSessionInterceptor])), provideRouter(appRoutes), { provide: APPLICATION_SESSION, useExisting: ApplicationSession }] };
+export const appConfig: ApplicationConfig = { providers: [provideBrowserGlobalErrorListeners(), provideHttpClient(withInterceptors([applicationSessionInterceptor])), provideRouter(appRoutes), { provide: APPLICATION_SESSION, useExisting: ApplicationSession }, { provide: SESSION_STORAGE_KEY, useValue: ${key} }] };
 `,
         'public/sw.js': sessionWorker(prefix),
         'src/app/session/index.ts':

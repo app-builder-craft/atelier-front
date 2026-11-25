@@ -328,6 +328,18 @@ test('renommage du préfixe : égal à une création directe, deux fois, puis pu
                 assert.deepEqual([...prefixes], ['qz'], family);
             for (const [family, prefixes] of familiesBefore)
                 assert.deepEqual([...prefixes], ['ns'], family);
+            // Lot 2, commit 4 (S12) : la clé de la session de l'onglet suit le
+            // préfixe, dans la coque seule ; l'ancienne disparaît du produit.
+            const appConfig = await readFile(
+                join(a.root, coqueRoot(SESSION_APP), 'src/app/app.config.ts'),
+                'utf8'
+            );
+            assert.ok(appConfig.includes(`'qz-session-v1:${SESSION_APP}'`));
+            assert.equal(appConfig.includes('ns-session-v1:'), false);
+            assert.deepEqual(
+                [...familiesAfter.get('clé de session de l’onglet')],
+                ['qz']
+            );
         }
     );
 

@@ -281,7 +281,7 @@ function fixtureDesign(declared, backend, briefDocument, domain) {
         },
     });
     experience.session = {
-        storage: 'memory',
+        storage: 'tab',
         producer: producer('enter', 'session-result'),
         projection: {
             token_pointer: `/${n.token}/${n.secret}`,

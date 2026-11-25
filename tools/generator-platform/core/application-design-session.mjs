@@ -159,7 +159,7 @@ export function resolveApplicationSession(design, experience, contracts) {
         !SESSION_DESIGN_VERSIONS.has(design.schema_version) ||
         experience.channel !== 'web' ||
         experience.offline_policy !== 'none' ||
-        session.storage !== 'memory' ||
+        session.storage !== 'tab' ||
         design.pages.length > 64
     )
         fail();

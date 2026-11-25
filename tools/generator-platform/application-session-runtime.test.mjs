@@ -96,6 +96,7 @@ for (const domain of SESSION_FIXTURE_DOMAINS) {
             design: fixture.design,
             experience: fixture.design.experiences[0],
             prefix: FIXTURE_PREFIX,
+            appName: 'runtime-session',
         });
         for (const [destination, source] of Object.entries(
             SESSION_NATIVE_SOURCES
@@ -107,10 +108,10 @@ for (const domain of SESSION_FIXTURE_DOMAINS) {
                     'utf8'
                 )
             );
-        const all = Object.values(files).join('\n');
+        // Stockages : test de texte dédié (V3.7.10, V4.7), plus bas.
         assert.doesNotMatch(
-            all,
-            /localStorage|sessionStorage|indexedDB|console\.(log|error)/
+            Object.values(files).join('\n'),
+            /console\.(log|error)/
         );
         assert.match(files['src/app/app.config.ts'], /provideHttpClient/);
         assert.match(

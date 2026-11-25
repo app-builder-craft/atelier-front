@@ -685,7 +685,7 @@ test('sortie session extérieure : imports locaux complets, un seul SKIP_AUTH et
             `apps/portable-session/${SIGNATURE_FILES.pages}/${data.design.experiences[0].entry_page_id}.json`
         ]
     ).experience.session;
-    assert.equal(session.storage, 'memory');
+    assert.equal(session.storage, 'tab');
     assert.equal(
         session.producer.page_id,
         data.design.experiences[0].entry_page_id

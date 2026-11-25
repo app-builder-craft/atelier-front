@@ -382,6 +382,7 @@ import { APPLICATION_SESSION } from './session/session.types';
 
 export { applicationSessionGuard } from './session/session.guard';
 export { SESSION_CONFIGURATION } from './session/session.store';
+export { SESSION_STORAGE_KEY } from './session/session.types';
 
 export function provideSocle(): (Provider | EnvironmentProviders)[] {
     return [

@@ -132,7 +132,7 @@ test('X0 : deux produits fictifs planifient une coque Angular avec session, sans
                 `${coque(plan.app_name)}/${SIGNATURE_FILES.pages}/${product.input.entryPage.id}.json`
             ]
         );
-        assert.equal(entry.experience.session.storage, 'memory');
+        assert.equal(entry.experience.session.storage, 'tab');
         assert.equal(
             entry.experience.session.producer.page_id,
             product.input.entryPage.id

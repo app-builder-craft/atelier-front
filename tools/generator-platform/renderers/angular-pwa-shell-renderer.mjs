@@ -659,6 +659,7 @@ self.addEventListener('fetch', (event) => {
                 design,
                 experience,
                 prefix,
+                appName,
                 layout,
             })
         );

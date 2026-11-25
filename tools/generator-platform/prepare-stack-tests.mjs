@@ -91,6 +91,7 @@ async function runtimeFileHashes(root) {
 // by the other stack fixtures. X5 C2 adds the external-profile read.
 const sessionSpecs = [
     'action-request-session.spec.ts',
+    'application-session-tab.spec.ts',
     'application-session.spec.ts',
     'list-query-external-session.spec.ts',
     'page-composition-session.spec.ts',

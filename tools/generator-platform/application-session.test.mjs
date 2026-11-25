@@ -9,6 +9,7 @@ import {
 import { compilePageExecutionPlan } from './core/page-execution-plan.mjs';
 import { computeAngularPageCompositionTarget } from './page-composition-targets.mjs';
 import { assertListQueryV2RendererModel } from './renderers/list-query-v2-renderer-shared.mjs';
+import { ANGULAR_SESSION_PAGE_CAPABILITIES } from './renderers/page-composition-renderer-shared.mjs';
 import {
     validateApplicationDesign,
     validateApplicationDesignWithDependencies,
@@ -20,6 +21,7 @@ import {
 import {
     canonicalSessionPath,
     resolveApplicationSession,
+    validateApplicationSessions,
 } from './core/application-design-session.mjs';
 import {
     createApplicationSessionFixture,
@@ -137,10 +139,38 @@ for (const domain of SESSION_FIXTURE_DOMAINS) {
             contracts
         );
         assert.ok(resolved);
+        // Lot 2, commit 4 : la résolution refuse aussi `memory`, schéma
+        // contourné (seule `tab` est admise).
+        const memory = structuredClone(design);
+        memory.experiences[0].session.storage = 'memory';
+        assert.throws(
+            () =>
+                resolveApplicationSession(
+                    memory,
+                    memory.experiences[0],
+                    contracts
+                ),
+            /APP_SESSION_BINDING/
+        );
+        // … et le SCHÉMA la refuse lui-même, avant la résolution (deux
+        // gardes : le code de refus nomme celle qui parle).
+        assert.deepEqual(
+            validateApplicationSessions(
+                memory,
+                schemas['application-design'],
+                contracts
+            ),
+            ['APP_SESSION_SCHEMA']
+        );
         const session = design.experiences[0].session;
         const mutations = [
             (value) => {
                 value.storage = 'local';
+            },
+            // Lot 2, commit 4 (§ 22) : `memory` est REMPLACÉE par `tab`, pas
+            // admise à côté.
+            (value) => {
+                value.storage = 'memory';
             },
             (value) => {
                 value.projection.token_pointer = '/unresolved';
@@ -237,6 +267,17 @@ for (const domain of SESSION_FIXTURE_DOMAINS) {
             const command = path !== '/catalogue';
             assert.equal(plan.query_nodes.length, command ? 0 : 1);
             assert.equal(plan.command_nodes.length, command ? 1 : 0);
+            // Lot 2, commit 4 : la capacité de session de l'onglet, exigée
+            // par le plan et offerte par la composition (des DEUX côtés).
+            assert.ok(plan.required_capabilities.includes('session.tab@1'));
+            assert.ok(
+                ANGULAR_SESSION_PAGE_CAPABILITIES.includes('session.tab@1')
+            );
+            for (const capabilities of [
+                plan.required_capabilities,
+                ANGULAR_SESSION_PAGE_CAPABILITIES,
+            ])
+                assert.equal(capabilities.includes('session.memory@1'), false);
             const artifactPlan = buildArtifactPlan(plan, 'page-execution-plan');
             const expected = [
                 ...common,
