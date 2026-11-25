@@ -10,6 +10,7 @@ import {
     readProductFile,
 } from './external-application-paths.mjs';
 import { SIGNATURE_FILES } from './atelier-signature.mjs';
+import { reviewedDocumentPlan } from './document-publication.mjs';
 import { sha256, stableStringify } from './generation-manifest.mjs';
 import { withProductWriterLocks } from './generation-transaction.mjs';
 
@@ -310,15 +311,20 @@ export async function publishCompilationWithContext(
         plan.compilation_context.lock_product,
         [plan.compilation_context.lock_output],
         async () => {
+            // Lot 2, commit 6a (L-21) : le plan relu est retrouvé sur l'état
+            // observé SOUS verrou (`reviewedDocumentPlan`) ; après la
+            // publication, la sortie a changé par construction, et seule
+            // l'identité du plan hors état de sortie (`creation_plan_id`)
+            // doit être restée la même.
             const current = await replan(options);
-            if (
-                current.plan_id !== plan.plan_id ||
-                current.plan_id !== options.planId
-            )
+            if (current.creation_plan_id !== plan.creation_plan_id)
                 fail('reviewed plan changed under lock');
-            const result = await publish(current, failPlan);
+            const reviewed = reviewedDocumentPlan(current, options.planId, () =>
+                fail('reviewed plan changed under lock')
+            );
+            const result = await publish(reviewed, failPlan);
             const after = await replan(options);
-            if (after.plan_id !== current.plan_id)
+            if (after.creation_plan_id !== current.creation_plan_id)
                 fail(
                     'context changed during publication; inspect the preserved output'
                 );

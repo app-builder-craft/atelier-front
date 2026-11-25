@@ -113,20 +113,63 @@ test('auteurs PERMIS sur un produit périmé, lignes SOURCES_A_LIER ; consommate
     assert.deepEqual(toBind(preview.stderr), [
         LINE('contract', request.definitionPath),
     ]);
-    // L'application à la MÊME sortie reste refusée, par la règle existante de
-    // la publication de documents (une sortie présente n'est jamais
-    // remplacée), indépendante de la fraîcheur : fait épinglé ici, à trancher.
+    // Lot 2, commit 6a (index du pilote, L-21) : l'application à la MÊME
+    // sortie remplace le contrat présent, celui que le plan relu nomme
+    // (`output_before_sha256`), par un renommage atomique.
     const plan = JSON.parse(preview.stdout);
+    const present = await readFile(join(fixture.root, request.outputPath));
+    assert.equal(plan.output_before_sha256, sha256(present));
+    assert.notEqual(plan.output_sha256, plan.output_before_sha256);
     const replace = runDocumentCli('compile-backend-contract', [
         ...backendArgs(fixture, request),
         '--apply',
         plan.plan_id,
     ]);
-    assert.equal(replace.status, 1);
-    assert.match(
-        replace.stderr,
-        /existing output hash does not match the reviewed plan/
+    assert.equal(replace.status, 0, replace.stderr);
+    assert.equal(
+        sha256(await readFile(join(fixture.root, request.outputPath))),
+        plan.output_sha256
     );
+    // Le contrat compilé, source liée, est remplacé : la ligne le nomme, avec
+    // sa définition (la mise à jour reliera les deux).
+    assert.deepEqual(toBind(replace.stderr), [
+        LINE('contract', request.outputPath),
+        LINE('contract', request.definitionPath),
+    ]);
+    // Seconde compilation à la MÊME sortie (P8, partie auteur) : son plan
+    // nomme le contrat que la première a écrit, et son application le
+    // remplace à son tour.
+    await touch(fixture.root, request.definitionPath);
+    const second = runDocumentCli('compile-backend-contract', [
+        ...backendArgs(fixture, request),
+        '--dry-run',
+    ]);
+    assert.equal(second.status, 0, second.stderr);
+    const secondPlan = JSON.parse(second.stdout);
+    assert.equal(secondPlan.output_before_sha256, plan.output_sha256);
+    const secondArgs = [
+        ...backendArgs(fixture, request),
+        '--apply',
+        secondPlan.plan_id,
+    ];
+    const secondApply = runDocumentCli('compile-backend-contract', secondArgs);
+    assert.equal(secondApply.status, 0, secondApply.stderr);
+    assert.equal(
+        sha256(await readFile(join(fixture.root, request.outputPath))),
+        secondPlan.output_sha256
+    );
+    // Limite écrite (ADR) : le rejeu d'un REMPLACEMENT fait est périmé, son
+    // « avant » n'existe plus ; un plan neuf voit l'après et ne change rien.
+    const replay = runDocumentCli('compile-backend-contract', secondArgs);
+    assert.equal(replay.status, 1);
+    assert.match(replay.stderr, /reviewed plan id is stale or invalid/);
+    assert.equal(
+        sha256(await readFile(join(fixture.root, request.outputPath))),
+        secondPlan.output_sha256
+    );
+    // La suite part du contrat d'origine, remis, pour éprouver les sorties
+    // NEUVES seules.
+    await writeFile(join(fixture.root, request.outputPath), present);
     // Application à une sortie NOUVELLE : permise sur le produit périmé.
     const next = `${DOC}/contracts/backend.next.contract.json`;
     const nextArgs = [
@@ -181,6 +224,8 @@ test('auteurs PERMIS sur un produit périmé, lignes SOURCES_A_LIER ; consommate
         '--dry-run',
     ]);
     assert.equal(design.status, 0, design.stderr);
+    // Sortie neuve : le plan public de la conception nomme un « avant » nul.
+    assert.equal(JSON.parse(design.stdout).output_before_sha256, null);
     assert.deepEqual(toBind(design.stderr), [
         LINE('design', fixture.designPath),
     ]);
@@ -340,4 +385,69 @@ test('CI #48 : un auteur dont un document vit hors de descriptions/ réussit et 
         assert.deepEqual(toBind(receipt.preview.stderr), [], receipt.tool);
         assert.deepEqual(toBind(receipt.apply.stderr), [], receipt.tool);
     }
+});
+
+// Lot 2, commit 6a (index du pilote, A-7) : un dossier de sortie absent est un
+// refus NOMMÉ, par les deux auteurs, sans `ENOENT` brut ni chemin local ; rien
+// n'est écrit.
+test('A-7 : dossier de sortie absent, refus nommé et sans chemin local', async (t) => {
+    const { fixture, request } = await documentProduct(t);
+    const before = await snapshotTree(fixture.root);
+    const backend = backendArgs(fixture, request);
+    backend[backend.indexOf('--out') + 1] =
+        `${DOC}/absent/backend.contract.json`;
+    const runs = [
+        runDocumentCli('compile-backend-contract', [...backend, '--dry-run']),
+        runDocumentCli('compile-application-design', [
+            '--target-root',
+            fixture.root,
+            '--source',
+            fixture.sourcePath,
+            '--out',
+            `${DOC}/absent/application-design.json`,
+            '--dry-run',
+        ]),
+    ];
+    for (const run of runs) {
+        assert.equal(run.status, 1, run.stderr);
+        assert.match(
+            run.stderr,
+            new RegExp(
+                `output parent directory missing: ${escape(`${DOC}/absent`)}\\n`
+            )
+        );
+        assert.equal(run.stderr.includes('ENOENT'), false, run.stderr);
+        assert.equal(run.stderr.includes(fixture.root), false, run.stderr);
+    }
+    // Même classe : une source absente est nommée, sans chemin local.
+    const missing = backendArgs(fixture, request);
+    missing[missing.indexOf('--definition') + 1] = `${DOC}/absente.json`;
+    const sources = [
+        [
+            runDocumentCli('compile-backend-contract', [
+                ...missing,
+                '--dry-run',
+            ]),
+            `definition missing: ${DOC}/absente.json`,
+        ],
+        [
+            runDocumentCli('compile-application-design', [
+                '--target-root',
+                fixture.root,
+                '--source',
+                `${DOC}/absente.json`,
+                '--out',
+                `${DOC}/application-design.next.json`,
+                '--dry-run',
+            ]),
+            `source missing: ${DOC}/absente.json`,
+        ],
+    ];
+    for (const [run, message] of sources) {
+        assert.equal(run.status, 1, run.stderr);
+        assert.match(run.stderr, new RegExp(`${escape(message)}\\n`));
+        assert.equal(run.stderr.includes('ENOENT'), false, run.stderr);
+        assert.equal(run.stderr.includes(fixture.root), false, run.stderr);
+    }
+    assert.deepEqual(await snapshotTree(fixture.root), before);
 });

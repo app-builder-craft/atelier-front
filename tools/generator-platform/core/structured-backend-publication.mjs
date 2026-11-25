@@ -12,7 +12,11 @@ import { basename, dirname, relative, resolve, sep } from 'node:path';
 import { compileOpenApiBackendContract } from '../adapters/openapi-adapter.mjs';
 import { compilePostmanBackendContract } from '../adapters/postman-adapter.mjs';
 import { verifyBackendContractSnapshots } from './backend-contract.mjs';
-import { publishDocument } from './document-publication.mjs';
+import {
+    documentPlan,
+    publishDocument,
+    reviewedDocumentPlan,
+} from './document-publication.mjs';
 import {
     assertCompilationPaths,
     beginCompilationContext,
@@ -43,13 +47,26 @@ function assertInside(root, absolute, label) {
     }
 }
 
+// Lot 2, commit 6a (A-7) : un composant absent est un refus NOMMÉ, par son
+// chemin RELATIF au produit, jamais un `ENOENT` brut ni un chemin local.
 async function assertPathComponents(root, absolute, includeLeaf) {
     const parts = relative(root, absolute).split(sep).filter(Boolean);
     const limit = includeLeaf ? parts.length : parts.length - 1;
     let current = root;
     for (let index = 0; index < limit; index += 1) {
         current = resolve(current, parts[index]);
-        const metadata = await lstat(current);
+        const shown = relative(root, current).split(sep).join('/');
+        let metadata;
+        try {
+            metadata = await lstat(current);
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+            fail(
+                includeLeaf
+                    ? `definition missing: ${shown}`
+                    : `output parent directory missing: ${shown}`
+            );
+        }
         if (metadata.isSymbolicLink())
             fail(`symbolic path component forbidden: ${current}`);
         if (index < limit - 1 && !metadata.isDirectory()) {
@@ -204,8 +221,8 @@ export async function planStructuredBackendPublication({
     if (snapshotErrors.length > 0) fail(snapshotErrors.join('\n'));
     const content = Buffer.from(serializeCanonicalBackendContract(contract));
     const outputSha256 = sha256(content);
-    const planId = sha256(
-        JSON.stringify({
+    const identity = await documentPlan(
+        {
             adapter,
             definition: definition.relative,
             source_sha256: sourceSha256,
@@ -214,10 +231,12 @@ export async function planStructuredBackendPublication({
             ...(compilationContext
                 ? { compilation_context_sha256: compilationContext.sha256 }
                 : {}),
-        })
+        },
+        output,
+        fail
     );
     return {
-        plan_id: planId,
+        ...identity,
         ...(compilationContext
             ? { compilation_context: compilationContext }
             : {}),
@@ -226,23 +245,18 @@ export async function planStructuredBackendPublication({
         source_sha256: sourceSha256,
         output: output.relative,
         output_sha256: outputSha256,
-        candidate: resolve(
-            output.parent,
-            `.${basename(output.absolute)}.${planId}.candidate`
-        ),
         content,
         contract,
-        outputAbsolute: output.absolute,
-        outputParent: output.parent,
     };
 }
 
 export async function publishStructuredBackendContract(options) {
     try {
-        const plan = await planStructuredBackendPublication(options);
-        if (options.planId !== plan.plan_id)
-            fail('reviewed plan id is stale or invalid');
-
+        const plan = reviewedDocumentPlan(
+            await planStructuredBackendPublication(options),
+            options.planId,
+            fail
+        );
         return await publishCompilationWithContext(
             options,
             plan,
@@ -267,6 +281,7 @@ export function publicBackendPublicationPlan(plan) {
         source_sha256: plan.source_sha256,
         output: plan.output,
         output_sha256: plan.output_sha256,
+        output_before_sha256: plan.output_before_sha256,
     };
 }
 
@@ -403,8 +418,8 @@ async function planAdoptedBackendPublication(options) {
             serializeCanonicalBackendContract(contract)
         );
         const outputSha256 = sha256(content);
-        const planId = sha256(
-            JSON.stringify({
+        const identity = await documentPlan(
+            {
                 adapter: 'structured',
                 adopt_reference: true,
                 definition: options.definitionPath,
@@ -412,10 +427,12 @@ async function planAdoptedBackendPublication(options) {
                 output: output.relative,
                 output_sha256: outputSha256,
                 compilation_context_sha256: compilationContext.sha256,
-            })
+            },
+            output,
+            fail
         );
         return {
-            plan_id: planId,
+            ...identity,
             compilation_context: compilationContext,
             adapter: 'structured',
             adopt_reference: true,
@@ -423,14 +440,8 @@ async function planAdoptedBackendPublication(options) {
             source_sha256: sourceSha256,
             output: output.relative,
             output_sha256: outputSha256,
-            candidate: resolve(
-                output.parent,
-                `.${basename(output.absolute)}.${planId}.candidate`
-            ),
             content,
             contract,
-            outputAbsolute: output.absolute,
-            outputParent: output.parent,
         };
     } catch (error) {
         rejectObservation(observationDiagnostic(error));
@@ -515,8 +526,8 @@ async function planObservedBackendPublication(options) {
         });
         const outputSha256 = sha256(content);
         const sourceSha256 = sha256(input.definitionBytes);
-        const planId = sha256(
-            JSON.stringify({
+        const identity = await documentPlan(
+            {
                 adapter: options.adapter,
                 snapshot_id: options.snapshotId ?? null,
                 definition: options.definitionPath,
@@ -524,24 +535,20 @@ async function planObservedBackendPublication(options) {
                 output: output.relative,
                 output_sha256: outputSha256,
                 compilation_context_sha256: compilationContext.sha256,
-            })
+            },
+            output,
+            fail
         );
         return {
-            plan_id: planId,
+            ...identity,
             compilation_context: compilationContext,
             adapter: options.adapter,
             definition: options.definitionPath,
             source_sha256: sourceSha256,
             output: output.relative,
             output_sha256: outputSha256,
-            candidate: resolve(
-                output.parent,
-                `.${basename(output.absolute)}.${planId}.candidate`
-            ),
             content,
             contract: input.contract,
-            outputAbsolute: output.absolute,
-            outputParent: output.parent,
         };
     } catch (error) {
         rejectObservation(observationDiagnostic(error));

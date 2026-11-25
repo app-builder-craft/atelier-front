@@ -2,8 +2,8 @@
 
 - Statut : acceptée (2026-11-24).
 - Portée : atelier 2, disposition des produits extérieurs (lot 2, commits 1a,
-  1b, 2 et 3, corrections de l'étape A et correction de tête de l'étape B) et
-  outils de l'atelier qui les écrivent.
+  1b, 2 et 3, corrections de l'étape A, correction de tête de l'étape B et
+  commit 6a) et outils de l'atelier qui les écrivent.
 - Décisions appliquées : point 1 des décisions de l'atelier 2 (trois couches,
   option A) ; lecture A du pilote (tout le code généré est au socle) ;
   frontières par projet (conception du lot 2, v4 § V4.3) ; noms fixes sans
@@ -244,8 +244,17 @@ migration.
   configuration comprise : le `vite.config.mts` que le lot 7 rendra pour
   l'interface (première spec) s'écrit sans elle (sa configuration importe
   `vitest/config`, qui porte déjà les types de la section `test`).
-- Limite décidée par le pilote : un auteur de source ne remplace pas encore une
-  sortie présente (la publication de documents la refuse) ; le remplacement sous
-  plan (empreinte « avant » liée au plan, renommage atomique, sortie étrangère
-  toujours refusée) vient au commit 6, avec l'opération `files` ; jusque-là, la
-  preuve « seconde compilation d'un contrat » est partielle.
+- Remplacement d'une sortie par son auteur (commit 6a) : le plan d'un document
+  lie l'empreinte de la sortie présente (`output_before_sha256`, nulle pour une
+  création, dont l'identifiant de plan ne change pas), calculée en un seul lieu
+  (`documentPlan`). L'application ne remplace que cette sortie, par le renommage
+  atomique d'un candidat nommé par le plan relu ; une sortie étrangère, ou
+  changée depuis le plan, est refusée et laissée telle quelle ; l'après déjà en
+  place est un rejeu sans effet. Limite : le rejeu d'un remplacement FAIT est
+  refusé comme périmé, puisque son « avant » n'existe plus ; un plan neuf voit
+  l'après, et son application ne change rien. La seconde compilation d'un
+  contrat à la même sortie est prouvée ; la preuve P8 est complète au commit 6c,
+  avec `update-app`.
+- Un dossier de sortie absent, ou une source absente, est un refus nommé par son
+  chemin relatif au produit (`output parent directory missing: <chemin>`), sans
+  `ENOENT` brut ni chemin local (commit 6a).
