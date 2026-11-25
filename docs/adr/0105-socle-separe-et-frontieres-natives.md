@@ -172,15 +172,19 @@ migration.
   `new Worker(new URL('<relatif>', import.meta.url).href)` et `.toString()` sont
   SUIVIES par Vite (le fichier du socle est empaqueté en worker), alors que le
   `lint` et la vérification de types passaient : le sélecteur refuse désormais
-  tout `import.meta` dans l'appel d'un worker. Trois réécritures ne sont PAS
-  suivies par la construction et ne sont pas refusées par le `lint` : l'accès
-  calculé `import.meta['glob'](…)` (pas une forme de Vite ; `undefined` à
-  l'exécution), un `URL` renommé (`const U = URL; new Worker(new U(…))`) et une
-  URL construite hors de l'appel du worker
-  (`const u = new URL(…); new Worker(u)`) : rien du socle n'est émis, et
-  l'adresse vise un chemin que le produit ne sert pas. C'est la limite exacte :
-  ces formes n'atteignent pas le code du socle dans la construction mesurée ; le
-  serveur de développement de Vite n'a pas été mesuré.
+  tout `import.meta` dans l'appel d'un worker. Un `URL` renommé écrit DANS
+  l'appel (`const U = URL; new Worker(new U('<relatif>', import.meta.url))`)
+  n'est pas suivi par la construction et il est REFUSÉ par le `lint`, l'appel
+  contenant `import.meta`. Deux réécritures ne sont PAS suivies par la
+  construction et ne sont pas refusées par le `lint` : l'accès calculé
+  `import.meta['glob'](…)` (pas une forme de Vite ; `undefined` à l'exécution)
+  et une URL construite HORS de l'appel du worker
+  (`const u = new URL(…); new Worker(u)`, `URL` renommé ou non) : rien du socle
+  n'est émis, et l'adresse vise un chemin que le produit ne sert pas (refus et
+  admissions mesurés avec l'ESLint 10.15.0 installé et le sélecteur rendu,
+  relecture de l'étape B). C'est la limite exacte : ces formes n'atteignent pas
+  le code du socle dans la construction mesurée ; le serveur de développement de
+  Vite n'a pas été mesuré.
 - **Portée des règles de l'interface, par construction** :
   `no-restricted-syntax` et `@typescript-eslint/triple-slash-reference` ne sont
   posées que sur l'interface. Ce n'est pas une limite : le socle et la coque
