@@ -88,12 +88,18 @@ Le journal vit à côté du produit, au niveau du produit. Il porte des opérati
 `tree` (coque et socle, racines exactes) et `files` (configuration et amorces de
 l'interface, copies d'avant dans le journal). Dans cet ordre :
 
-1. Candidats, puis témoin BLOQUANT : le socle candidat, une interface témoin (la
-   configuration d'après et les amorces de TOUTES les pages, à la place des
-   sources de l'IA), puis la coque candidate, chacun compilé sans émettre, leurs
-   alias tournés vers les candidats. Un rouge est
+1. Candidats, puis témoin BLOQUANT : le socle candidat (ou le socle en place
+   s'il ne change pas), une interface témoin (la configuration d'après et les
+   amorces de TOUTES les pages, à la place des sources de l'IA), puis la coque
+   candidate, chacun compilé sans émettre, leurs alias tournés vers les
+   candidats ; puis l'ESLint de l'interface sur l'interface témoin, depuis la
+   racine du produit, sans avertissement admis : une amorce doit respecter les
+   règles de l'interface. Un rouge est
    `UPDATE_GENERATOR_BROKEN <couche> <fichier>` : une faute du générateur,
-   jamais de l'IA ; retour exact.
+   jamais de l'IA ; retour exact. Les arbres témoins sont retirés avant
+   l'échange : leur `project.json`, dans un dossier caché que le `.gitignore` du
+   produit n'ignore pas, ferait voir à Nx deux projets du même nom (mesuré, Nx
+   refuse alors le graphe : `defined in multiple locations`).
 2. Les candidats sont vérifiés à l'octet en dernier, juste avant le premier
    échange ; puis les échanges, dans l'ordre fixé.
 3. Contrôles du SOCLE (`lint`, `test`) et contrat de l'espace, BLOQUANTS ; puis
@@ -133,11 +139,18 @@ sans rien déplacer.
 
 ## Limites écrites
 
-- Le témoin compile ; l'ESLint des amorces n'y est pas : une amorce fautive
-  serait rapportée `ROUGE interface`. Les contrôles du socle (`lint`, `test`)
-  sont bloquants mais tournent APRÈS l'échange, Nx ne voyant pas un candidat ;
-  le retour reste exact. La justesse native du témoin et des contrôles est
-  prouvée au commit 14.
+- Au témoin, la règle de frontières de Nx (`@nx/enforce-module-boundaries`) se
+  tait : elle lit le graphe des projets EN CACHE et ne vise que les fichiers
+  d'un projet, et l'interface témoin n'en est pas un. Les autres règles de
+  l'interface (formes de Vite, entrée de la coque, règles de la pile) s'y
+  appliquent ; les frontières des amorces sont vues sur l'appli réelle, au
+  rapport, et par le `lint` bloquant de `create-app` sur les mêmes amorces. Les
+  contrôles du socle (`lint`, `test`) sont bloquants mais tournent APRÈS
+  l'échange, Nx ne voyant pas un candidat ; le retour reste exact. L'ESLint du
+  témoin est éprouvé par les outils installés sur un produit fictif (amorces du
+  générateur admises, amorce fautive refusée, dans les deux piles) ; la justesse
+  native du témoin et des contrôles sur un produit installé est prouvée au
+  commit 14.
 - Un fichier POSSÉDÉ de l'interface n'est jamais retiré par la mise à jour
   (`UPDATE_INTERFACE_FILE_REMOVED <app> <chemin>`) : l'opération `files` n'écrit
   que des fichiers d'après.

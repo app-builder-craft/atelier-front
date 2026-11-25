@@ -21,6 +21,7 @@ import { planApplicationUpdate } from './core/application-update.mjs';
 import {
     publishApplicationUpdate,
     recoverApplicationUpdate,
+    witnessControls,
 } from './core/application-update-transaction.mjs';
 import { appManifestPath } from './renderers/external-product-layout.mjs';
 import { snapshotTree } from './test-support/external-application-fixture.mjs';
@@ -89,6 +90,10 @@ test('N10 : arrêt brutal à chaque phase, toute commande refusée, reprise exac
         'verified',
     ])
         assert.ok(phases.includes(required), required);
+    // Chaque contrôle du témoin (compilations et ESLint de l'interface) est
+    // un point d'arrêt.
+    for (const { label } of witnessControls(probe.plan, probe.plan.apps[0]))
+        assert.ok(phases.includes(label), label);
     const seeds = Object.keys(probe.plan.apps[0].seeds);
     assert.ok(seeds.length > 0);
     for (const seed of seeds)

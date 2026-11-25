@@ -25,8 +25,11 @@ import {
 import {
     publishApplicationUpdate,
     recoverApplicationUpdate,
+    witnessControls,
+    witnessTrees,
 } from './core/application-update-transaction.mjs';
 import { SIGNATURE_FILES } from './core/atelier-signature.mjs';
+import { pathExists } from './core/external-application-paths.mjs';
 import { planProductPrefixRename } from './core/product-prefix-rename.mjs';
 import { publishProductPrefixRename } from './core/product-prefix-rename-transaction.mjs';
 import { appManifestPath } from './renderers/external-product-layout.mjs';
@@ -201,6 +204,40 @@ test('témoin bloquant : un socle ou une interface d’amorces rouges sont une f
         )
     );
     assert.deepEqual(await tree(fixture), before);
+    // V3.5 a point 2 : l'ESLint de l'interface sur les AMORCES, au témoin. Une
+    // amorce fautive (rendue par le générateur) est sa faute, nommée par la
+    // racine réelle, AVANT tout échange ; rien n'est adopté.
+    const app = plan.apps.find(({ app_name }) => app_name === APP);
+    const lint = witnessControls(plan, app).find(
+        ({ label }) => label === `witness:${APP}:interface-lint`
+    );
+    assert.ok(lint, 'ESLint de l’interface au témoin');
+    const seed = Object.keys(app.seeds).sort()[0];
+    const ui = `libs/${APP}-interface/`;
+    assert.ok(seed?.startsWith(ui), seed);
+    const phases = [];
+    await assert.rejects(
+        publishApplicationUpdate(reviewed, {
+            run: failing(
+                (args) =>
+                    JSON.stringify(args.slice(1)) === JSON.stringify(lint.args),
+                seed.replace(
+                    ui,
+                    `libs/.${APP}-interface.update-witness-${plan.plan_id}/`
+                )
+            ),
+            phase: (name) => phases.push(name),
+        }),
+        new RegExp(
+            `^Error: external application: ${escape(`UPDATE_GENERATOR_BROKEN interface ${seed} (app ${APP})`)}$`
+        )
+    );
+    assert.deepEqual(
+        phases.filter((name) => name.startsWith('swapped:')),
+        [],
+        'ESLint du témoin : rouge avant tout échange'
+    );
+    assert.deepEqual(await tree(fixture), before);
     // Contrôle du socle après l'échange, bloquant : retour exact.
     await assert.rejects(
         publishApplicationUpdate(reviewed, {
@@ -212,8 +249,29 @@ test('témoin bloquant : un socle ou une interface d’amorces rouges sont une f
         /UPDATE_GENERATOR_BROKEN socle /
     );
     assert.deepEqual(await tree(fixture), before);
-    // Témoin vert : l'application passe.
-    const done = await publishApplicationUpdate(reviewed, { run: quietRun });
+    // Témoin vert : l'application passe. Les arbres témoins existent pendant
+    // l'ESLint du témoin, et plus aucun pendant les `nx run` d'après
+    // l'échange (Nx y verrait deux projets du même nom).
+    const present = async () => {
+        const found = [];
+        for (const path of witnessTrees(APP, plan.plan_id))
+            if (await pathExists(join(fixture.root, path))) found.push(path);
+        return found;
+    };
+    const atLint = [];
+    const atNx = [];
+    const done = await publishApplicationUpdate(reviewed, {
+        run: async (command, args) => {
+            if (JSON.stringify(args.slice(1)) === JSON.stringify(lint.args))
+                atLint.push(...(await present()));
+            if (args[1] === 'run')
+                atNx.push(
+                    ...(await present()).map((path) => `${args[2]} ${path}`)
+                );
+        },
+    });
+    assert.deepEqual(atLint, witnessTrees(APP, plan.plan_id));
+    assert.deepEqual(atNx, [], 'aucun arbre témoin pendant les nx run');
     assert.equal(done.report, 'RAPPORT_INTERFACE: VERT');
 });
 

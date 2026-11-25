@@ -7,8 +7,10 @@
 // cet ordre :
 // 1. candidats et programmes témoins (coque + socle + amorces de TOUTES les
 //    pages à la place des sources de l'interface) ; témoin BLOQUANT avant
-//    tout échange : un rouge est `UPDATE_GENERATOR_BROKEN <couche>
-//    <fichier>`, retour exact, rien n'est adopté ;
+//    tout échange (compilations, puis ESLint de l'interface sur les
+//    amorces) : un rouge est `UPDATE_GENERATOR_BROKEN <couche> <fichier>`,
+//    retour exact, rien n'est adopté ; les arbres témoins sont retirés avant
+//    l'échange ;
 // 2. échanges, dans l'ordre fixé ; contrôles BLOQUANTS du socle et contrat
 //    de l'espace ; post-condition `derived` (le produit égale son rendu) ;
 // 3. appli réelle (coque et interface de l'IA) lancée et RAPPORTÉE, sans
@@ -342,25 +344,62 @@ function witnessFiles(plan, app) {
     };
 }
 
-// Contrôles du témoin, dans l'ordre : socle, interface témoin, coque
-// témoin, chacun compilé sans émettre (ngc en Angular, tsc en React).
-// Source unique de l'exécution et des tests.
+// Arbres témoins d'une appli posés dans le produit (source unique de la
+// transaction et des preuves natives).
+export async function stageWitnessTrees(plan, app) {
+    for (const tree of witnessFiles(plan, app).trees)
+        await stageGeneratedTree(
+            resolve(plan.productRoot, tree.path),
+            tree.files
+        );
+}
+
+// Contrôles du témoin (v3 V3.5 a point 2), dans l'ordre : socle, interface
+// témoin, coque témoin, chacun compilé sans émettre (ngc en Angular, tsc en
+// React) ; PUIS l'ESLint de l'interface sur l'interface témoin
+// (configuration d'après et amorces de toutes les pages : une amorce doit
+// respecter les règles de l'interface), lancé depuis la racine du produit
+// avec la configuration de l'interface témoin, sans avertissement admis. La
+// règle de frontières de Nx lit le graphe EN CACHE et ne vise que les
+// fichiers d'un projet : elle se tait dans le témoin, qui n'en est pas un ;
+// les autres règles de l'interface s'y appliquent. `bin` : [paquet,
+// exécutable] du produit installé ; chemins absolus. Source unique de
+// l'exécution et des tests.
 export function witnessControls(plan, app) {
-    const angular = app.profile === 'angular-pwa';
-    const { socle, trees } = witnessFiles(plan, app);
-    return [
-        { layer: 'socle', config: `${socle}/tsconfig.lib.json` },
-        ...trees.map(({ path, layer }) => ({
-            layer,
-            config: `${path}/${WITNESS_CONFIG}`,
-        })),
-    ].map((control) => ({
-        ...control,
-        label: `witness:${app.app_name}:${control.layer}`,
-        compiler: angular
+    const compiler =
+        app.profile === 'angular-pwa'
             ? ['@angular/compiler-cli', 'ngc']
-            : ['typescript', 'tsc'],
-    }));
+            : ['typescript', 'tsc'];
+    const { socle, trees } = witnessFiles(plan, app);
+    const at = (path) => resolve(plan.productRoot, path);
+    const label = (name) => `witness:${app.app_name}:${name}`;
+    const ui = trees.find(({ layer }) => layer === 'interface').path;
+    return [
+        ...[
+            { layer: 'socle', config: `${socle}/tsconfig.lib.json` },
+            ...trees.map(({ path, layer }) => ({
+                layer,
+                config: `${path}/${WITNESS_CONFIG}`,
+            })),
+        ].map(({ layer, config }) => ({
+            layer,
+            label: label(layer),
+            bin: compiler,
+            args: ['-p', at(config), '--noEmit'],
+        })),
+        {
+            layer: 'interface',
+            label: label('interface-lint'),
+            bin: ['eslint', 'eslint'],
+            args: [
+                '--config',
+                at(`${ui}/eslint.config.mjs`),
+                '--max-warnings',
+                '0',
+                at(ui),
+            ],
+        },
+    ];
 }
 
 function generatorBroken(app, location) {
@@ -371,21 +410,12 @@ function generatorBroken(app, location) {
 
 async function witness(plan, apps, run, phase) {
     for (const app of apps) {
-        for (const tree of witnessFiles(plan, app).trees)
-            await stageGeneratedTree(
-                resolve(plan.productRoot, tree.path),
-                tree.files
-            );
+        await stageWitnessTrees(plan, app);
         for (const control of witnessControls(plan, app)) {
             const failure = await collected(
                 run,
                 process.execPath,
-                [
-                    installedBin(plan, ...control.compiler),
-                    '-p',
-                    resolve(plan.productRoot, control.config),
-                    '--noEmit',
-                ],
+                [installedBin(plan, ...control.bin), ...control.args],
                 plan.productRoot
             );
             if (failure !== null)
@@ -626,6 +656,11 @@ export async function publishApplicationUpdate(options, dependencies = {}) {
                 await phase('candidate-staged', plan);
                 await recheck();
                 await witness(plan, apps, run, phase);
+                // Les arbres témoins sont retirés AVANT l'échange : leurs
+                // `project.json` (dossier caché que le `.gitignore` du
+                // produit n'ignore pas) feraient voir à Nx deux projets du
+                // même nom aux contrôles d'après l'échange.
+                await removeWitnesses(plan.productRoot, journal);
                 await phase('witnessed', plan);
                 await recheck();
                 // Les candidats sont vérifiés à l'octet en DERNIER, juste
